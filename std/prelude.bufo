@@ -10,6 +10,14 @@ func tag(union: Any) -> u8 {
     return *(union as &u8);
 }
 
+func comptimeMemcpy(dst: Any, src: Any, size: usize) -> Any {
+    for (let i: usize = 0; i < size; i = i + 1) {
+        let _dst = dst as &u8;
+        let _src = src as &u8;
+        _dst[i] = _src[i];
+    }
+    return dst;
+}
 func comptimeSubStr(s: &char) -> SubStr {
     return SubStr {
         start: s,

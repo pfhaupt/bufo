@@ -1024,7 +1024,7 @@ func generateLLVMValueFromComptimeValue(this: &LLVMCodegen, typ: &Type, start: &
     let size: usize = getSizeInBytes(typ);
     match (typ) {
         &Type::Prim(prim) => {
-            if (isInteger(typ)) {
+            if (isInteger(typ) || isChar(typ)) {
                 // Note: LLVM doesn't care about signedness for integers, that's all handled in the instructions
                 if (size == 1) {
                     let val: u8 = *(start as &u8);

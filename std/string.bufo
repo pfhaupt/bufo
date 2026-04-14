@@ -198,14 +198,14 @@ func pushHex(this: &String, hex: u8) {
 func pushSubStr(this: &String, sub: &SubStr) {
     let newLen = this.length + sub.len;
     if (newLen >= this.capacity) resize(this, newLen + 32);
-    C::memcpy(this.buffer + this.length * sizeof char, sub.start, sub.len);
+    comptimeMemcpy(this.buffer + this.length * sizeof char, sub.start, sub.len);
     this.length = newLen;
 }
 func pushString(this: &String, s: &String) {
     pushSubStr(this, &asSubStr(s));
 }
 func pushStr(this: &String, s: &char) {
-    let _len: usize = C::strlen(s);
+    let _len: usize = comptimeStrlen(s);
     pushSubStr(this, &SubStr { start: s, len: _len });
 }
 func isNumber(this: &String) -> bool {
@@ -284,10 +284,13 @@ func newString() -> String {
 }
 
 func newReadonlyString(s: &char) -> String {
+    return newReadonlyString(s, comptimeStrlen(s));
+}
+func newReadonlyString(s: &char, len: usize) -> String {
     return String {
         buffer: s,
-        length: comptimeStrlen(s),
-        capacity: comptimeStrlen(s),
+        length: len,
+        capacity: len,
     };
 }
 

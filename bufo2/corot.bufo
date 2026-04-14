@@ -87,6 +87,11 @@ union Corot_Result {
     let current_context = get_context(current);
     let next_context = get_context(dep);
 
+    if (!is_active(dep)) {
+        // Waiting on a coroutine that is already done
+        return get_ref(&next_context.results, dep.generation) as Corot_Result;
+    }
+
     // Update context
     current_context.rsp = __get_rsp();
 
@@ -147,7 +152,22 @@ func wait_or_abort(cid: Corot_UUID) {
         *(rsp - 16) = arg as usize;
         rsp = rsp - 80; // we push/pop many registers
     }
-    @os(LINUX) todo_with_msg("prepare stack");
+    @os(LINUX) {
+        // FIXME(2026-04-14): This heap allocation here is very much not ideal.
+        //                    However, I couldn't get this to work otherwise.
+        //                    Passing one argument is fine, but the second broke everything.
+        //                    As per usual wrapping it in a tuple fixed it, so that's
+        //                    the solution I will choose for now :^)
+        //                    You're not gonna call spawn() a bazillion times anyway, right?
+        let kickoff = func (_arg: &(func (Any), Any)) {
+            _arg.0(_arg.1);
+            C::free(_arg);
+            _finish_current(Corot_Result::Success);
+        };
+        *(rsp - 0) = kickoff as Any as usize;
+        *(rsp - 8) = wrap((f, arg)) as usize;
+        rsp = rsp - 56; // we push/pop many registers
+    }
     context.rsp = rsp as &usize;
     context.alive = true;
     cid.generation = context.generation = context.generation + 1;
@@ -185,23 +205,35 @@ func wait_or_abort(cid: Corot_UUID) {
 }
 
 @naked func restore_context(new_rsp: &usize) {
-    @os(WINDOWS) asm(func () -> ASMContext {
+    asm(func () -> ASMContext {
         let context = ASMContext {};
-        push(&context, "mov %rcx, %rsp");
-        push(&context, "pop %r15");
-        push(&context, "pop %r14");
-        push(&context, "pop %r13");
-        push(&context, "pop %r12");
-        push(&context, "pop %rsi");
-        push(&context, "pop %rdi");
-        push(&context, "pop %rbp");
-        push(&context, "pop %rbx");
-        push(&context, "pop %rdx");
-        push(&context, "pop %rcx");
+        context.preallocated = true;
+        @os(WINDOWS) {
+            push(&context, "mov %rcx, %rsp");
+            push(&context, "pop %r15");
+            push(&context, "pop %r14");
+            push(&context, "pop %r13");
+            push(&context, "pop %r12");
+            push(&context, "pop %rsi");
+            push(&context, "pop %rdi");
+            push(&context, "pop %rbp");
+            push(&context, "pop %rbx");
+            push(&context, "pop %rdx");
+            push(&context, "pop %rcx");
+        }
+        @os(LINUX) {
+            push(&context, "mov %rdi, %rsp");
+            push(&context, "pop %r15");
+            push(&context, "pop %r14");
+            push(&context, "pop %r13");
+            push(&context, "pop %r12");
+            push(&context, "pop %rbx");
+            push(&context, "pop %rbp");
+            push(&context, "pop %rdi");
+        }
         push(&context, "ret");
         return context;
     });
-    @os(LINUX) todo_with_msg("restore_context");
 }
 
 func resume_context(id: usize) {
@@ -223,6 +255,7 @@ func resume_context(id: usize) {
 @naked func __get_rsp() -> &usize {
     asm(func () -> ASMContext {
         let context = ASMContext {};
+        context.preallocated = true;
         push(&context, "mov %rsp, %rax");
         push(&context, "ret");
         return context;
@@ -236,23 +269,35 @@ func switch() -> Any {
     return __switch(context);
 }
 @naked func __switch(old_ctx: &Context) -> Any {
-    @os(WINDOWS) asm(func () -> ASMContext {
+    asm(func () -> ASMContext {
         let context = ASMContext {};
-        push(&context, "push %rcx");
-        push(&context, "push %rdx");
-        push(&context, "push %rbx");
-        push(&context, "push %rbp");
-        push(&context, "push %rdi");
-        push(&context, "push %rsi");
-        push(&context, "push %r12");
-        push(&context, "push %r13");
-        push(&context, "push %r14");
-        push(&context, "push %r15");
-        push(&context, "mov %rsp, %rdx");
+        context.preallocated = true;
+        @os(WINDOWS) {
+            push(&context, "push %rcx");
+            push(&context, "push %rdx");
+            push(&context, "push %rbx");
+            push(&context, "push %rbp");
+            push(&context, "push %rdi");
+            push(&context, "push %rsi");
+            push(&context, "push %r12");
+            push(&context, "push %r13");
+            push(&context, "push %r14");
+            push(&context, "push %r15");
+            push(&context, "mov %rsp, %rdx");
+        }
+        @os(LINUX) {
+            push(&context, "push %rdi");
+            push(&context, "push %rbp");
+            push(&context, "push %rbx");
+            push(&context, "push %r12");
+            push(&context, "push %r13");
+            push(&context, "push %r14");
+            push(&context, "push %r15");
+            push(&context, "mov %rsp, %rsi");
+        }
         // FIXME(2026-04-09): DCE removes switch_context because we only call it from assembly
         comptime _ = switch_context;
         push(&context, "jmp switch_context");
         return context;
     });
-    @os(LINUX) todo_with_msg("switch");
 }

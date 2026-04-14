@@ -302,7 +302,13 @@ func findStdAndAddToImports(parser: &Parser) -> bool {
     let s: String = newStringFromStrLit("ld ");
     pushStr(&s, "-dynamic-linker ");
     pushStr(&s, "/lib64/ld-linux-x86-64.so.2 ");
-    pushStr(&s, "/lib64/crt1.o ");
+    if (dirExists("/lib64/crt1.o")) pushStr(&s, "/lib64/crt1.o ");
+    else if (dirExists("/lib/crt1.o")) pushStr(&s, "/lib/crt1.o ");
+    else if (dirExists("/usr/lib/x86_64-linux-gnu/crt1.o")) pushStr(&s, "/usr/lib/x86_64-linux-gnu/crt1.o ");
+    else {
+        C::fprintf(stderr, "%s Could not find crt1.o", FATAL_STR);
+        return false;
+    }
     pushString(&s, flags.out);
     pushStr(&s, ".obj ");
     pushStr(&s, "-lc ");

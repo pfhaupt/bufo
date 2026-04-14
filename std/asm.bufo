@@ -87,11 +87,19 @@ struct ASMContext {
     alignedStack: bool;
     dialect: ASMDialect;
     canThrow: bool;
+    preallocated: bool;
 }
 func getArg(context: &ASMContext, index: usize) -> LLVM::ValueRef {
     return asLLVM(&context.args.elements[index], "ASMContext.getArg");
 }
+comptime preallocated_asmbuf: [char; 1024] = blank;
 func push(context: &ASMContext, code: &char) {
+    if (context.preallocated) {
+        if (context.code.capacity == 0) {
+            context.code = newReadonlyString(&preallocated_asmbuf[0], 1024);
+            context.code.length = 0;
+        }
+    }
     pushStr(&context.code, code);
     pushStr(&context.code, "\n");
 }

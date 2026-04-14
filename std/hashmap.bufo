@@ -208,6 +208,21 @@ func get(this: &GAF_HashMap, key: Data) -> Data {
     unreachable("Load Factor guarantees that there's always at least one unset Entry in the HashMap.");
 }
 
+func index_of(this: &GAF_HashMap, elem: Data) -> usize {
+    assert(contains(this, elem), "index_of: HashMap doesn't contain element");
+    assert(equals(&this.key_type, &elem.info), "GAF_HashMap.get: Key type mismatch");
+    assert(this.capacity > 0);
+    let _hash: usize = this.key_hash_fn(elem) % this.capacity;
+    let stop: usize = _hash - 1;
+    if (_hash == 0) stop = this.capacity - 1;
+    while (_hash != stop) {
+        let (_key, _value) = getAtIndex(this, _hash);
+        if (this.key_equals_fn(_key, elem)) return _hash;
+        _hash = (_hash + 1) % this.capacity;
+    }
+    unreachable("index_of: HashMap contains element but wasnt found");
+}
+
 func getAtIndex(this: &GAF_HashMap, index: usize) -> (Data, Data) {
     assert(index < this.capacity, "Out of bounds access in GAF_HashMap.getAtIndex");
     let key = Data { ptr: (this.keys as &char) + index * this.key_type_size, info: this.key_type };
