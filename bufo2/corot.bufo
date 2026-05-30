@@ -88,6 +88,10 @@ func init_corot_engine() {
     push(&engine.active, Corot_UUID { id: 0 });
 }
 
+func get_corot_count() -> usize {
+    return engine.active.length + engine.dead.length - 1;
+}
+
 func any_active() -> bool {
     return engine.active.length > 1;
 }

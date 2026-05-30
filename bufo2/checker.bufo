@@ -138,6 +138,7 @@ func check_stmt(scopes: &GAF_List, stmt: &AST) -> &Type {
     let &ASTData::Stmt(actual_stmt) = &stmt.data else {
         unreachable("check_stmt: Node is not a statement");
     };
+    if (stmt.type != null) return stmt.type;
     let type: &Type = create_base_type(PrimType::None);
     let f = func (stmt: &AST, scopes: &GAF_List, pat: &AST, expr: &AST, trampoline: &AST) {
         if (expr != null) {
@@ -206,7 +207,9 @@ func check_stmt(scopes: &GAF_List, stmt: &AST) -> &Type {
             type = _type;
         }
         &ASTStmt::Directive(dir) => {
-            type = check_directive(scopes, stmt, dir);
+            let (_type, replaced_node) = check_directive(scopes, stmt, dir);
+            if (replaced_node) return check_stmt(scopes, stmt);
+            type = _type;
         }
         _ => {
             message(todo(stmt.loc, "check_stmt: Can't check stmt % yet", stmt));
@@ -419,14 +422,14 @@ func convert_to_comptime_value_if_possible(scopes: &GAF_List, expr: &AST) -> (Va
     }
 
     let new = create_directive(expr.parent, expr.loc, Directive::Run(expr));
-    let _type = check_directive(scopes, expr, new);
+    let (_type, _) = check_directive(scopes, expr, new);
     let &ASTData::Expr(ASTExpr::ComptimeValue(ct_value)) = &expr.data else {
         unreachable("#run failed to convert expr to ComptimeValue");
     };
     return (ct_value, true);
 }
 
-func check_directive(scopes: &GAF_List, parent: &AST, dir: &AST) -> &Type {
+func check_directive(scopes: &GAF_List, parent: &AST, dir: &AST) -> (&Type, bool) {
     let &ASTData::Directive(directive) = &dir.data else {
         unreachable("check_directive: Node is not a directive");
     };
@@ -434,7 +437,7 @@ func check_directive(scopes: &GAF_List, parent: &AST, dir: &AST) -> &Type {
         Directive::Run(run_expr) => {
             let _type = check_expr(scopes, run_expr);
             // We don't know what `#run <expr>` should return. Must infer.
-            if (_type == null) return null;
+            if (_type == null) return (null, false);
 
             message(dbg(dir.loc, "check_directive: #run expression has type %", to_string(_type)));
 
@@ -463,7 +466,8 @@ func check_directive(scopes: &GAF_List, parent: &AST, dir: &AST) -> &Type {
                 unreachable();
             };
             parent.data = ASTData::Expr(ASTExpr::ComptimeValue(var));
-            return _type;
+            parent.type = _type;
+            return (_type, true);
         }
         Directive::Insert(insert_expr, insert_context) => {
             let _type = check_expr(scopes, insert_expr);
@@ -513,7 +517,7 @@ func check_directive(scopes: &GAF_List, parent: &AST, dir: &AST) -> &Type {
             assert(res != null, "#insert failed to insert new node");
 
             *parent = *res;
-            return insert_context.check_fn(scopes, parent);
+            return (res.type, true);
         }
         _ => {
             message(todo(dir.loc, "check_directive: Exhaustive handling of Directives"));
@@ -770,7 +774,9 @@ func check_expr(scopes: &GAF_List, _expr: &AST) -> &Type {
         &ASTExpr::Blank => { type = null; }
         &ASTExpr::Null => { type = null; }
         &ASTExpr::Directive(dir) => {
-            type = check_directive(scopes, _expr, dir);
+            let (_type, replaced_node) = check_directive(scopes, _expr, dir);
+            if (replaced_node) return check_expr(scopes, _expr);
+            type = _type;
         }
         &ASTExpr::BlockVoid(stmts) => {
             type = check_block(_expr, null);

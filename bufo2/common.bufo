@@ -112,7 +112,11 @@ func message(errors: ...Message) {
             }
             _ => { unreachable("message"); }
         }
-        fprint("% %:%: %\n", corot, loc.file, loc.offset, msg);
+        if (loc.file == null && loc.offset == 0) {
+            fprint("% %\n", corot, msg);
+        } else {
+            fprint("% %:%: %\n", corot, loc.file, loc.offset, msg);
+        }
         drop(&msg);
     }
     drop(&corot);

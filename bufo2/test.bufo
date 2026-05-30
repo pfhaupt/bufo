@@ -1,7 +1,7 @@
 
-struct A { b: B; }
-struct B { f: C; }
-struct C { b: A; }
+//struct A { b: B; }
+//struct B { f: C; }
+//struct C { b: A; }
 
 struct List($T) {
     // Pointer to the heap
@@ -28,7 +28,6 @@ struct List($T) {
 // }
 
 func bar(a: $T, b: $V) {
-    let b: B = blank;
 }
 
 func fun(b: $T, a: *List($T)) {

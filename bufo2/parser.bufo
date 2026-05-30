@@ -21,7 +21,6 @@ import "interp.bufo";
 
 struct Insert_Context {
     parse_fn: func (&Parse_Context) -> (bool, &AST);
-    check_fn: func (&GAF_List, &AST) -> &Type;
     parent: &AST;
     generic_type_mapping: GAF_HashMap; // HashMap<Ident, Type>
 }
@@ -386,7 +385,6 @@ func parse_stmt(context: &Parse_Context) -> (bool, &AST) {
     let old = context.insert_context;
     context.insert_context = Insert_Context {
         parse_fn: parse_stmt,
-        check_fn: check_stmt,
         parent: context.parent,
         generic_type_mapping: context.generic_type_mapping,
     };
@@ -499,7 +497,6 @@ func parse_expr(context: &Parse_Context) -> (bool, &AST) {
     let old = context.insert_context;
     context.insert_context = Insert_Context {
         parse_fn: parse_expr,
-        check_fn: check_expr,
         parent: context.parent,
         generic_type_mapping: context.generic_type_mapping,
     };
@@ -703,10 +700,8 @@ func parse_directive(context: &Parse_Context) -> (bool, &AST) {
                 let name = get_name(&mod);
                 if (equals(&name, &comptime newSubStrOfStrLit("expr"))) {
                     context.insert_context.parse_fn = parse_expr;
-                    context.insert_context.check_fn = check_expr;
                 } else if (equals(&name, &comptime newSubStrOfStrLit("stmt"))) {
                     context.insert_context.parse_fn = parse_stmt;
-                    context.insert_context.check_fn = check_stmt;
                 } else {
                     message(error(new_loc(mod.offset_in_file), "Unknown #insert modifier %.", name));
                 }
