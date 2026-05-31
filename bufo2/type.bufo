@@ -277,6 +277,30 @@ func is_number(t: &Type) -> bool {
     return is_number(pt);
 }
 
+func is_pointer(type: &Type) -> bool {
+    if let BaseType::Ptr(_) = type.base {
+        return true;
+    }
+    return false;
+}
+
+func call_type_matches_function_type(call_type: &Type, function_type: &Type) -> bool {
+    if (call_type == null || function_type == null) return false;
+    if (call_type.meta_level != function_type.meta_level) return false;
+    let (BaseType::Func(args, wanted_ret), BaseType::Func(params, ret_type)) = (call_type.base, function_type.base) else {
+        return false;
+    };
+    if (args.length != params.length) return false;
+    for (let i: usize = 0; i < args.length; i = i + 1) {
+        let arg_type = get_ref(&args, i) as &Type;
+        let par_type = get_ref(&params, i) as &Type;
+        par_type = unwrap_meta_type(par_type, 1);
+        if (!is_convertible_to(arg_type, par_type)) return false;
+    }
+    ret_type = unwrap_meta_type(ret_type, 1);
+    return is_convertible_to(wanted_ret, ret_type);
+}
+
 func is_equal_to(t1: &Type, t2: &Type) -> bool {
     if (t1 == null || t2 == null) return false;
     // A == A
@@ -297,6 +321,17 @@ func is_convertible_to(t1: &Type, t2: &Type) -> bool {
         (&BaseType::Prim(pt1), &BaseType::Prim(pt2)) => { return tag(&pt1) == tag(&pt2); }
         (&BaseType::Struct(s1), &BaseType::Struct(s2)) => { return s1 == s2; }
         (&BaseType::Ptr(p1), &BaseType::Ptr(p2)) => { return is_convertible_to(p1, p2); }
+        (&BaseType::Func(p1, r1), &BaseType::Func(p2, r2)) => {
+            if (p1.length != p2.length) return false;
+            if (!is_convertible_to(r1, r2)) return false;
+            for (let i: usize = 0; i < p1.length; i = i + 1) {
+                let _p1 = get_ref(&p1, i) as &Type;
+                let _p2 = get_ref(&p2, i) as &Type;
+                if (!is_convertible_to(_p1, _p2)) return false;
+            }
+            return true;
+        }
+        (&BaseType::Unknown, _) => { return true; }
         (_, _) => { }
     }
     return false;

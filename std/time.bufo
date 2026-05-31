@@ -1,0 +1,35 @@
+
+import "format.bufo";
+
+@os(WINDOWS) import "./windows.bufo";
+@os(WINDOWS) import "./winapi/structs.bufo";
+@os(WINDOWS) import "./winapi/functions.bufo";
+// @os(LINUX) import "time.bufo doesn't work on Linux yet";
+
+func get_high_resolution_timestamp() -> i64 {
+    @os(WINDOWS) {
+        let time: i64 = 0;
+        let ret = WinAPI::QueryPerformanceCounter(&time);
+        if (failed(ret)) {
+            let err = WinAPI::GetLastError();
+            eprint("get_high_resolution_timestamp: Could not get time: %\n", WinError(err));
+            return -1;
+        }
+        return time;
+    }
+}
+
+func get_duration_between_high_resolution_timestamps_in_microseconds(start: i64, end: i64) -> i64 {
+    @os(WINDOWS) {
+        let freq: i64 = 0;
+        let ret = WinAPI::QueryPerformanceFrequency(&freq);
+        if (failed(ret)) {
+            let err = WinAPI::GetLastError();
+            eprint("get_duration_between_high_resolution_timestamps_in_microseconds: Could not get frequency: %\n", WinError(err));
+            return -1;
+        }
+        let diff = end - start;
+        return (diff * 1000000) / freq;
+    }
+}
+

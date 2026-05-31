@@ -91,6 +91,9 @@ func is_statement(node: &AST) -> bool {
     return false;
 }
 func is_block(node: &AST) -> bool {
+    if let ASTData::Stmt(ASTStmt::Expr(expr)) = node.data {
+        return is_block(expr);
+    }
     if let ASTData::Expr(ASTExpr::BlockVoid(_)) = node.data {
         return true;
     }
@@ -130,7 +133,7 @@ func get_align(node: &AST) -> usize {
     let struct_info = get_struct_info(node);
     let (handler, result) = wait_for_monitor(&struct_info.align_in_bytes);
     handle_corot_result(result,
-        error(node.loc, "Could not get alignment of structure due to a cyclic dependency on %", corot_str(handler)),
+        error(node.loc, "Could not get alignment of structure due to a cyclic dependency on %.", corot_str(handler)),
         error(node.loc, "Could not get alignment of structure. There were errors."));
     return struct_info.align_in_bytes;
 }
@@ -139,7 +142,7 @@ func get_size(node: &AST) -> usize {
     let struct_info = get_struct_info(node);
     let (handler, result) = wait_for_monitor(&struct_info.size_in_bytes);
     handle_corot_result(result,
-        error(node.loc, "Could not get size of structure due to a cyclic dependency on %", corot_str(handler)),
+        error(node.loc, "Could not get size of structure due to a cyclic dependency on %.", corot_str(handler)),
         error(node.loc, "Could not get size of structure. There were errors."));
     return struct_info.size_in_bytes;
 }
@@ -194,6 +197,7 @@ func finalize_function_type(ast: &AST, state: &ASTFunction) {
     assert(ret_type != null, "finalize_function_type: Return type is null");
 
     ast.type = create_base_type(BaseType::Func(params, ret_type));
+    unregister_monitor(&ast.type, Corot_Result::Success);
 }
 
 struct ASTAttr {
@@ -287,17 +291,62 @@ union ASTUnary {
 
 union ASTBinary {
     Equal(&AST, &AST),
+    Plus(&AST, &AST),
+    Minus(&AST, &AST),
+    Mult(&AST, &AST),
+    Div(&AST, &AST),
+    __count,
+}
+
+func binary_expr_to_function_name(bin: ASTBinary) -> SubStr {
+    (comptime assert(tag(&ASTBinary::__count) == 5, "binary_expr_to_function_name: Added more Operands"));
+    match (bin) {
+        ASTBinary::Equal(..) => { return comptime newSubStrOfStrLit("__equals__"); }
+        ASTBinary::Plus(..)  => { return comptime newSubStrOfStrLit("__add__"); }
+        ASTBinary::Minus(..)  => { return comptime newSubStrOfStrLit("__sub__"); }
+        ASTBinary::Mult(..)  => { return comptime newSubStrOfStrLit("__mul__"); }
+        ASTBinary::Div(..)  => { return comptime newSubStrOfStrLit("__div__"); }
+        _ => { }
+    }
+    unreachable("binary_expr_to_function_name");
 }
 
 func binary_expr_from_op(op: Token, lhs: &AST, rhs: &AST) -> ASTExpr {
+    (comptime assert(tag(&ASTBinary::__count) == 5, "binary_expr_from_op: Added more Operands"));
     let bin = ASTBinary::Equal;
     match (op.data) {
-        TokenData::EqualDouble => { bin = ASTBinary::Equal(lhs, rhs); }
-        _ => {
-            message(todo(new_loc(op.offset_in_file), "binary_expr_from_op: Unhandled token %", op.data));
-        }
+        TokenData::EqualDouble    => { bin = ASTBinary::Equal(lhs, rhs); }
+        TokenData::PlusSingle     => { bin = ASTBinary::Plus(lhs, rhs); }
+        TokenData::MinusSingle    => { bin = ASTBinary::Minus(lhs, rhs); }
+        TokenData::AsteriskSingle => { bin = ASTBinary::Mult(lhs, rhs); }
+        TokenData::SlashSingle    => { bin = ASTBinary::Div(lhs, rhs); }
+        _ => { }
     }
     return ASTExpr::Binary(bin);
+}
+
+func extract_operands(bin: ASTBinary, lhs: &&AST, rhs: &&AST) {
+    (comptime assert(tag(&ASTBinary::__count) == 5, "extract_operands: Added more Operands"));
+    match (bin) {
+        ASTBinary::Equal(_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
+        ASTBinary::Plus(_lhs, _rhs)  => { *lhs = _lhs; *rhs = _rhs; }
+        ASTBinary::Minus(_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
+        ASTBinary::Mult(_lhs, _rhs)  => { *lhs = _lhs; *rhs = _rhs; }
+        ASTBinary::Div(_lhs, _rhs)   => { *lhs = _lhs; *rhs = _rhs; }
+        _ => { unreachable("extract_operands"); }
+    }
+}
+
+func is_arithmetic_expr(bin: ASTBinary) -> bool {
+    (comptime assert(tag(&ASTBinary::__count) == 5, "is_arithmetic_expr: Added more Operands"));
+    match (bin) {
+        ASTBinary::Plus(..)  => { return true; }
+        ASTBinary::Minus(..) => { return true; }
+        ASTBinary::Mult(..)  => { return true; }
+        ASTBinary::Div(..)   => { return true; }
+        _ => { }
+    }
+    return false;
 }
 
 func create_node(parent: &AST, loc: Loc, origin: SubStr) -> &AST {
@@ -424,7 +473,9 @@ func __collect_generic_type_mapping(ast: &AST, type: &Type, mapping: &GAF_HashMa
             for (let i: usize = 0; i < args.length; i = i + 1) {
                 let arg = get_ref(&args, i) as &Type;
                 let par = get_ref(&func_state.params, i) as &AST;
-                if (!__collect_generic_type_mapping(par, arg, mapping)) return false;
+                if (!__collect_generic_type_mapping(par, arg, mapping)) {
+                    return false;
+                }
             }
             return true;
         }
@@ -434,8 +485,10 @@ func __collect_generic_type_mapping(ast: &AST, type: &Type, mapping: &GAF_HashMa
         &ASTData::Expr(expr) => {
             match ((expr, type)) {
                 (ASTExpr::BuiltinType { name }, ty) => {
-                    let bt = ast.type;
                     if (is_unknown(ty)) return true;
+                    let bt = ast.type;
+                    message(ass(bt.meta_level != 0, ast.loc, "__collect_generic_type_mapping: Type has no meta level"));
+                    bt = unwrap_meta_type(bt, 1);
                     return is_equal_to(bt, ty);
                 }
                 (ASTExpr::Generic, _) => {
@@ -522,10 +575,12 @@ func collect_generic_type_mapping(fn: &AST, type: &Type) -> (GAF_HashMap, bool, 
 
 func create_function(parent: &AST, loc: Loc, origin: SubStr, name: SubStr) -> &AST {
     let ptr = create_node(parent, loc, origin);
+    let scopes = new_GAF_List(type_info(Scope_Info));
+    reserve_capacity(&scopes, 16);
     ptr.data = ASTData::Function(ASTFunction {
         state: blank,
         name: name,
-        scopes: new_GAF_List(type_info(Scope_Info)),
+        scopes: scopes,
         params: new_GAF_List(type_info(&AST)),
         code: create_code(ptr),
         monomorphized_instances: new_hashmap_with_string_key(type_info(&AST)),

@@ -46,6 +46,13 @@ func foreach(this: &GAF_List, fn: func (Data, Any), arg: Any) {
     }
 }
 
+func reserve_capacity(list: &GAF_List, new_cap: usize) {
+    if (list.capacity >= new_cap) return;
+    list.elements = C::realloc(list.elements, new_cap * list.type_size);
+    assert(list.elements != null, "GAF_List.reserve_capacity: Could not allocate memory");
+    list.capacity = new_cap;
+}
+
 func push(list: &GAF_List, elem: Data) {
     if (!equals(&list.type, &elem.info)) {
         let want = get_name(&list.type);
@@ -58,9 +65,7 @@ func push(list: &GAF_List, elem: Data) {
     if (list.length >= list.capacity) {
         let new_cap: usize = list.capacity * 2;
         if (new_cap == 0) new_cap = 32;
-        list.elements = C::realloc(list.elements, new_cap * list.type_size);
-        assert(list.elements != null, "GAF_List.push: Could not allocate memory");
-        list.capacity = new_cap;
+        reserve_capacity(list, new_cap);
     }
     C::memcpy(list.elements as &usize + list.length * list.type_size, elem.ptr, list.type_size);
     list.length = list.length + 1;

@@ -32,14 +32,20 @@ func new_loc(offset: usize) -> Loc {
 }
 
 union Message {
+    FinalizeError,
     Assert(Loc, String),
     Fatal(Loc, String),
     Todo(Loc, String),
     Error(Loc, String),
     Warning(Loc, String),
     Note(Loc, String),
+    Help(Loc, String),
     Debug(Loc, String),
     IgnoredAssert,
+}
+
+func finalize_error() -> Message {
+    return Message::FinalizeError;
 }
 
 func ass(cond: bool, loc: Loc, fmt: &char, args: ...Data) -> Message {
@@ -69,6 +75,11 @@ func note(loc: Loc, fmt: &char, args: ...Data) -> Message {
     return Message::Note(loc, format1("%: %", NOTE_STR, format1(fmt, args)));
 }
 
+func help(loc: Loc, fmt: &char, args: ...Data) -> Message {
+    comptime HELP_STR: &char = "\x1b[95mhelp\x1b[0m";
+    return Message::Help(loc, format1("%: %", HELP_STR, format1(fmt, args)));
+}
+
 func dbg(loc: Loc, fmt: &char, args: ...Data) -> Message {
     comptime DEBUG_STR: &char = "\x1b[96mDEBUG\x1b[0m";
     return Message::Debug(loc, format1("%: %", DEBUG_STR, format1(fmt, args)));
@@ -90,7 +101,11 @@ func corot_str() -> String {
 }
 
 comptime PRINT_DEBUG = false;
-let error_happened: bool = false;
+let error_happened = false;
+let error_ignored = false;
+func suppress_exit_on_error() {
+    error_ignored = true;
+}
 func message(errors: ...Message) {
     let corot = corot_str();
     let had_error = false;
@@ -99,6 +114,11 @@ func message(errors: ...Message) {
         let loc: Loc = blank;
         let msg: String = blank;
         match (errors[i]) {
+            Message::FinalizeError       => {
+                error_ignored = false;
+                had_error = true;
+                break;
+            }
             Message::Assert (_loc, _msg) => { loc = _loc; msg = _msg; fatal_error = true; }
             Message::IgnoredAssert       => { continue; }
             Message::Fatal  (_loc, _msg) => { loc = _loc; msg = _msg; fatal_error = true; }
@@ -106,6 +126,7 @@ func message(errors: ...Message) {
             Message::Error  (_loc, _msg) => { loc = _loc; msg = _msg; had_error = true; }
             Message::Warning(_loc, _msg) => { loc = _loc; msg = _msg; }
             Message::Note   (_loc, _msg) => { loc = _loc; msg = _msg; }
+            Message::Help   (_loc, _msg) => { loc = _loc; msg = _msg; }
             Message::Debug  (_loc, _msg) => {
                 if (!PRINT_DEBUG) { return; }
                 loc = _loc; msg = _msg;
@@ -124,8 +145,9 @@ func message(errors: ...Message) {
          had_error = true;
          C::exit(2);
     }
-    if (had_error) {
+    if (!error_ignored && had_error) {
         error_happened = true;
         abort_coroutine();
     }
+    error_ignored = false;
 }

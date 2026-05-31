@@ -26,7 +26,8 @@ func new_stack() -> Scope_Info {
 }
 
 func get_variable_by_name(scopes: &GAF_List, name: SubStr) -> (Variable, bool) {
-    for (let i: usize = 0; i < scopes.length; i = i + 1) {
+    for (let _i: usize = 0; _i < scopes.length; _i = _i + 1) {
+        let i = scopes.length - _i - 1;
         let _stack = get_ref_raw(scopes, i) as &Scope_Info;
         let elem = get(&_stack.variables, name);
         if (elem.ptr != null) return (elem as Variable, true);

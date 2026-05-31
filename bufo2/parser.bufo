@@ -128,7 +128,7 @@ func parse_struct_with_mapping(ast: &AST, mapping: GAF_HashMap) -> &AST {
     };
     let cid = spawn(parse_struct_body, wrap(context));
     handle_corot_result(wait(cid),
-        error(ast.loc, "Could not monomorphize struct due to a cyclic dependency on %", corot_str(cid)),
+        error(ast.loc, "Could not monomorphize struct due to a cyclic dependency on %.", corot_str(cid)),
         note(ast.loc, "...while monomorphizing this struct"));
     return ast;
 }
@@ -165,7 +165,7 @@ func parse_struct(_context: &Parse_Context) {
             generic_type_mapping: blank,
         }));
         handle_corot_result(wait(cid),
-            error(struct_node.loc, "Could not parse struct body due to a cyclic dependency on %", corot_str(cid)),
+            error(struct_node.loc, "Could not parse struct body due to a cyclic dependency on %.", corot_str(cid)),
             note(struct_node.loc, "...while parsing this struct body."));
     }
 }
@@ -248,7 +248,7 @@ func parse_function_with_mapping(ast: &AST, mapping: GAF_HashMap) -> &AST {
 
     let cid = spawn(parse_function_signature, wrap(context));
     handle_corot_result(wait(cid),
-        error(ast.loc, "Could not monomorphize function due to a cyclic dependency on %", corot_str(cid)),
+        error(ast.loc, "Could not monomorphize function due to a cyclic dependency on %.", corot_str(cid)),
         note(ast.loc, "...while monomorphizing the function %.", func_state.name));
 
     return ast;
@@ -290,7 +290,7 @@ func parse_function_signature(_context: &Parse_Context) {
             generic_type_mapping: context.generic_type_mapping,
         }));
         handle_corot_result(wait(cid),
-            error(func_node.loc, "Could not parse function body due to a cyclic dependency on %", corot_str(cid)),
+            error(func_node.loc, "Could not parse function body due to a cyclic dependency on %.", corot_str(cid)),
             note(func_node.loc, "...while parsing the body of function %.", func_state.name));
     }
 }
@@ -309,11 +309,11 @@ func parse_parameter(context: &Parse_Context, func_node: &ASTData) {
 
 func parse_function_body(context: &Parse_Context) {
     let func_state = get_func_info(context.parent);
-    assert(func_state.scopes.length == 0, "Function already has scopes");
-    push(&func_state.scopes, new_stack());
-
     register_monitor(&context.parent.type);
     register_monitor(&func_state.block);
+
+    assert(func_state.scopes.length == 0, "Function already has scopes");
+    push(&func_state.scopes, new_stack());
 
     check_function_parameters(func_state);
     check_function_return_type(func_state);
@@ -330,6 +330,7 @@ func parse_function_body(context: &Parse_Context) {
 
     pop(&func_state.scopes);
     assert(func_state.scopes.length == 0, "parse_function_body: Stack not empty");
+
     func_state.state.i = func_state.state.i | FUNCTION_STATE_PARSED_BODY;
     func_state.state.i = func_state.state.i | FUNCTION_STATE_CHECKED_BODY;
     func_state.state.i = func_state.state.i | FUNCTION_STATE_GENERATED_CODE;
@@ -343,6 +344,11 @@ func parse_block(context: &Parse_Context) -> (bool, &AST) {
     let block_expr = context.parent = create_expr(context.parent, loc, blank, ASTExpr::BlockExpr); // dummy block
     let block = new_GAF_List(type_info(&AST));
     let value: &AST = null;
+
+    let fn = get_parent_function(context.parent);
+    let func_state = get_func_info(fn);
+
+    push(&func_state.scopes, new_stack());
 
     let is_generic = false;
     while (!at(&context.lexer, TokenData::CurlyClose)) {
@@ -361,21 +367,36 @@ func parse_block(context: &Parse_Context) -> (bool, &AST) {
             }
             value.parent = context.parent;
         } else {
-            expect(&context.lexer, TokenData::SemiColon);
+            if (!is_block(stmt)) expect(&context.lexer, TokenData::SemiColon);
             push(&block, stmt);
+
+            // let _ = check_stmt(&func_state.scopes, stmt);
+            let cid = spawn(func (arg: Any) {
+                let &(scopes, stmt) = arg as &(&GAF_List, &AST);
+                let _ = check_stmt(scopes, stmt);
+            }, &(&func_state.scopes, stmt));
+
+            handle_corot_result(wait(cid),
+                error(stmt.loc, "Could not type check statement due to a cyclic dependency on %.", corot_str(cid)),
+                error(stmt.loc, "Could not type check this statement. There were errors."),
+            );
+
+            evaluate_comptime_variables(fn);
         }
     }
     expect(&context.lexer, TokenData::CurlyClose);
 
     if (value != null) {
         block_expr.data = ASTData::Expr(ASTExpr::BlockExpr(block, value));
+        block_expr.type = check_expr(&func_state.scopes, value);
     } else {
         block_expr.data = ASTData::Expr(ASTExpr::BlockVoid(block));
+        block_expr.type = create_base_type(PrimType::None);
     }
 
     block_expr.parent = context.parent = old_parent;
 
-    check_block(block_expr, value);
+    pop(&func_state.scopes);
 
     return (is_generic, block_expr);
 }
@@ -546,21 +567,24 @@ func matches_binary_expr(context: &Parse_Context) -> bool {
 }
 func get_binary_precedence(tkn: Token) -> usize {
     (comptime assert(tag(&TokenData::EndOfFile) == 45, "Parser::get_binary_precedence: Added more tokens"));
+    (comptime assert(tag(&ASTBinary::__count) == 5, "get_binary_precedence: Added more Operands"));
     match (tkn.data) {
-        TokenData::KeywordAs       => { return 13; }
-        TokenData::EqualDouble     => { return 8; }
+        TokenData::SlashSingle    => { return 12; }
+        TokenData::AsteriskSingle => { return 12; }
+        TokenData::PlusSingle     => { return 11; }
+        TokenData::MinusSingle    => { return 11; }
+        TokenData::EqualDouble    => { return 8; }
         _ => { }
     }
     message(todo(new_loc(tkn.offset_in_file), "get_binary_precedence: Unhandled tkn %", tkn.data));
     unreachable("get_binary_precedence");
 }
 func get_binary_associativity(tkn: Token) -> Assoc {
-    match (tkn.data) {
-        TokenData::EqualDouble     => { return Assoc::Left; }
-        _ => { }
-    }
-    message(todo(new_loc(tkn.offset_in_file), "get_binary_associativity: Unhandled tkn %", tkn.data));
-    unreachable();
+    (comptime assert(tag(&ASTBinary::__count) == 5, "get_binary_associativity: Added more Operands"));
+    // if let TokenData::EqualSingle = tkn.data {
+    //     return Assoc::Right;
+    // }
+    return Assoc::Left;
 }
 
 func matches_postfix_expr(context: &Parse_Context) -> bool {

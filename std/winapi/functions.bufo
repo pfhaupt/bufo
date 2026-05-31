@@ -86,4 +86,7 @@ module WinAPI {
     @extern @mangle("InitializeSynchronizationBarrier") func InitializeSynchronizationBarrier(lpBarrier: &RTL_Barrier, lTotalThreads: i32, lSpinCount: i32) -> BOOL;
     @extern @mangle("EnterSynchronizationBarrier") func EnterSynchronizationBarrier(lpBarrier: &RTL_Barrier, dwFlags: i32) -> BOOL;
     @extern @mangle("DeleteSynchronizationBarrier") func DeleteSynchronizationBarrier(lpBarrier: &RTL_Barrier) -> BOOL;
+
+    @extern @mangle("QueryPerformanceCounter") func QueryPerformanceCounter(lpPerformanceCount: &i64) -> BOOL;
+    @extern @mangle("QueryPerformanceFrequency") func QueryPerformanceFrequency(lpFrequency: &i64) -> BOOL;
 }

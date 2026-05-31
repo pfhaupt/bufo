@@ -56,8 +56,8 @@ func check_struct(node: &AST) {
 
     struct_info.size_in_bytes = size;
     struct_info.align_in_bytes = align;
-    unregister_monitor(&struct_info.size_in_bytes);
-    unregister_monitor(&struct_info.align_in_bytes);
+    unregister_monitor(&struct_info.size_in_bytes, Corot_Result::Success);
+    unregister_monitor(&struct_info.align_in_bytes, Corot_Result::Success);
 }
 
 func check_function_return_type(func_state: &ASTFunction) {
@@ -105,38 +105,39 @@ func check_block(block: &AST, value: &AST) -> &Type {
     let fn = get_parent_function(block);
     let func_state = get_func_info(fn);
 
-    let scopes = &func_state.scopes;
-    push(scopes, new_stack());
+    push(&func_state.scopes, new_stack());
 
     let stmts = get_statements(&actual_block);
     for (let i: usize = 0; i < stmts.length; i = i + 1) {
-        let s = get_ref(stmts, i) as &AST;
+        let stmt = get_ref(stmts, i) as &AST;
 
+        let _ = check_stmt(&func_state.scopes, stmt);
         let cid = spawn(func (arg: Any) {
-            let &(scopes, s) = arg as &(&GAF_List, &AST);
-            check_stmt(scopes, s);
-        }, &(scopes, s));
+            let &(scopes, stmt) = arg as &(&GAF_List, &AST);
+            let _ = check_stmt(scopes, stmt);
+        }, &(&func_state.scopes, stmt));
 
         handle_corot_result(wait(cid),
-            error(s.loc, "Could not type check statement due to a cyclic dependency on %", corot_str(cid)),
-            note(s.loc, "...while type checking this statement."));
+            error(stmt.loc, "Could not type check statement due to a cyclic dependency on %.", corot_str(cid)),
+            note(stmt.loc, "...while type checking this statement."));
 
         evaluate_comptime_variables(fn);
     }
 
     let type = create_base_type(PrimType::None);
     if (value != null) {
-        type = check_expr(scopes, value);
+        type = check_expr(&func_state.scopes, value);
     }
 
-    pop(scopes);
+    pop(&func_state.scopes);
 
     return type;
 }
 
 func check_stmt(scopes: &GAF_List, stmt: &AST) -> &Type {
     let &ASTData::Stmt(actual_stmt) = &stmt.data else {
-        unreachable("check_stmt: Node is not a statement");
+        message(fatal(stmt.loc, "check_stmt: Node is not a statement"));
+        unreachable();
     };
     if (stmt.type != null) return stmt.type;
     let type: &Type = create_base_type(PrimType::None);
@@ -162,6 +163,12 @@ func check_stmt(scopes: &GAF_List, stmt: &AST) -> &Type {
     match (&actual_stmt) {
         &ASTStmt::Let { pat, expr, trampoline } => {
             f(stmt, scopes, pat, expr, trampoline);
+            if (expr.type == null) {
+                message(error(expr.loc, "Could not infer type of variable."));
+            }
+            if (expr.type.meta_level != 0) {
+                message(error(expr.loc, "The type of a variable defined with `let` cannot be a meta-type, but got %.", to_string(expr.type)));
+            }
         }
         &ASTStmt::Comptime { pat, expr, trampoline } => {
             f(stmt, scopes, pat, expr, trampoline);
@@ -223,10 +230,48 @@ func check_stmt(scopes: &GAF_List, stmt: &AST) -> &Type {
         codegen_stmt(func_state, stmt);
     }, stmt);
     handle_corot_result(wait(cid),
-        error(stmt.loc, "Could not generate the code of this statement due to a cyclic dependency on %", corot_str(cid)),
+        error(stmt.loc, "Could not generate the code of this statement due to a cyclic dependency on %.", corot_str(cid)),
         note(stmt.loc, "...while generating the code for this statement."));
 
     return type;
+}
+
+func infer_type_onto_call(scopes: &GAF_List, ret_type: &Type, _expr: &AST) -> &Type {
+    let &ASTData::Expr(ASTExpr::Call(_base, _args)) = &_expr.data else {
+        unreachable("infer_type_onto_call: Node is not a call");
+    };
+    let args = new_GAF_List(type_info(&Type));
+    for (let i: usize = 0; i < _args.length; i = i + 1) {
+        let arg = get_ref(&_args, i) as &AST;
+        let arg_type = check_expr(scopes, arg);
+        if (arg_type == null) {
+            arg_type = create_base_type(BaseType::Unknown);
+        }
+        push(&args, arg_type);
+    }
+    let fn = create_base_type(BaseType::Func(args, ret_type));
+    let res = infer_type_onto_expr(scopes, fn, _base);
+    if (res == null) {
+        message(todo(_expr.loc, "infer_type_onto_call: Can't infer call"));
+    }
+    let BaseType::Func(params, ret) = res.base else {
+        unreachable("infer_type_onto_call: Inferred non-function onto call");
+    };
+    for (let i: usize = 0; i < _args.length; i = i + 1) {
+        let arg = get_ref(&_args, i) as &AST;
+        let _par = get_ref(&params, i) as &Type;
+        let par = unwrap_meta_type(_par, 1);
+        let arg_type = infer_type_onto_expr(scopes, par, arg);
+        if (arg_type == null) {
+            message(todo(_expr.loc, "infer_type_onto_call: Can't infer call argument"));
+        }
+    }
+    // REVIEW(2026-05-30): Should we expand here?
+    if (expand_function_if_necessary(_expr, _base, &_args)) {
+        // We just replaced a function call with a new block, we don't know anything about it.
+        return null;
+    }
+    return fn;
 }
 
 func infer_type_onto_expr(scopes: &GAF_List, type: &Type, _expr: &AST) -> &Type {
@@ -251,33 +296,7 @@ func infer_type_onto_expr(scopes: &GAF_List, type: &Type, _expr: &AST) -> &Type 
         }
         &ASTExpr::Blank => { },
         &ASTExpr::Call(_base, _args) => {
-            let args = new_GAF_List(type_info(&Type));
-            for (let i: usize = 0; i < _args.length; i = i + 1) {
-                let arg = get_ref(&_args, i) as &AST;
-                let arg_type = check_expr(scopes, arg);
-                if (arg_type == null) {
-                    arg_type = create_base_type(BaseType::Unknown);
-                }
-                push(&args, arg_type);
-            }
-            let fn = create_base_type(BaseType::Func(args, type));
-            let res = infer_type_onto_expr(scopes, fn, _base);
-            if (res == null) {
-                message(todo(_expr.loc, "infer_type_onto_expr: Can't infer call"));
-            }
-            let BaseType::Func(params, ret) = res.base else {
-                unreachable("infer_type_onto_expr: Inferred non-function onto call");
-            };
-            for (let i: usize = 0; i < _args.length; i = i + 1) {
-                let arg = get_ref(&_args, i) as &AST;
-                let _par = get_ref(&params, i) as &Type;
-                let par = unwrap_meta_type(_par, 1);
-                let arg_type = infer_type_onto_expr(scopes, par, arg);
-                if (arg_type == null) {
-                    message(todo(_expr.loc, "infer_type_onto_expr: Can't infer call argument"));
-                }
-            }
-            expand_function_if_necessary(_expr, _base, &_args);
+            type = infer_type_onto_call(scopes, type, _expr);
         }
         _ => {
             message(todo(_expr.loc, "infer_type_onto_expr: Can't infer expression %", expr));
@@ -299,7 +318,7 @@ func check_and_bind_pattern(scopes: &GAF_List, _pat: &AST, _expr: &AST) -> (bool
     match (&pat) {
         &ASTPat::Ident(name) => {
             type = check_expr(scopes, _expr);
-            if (type == null) message(dbg(_expr.loc, "check_and_bind_pattern: % wants infer", name));
+            if (type == null) message(todo(_expr.loc, "check_and_bind_pattern: % wants infer", name));
             let _last = get_ref_raw(scopes, scopes.length - 1) as &Scope_Info;
             if (contains(&_last.variables, _pat.origin)) {
                 message(todo(_pat.loc, "check_and_bind_pattern: Redefinition of identifier"));
@@ -346,60 +365,128 @@ func infer_type_onto_ident(scopes: &GAF_List, infer_type: &Type, ast: &AST, iden
                 type = create_meta_type(1, BaseType::Struct(sl.node));
             } else if (fl != null) {
                 assert(fl.overloads.length != 0, "infer_type_onto_ident: function overloads are empty??");
-                if (infer_type != null) {
-                    let &BaseType::Func(args, ret) = &infer_type.base else {
-                        message(error(ast.loc, "Expected value of type %, but found a function named %.", to_string(infer_type), ident));
-                        unreachable(); // error terminates
-                    };
-                }
-                // Must infer correct overload
-                if (fl.overloads.length != 1) {
-                    if (infer_type == null) return null;
-                    message(todo(ast.loc, "infer_type_onto_ident: Infer correct overload"));
-                }
 
-                // Only one overload, use that
-                let fn = get_ref(&fl.overloads, 0) as &AST;
-                let func_state = get_func_info(fn);
-
-                if (is_generic(func_state)) {
-                    if (infer_type == null) return null;
-                    let &BaseType::Func(args, ret) = &infer_type.base else {
-                        unreachable(); // already handled a few lines above
-                    };
-                    // Not our candidate.
-                    if (func_state.params.length != args.length) return null;
-                    let (mapping, success, unknown) = collect_generic_type_mapping(fn, infer_type);
-                    if (!success) {
-                        if (unknown) {
-                            message(
-                                error(ast.loc, "Could not find an instantation for the function `%` that matches the type %.", func_state.name, to_string(infer_type)),
-                                note(fn.loc, "Function `%` declared here.", func_state.name),
-                                note(ast.loc, "An instantiation would map a generic parameter to an unknown type, which is not allowed. An explicit cast is necessary."),
-                            );
-                        } else {
-                            message(
-                                error(ast.loc, "Could not find an instantation for the function `%` that matches the type %.", func_state.name, to_string(infer_type)),
-                                note(fn.loc, "Function `%` declared here.", func_state.name)
-                            );
-                        }
-                    }
-                    fn = monomorphize_function_node(fn, mapping);
-                    func_state = get_func_info(fn);
-                }
-
-                let Corot_Result::Success = wait_for_monitor(&fn.type).1 else {
-                    message(
-                        error(ast.loc, "Could not resolve type of function. There were errors."),
-                        note(fn.loc, "Function % declared here.", func_state.name));
+                if (infer_type == null) return null;
+                let &BaseType::Func(args, ret) = &infer_type.base else {
+                    message(error(ast.loc, "Expected value of type %, but found a function named %.", to_string(infer_type), ident));
                     unreachable(); // error terminates
                 };
-                assert(fn.type != null, "monitor failed");
+
+                let candidates = new_GAF_List(type_info(&AST));
+                for (let _ga: usize = 0; _ga < 2; _ga = _ga + 1) {
+                    let generics_allowed = _ga != 0;
+                    if (candidates.length > 0) {
+                        // NOTE(2026-05-31): For now we'll choose specializations over generic
+                        //                   functions. That means if there's a `func foo(a: $T)`
+                        //                   and a `func foo(a: i32)`, we will always choose
+                        //                   `foo(i32)`.
+                        break;
+                    }
+                    for (let i: usize = 0; i < fl.overloads.length; i = i + 1) {
+                        let _fn = get_ref(&fl.overloads, i) as &AST;
+                        let func_state = get_func_info(_fn);
+                        if (func_state.params.length != args.length) {
+                            message(dbg(_fn.loc, "Skipping function, parameter count does not match arg count"));
+                            continue;
+                        }
+
+                        if (is_generic(func_state)) {
+                            if (generics_allowed) {
+                                let (mapping, success, unknown) = collect_generic_type_mapping(_fn, infer_type);
+                                if (!success && !unknown) {
+                                    message(dbg(_fn.loc, "Skipping function, could not find generic type mapping"));
+                                    continue;
+                                }
+                                _fn = monomorphize_function_node(_fn, mapping);
+                            } else {
+                                message(dbg(_fn.loc, "Skipping function for now, as it is generic"));
+                                continue;
+                            }
+                        }
+
+                        let (resp, state) = wait_for_monitor(&_fn.type);
+                        match (state) {
+                            Corot_Result::Cycle_Detected => {
+                                message(
+                                    error(ast.loc, "Could not resolve type of function due to a cyclic dependency on %.", corot_str(resp)),
+                                    note(_fn.loc, "Function % declared here.", func_state.name),
+                                );
+                            }
+                            Corot_Result::Fucking_Died => {
+                                message(
+                                    error(ast.loc, "Could not resolve type of function. There were errors."),
+                                    note(_fn.loc, "Function % declared here.", func_state.name),
+                                );
+                            }
+                            _ => { }
+                        }
+                        assert(tag(&state) == comptime tag(&Corot_Result::Success), "We just checked the state");
+                        assert(_fn.type != null, "infer_type_onto_ident: monitor failed");
+
+                        if (call_type_matches_function_type(infer_type, _fn.type)) {
+                            let duplicate = false;
+                            for (let i: usize = 0; i < candidates.length; i = i + 1) {
+                                let cand = get_ref(&candidates, i) as &AST;
+                                if (cand == _fn) {
+                                    duplicate = true;
+                                    break;
+                                }
+                            }
+                            if (!duplicate) push(&candidates, _fn);
+                        }
+                    }
+                }
+                if (candidates.length == 0) {
+                    suppress_exit_on_error();
+                    message(
+                        error(ast.loc, "Could not find overload for call to function %.", ident),
+                        note(ast.loc, "No candidate matches the signature %.", to_string(infer_type)),
+                    );
+                    if (fl.overloads.length == 1) {
+                        message(note(ast.loc, "There is % candidate that could match:", fl.overloads.length));
+                    } else {
+                        message(note(ast.loc, "There are % candidates that could match:", fl.overloads.length));
+                    }
+                    for (let i: usize = 0; i < fl.overloads.length; i = i + 1) {
+                        let _fn = get_ref(&fl.overloads, i) as &AST;
+                        let func_state = get_func_info(_fn);
+                        if (is_generic(func_state)) {
+                            message(note(_fn.loc, "This generic function."));
+                        } else {
+                            message(note(_fn.loc, "This function with signature %.", to_string(_fn.type)));
+                        }
+                    }
+                    message(finalize_error());
+                    unreachable();
+                } else if (candidates.length > 1) {
+                    suppress_exit_on_error();
+                    message(
+                        error(ast.loc, "Found more than one possible overload for call to function %.", ident),
+                        note(ast.loc, "There are % possible overloads.", candidates.length),
+                    );
+                    for (let i: usize = 0; i < candidates.length; i = i + 1) {
+                        let candidate = get_ref(&candidates, i) as &AST;
+                        if (i == 0) {
+                            message(note(candidate.loc, "We could call this function."));
+                        } else {
+                            message(note(candidate.loc, "...or this one."));
+                        }
+                    }
+                    message(finalize_error());
+                }
+                let candidate = get_ref(&candidates, 0) as &AST;
+                message(dbg(ast.loc, "Found a candidate for overload"));
+                message(dbg(candidate.loc, "Candidate is here"));
+
+                let func_state = get_func_info(candidate);
+                message(ass(!is_generic(func_state), ast.loc, "Candidate is still generic"));
+                message(ass(candidate.type != null, ast.loc, "Candidate still has no type"));
 
                 if let &ASTData::Expr(expr) = &ast.data {
-                    ast.data = ASTData::Expr(ASTExpr::FnIdent { name: ident, fn: fn });
+                    ast.data = ASTData::Expr(ASTExpr::FnIdent { name: ident, fn: candidate });
                 }
-                type = fn.type;
+                free(&candidates);
+                type = candidate.type;
             } else {
                 message(error(ast.loc, "Use of undeclared identifier `%`.", ident));
             }
@@ -452,14 +539,14 @@ func check_directive(scopes: &GAF_List, parent: &AST, dir: &AST) -> (&Type, bool
                 start_comptime(&func_state.code);
                 let var_reg = allocate_variable(&func_state.code, run_expr, asSubStr(&_tmp));
                 let (creg, _) = codegen_expr(func_state, run_expr, false);
-                create_instr(&func_state.code, run_expr, Op::Store(var_reg, creg));
+                let _ = create_instr(&func_state.code, run_expr, Op::Store(var_reg, creg));
                 end_comptime(&func_state.code);
 
                 evaluate_comptime_variables(fn);
             }, &(_tmp, fn, func_state, run_expr));
 
             handle_corot_result(wait(cid),
-                error(dir.loc, "Could not #run due to a cyclic dependency on %", corot_str(cid)),
+                error(dir.loc, "Could not #run due to a cyclic dependency on %.", corot_str(cid)),
                 note(dir.loc, "...while evaluating this #run."));
 
             let (var, true) = get_comptime_variable(&func_state.code, _tmp) else {
@@ -512,7 +599,7 @@ func check_directive(scopes: &GAF_List, parent: &AST, dir: &AST) -> (&Type, bool
             let state = wait(new_fn);
             C::free(_tmp);
             handle_corot_result(state,
-                error(dir.loc, "Could not #insert due to a cyclic dependency on %", corot_str(new_fn)),
+                error(dir.loc, "Could not #insert due to a cyclic dependency on %.", corot_str(new_fn)),
                 note(dir.loc, "...while evaluating this #insert."));
             assert(res != null, "#insert failed to insert new node");
 
@@ -570,6 +657,10 @@ func __expand_helper(loc: Loc, parent: &AST, node: &AST, mapping: &GAF_HashMap, 
             if (trampoline != null) new_trampoline = __expand_helper(loc, node, trampoline, mapping, scopes);
             return create_stmt(parent, loc, node.origin, ASTStmt::Let { pat: pat, expr: expr, trampoline: trampoline });
         }
+        ASTData::Stmt(ASTStmt::Expr(expr)) => {
+            let new_expr = __expand_helper(loc, node, expr, mapping, scopes);
+            return create_stmt(parent, loc, node.origin, ASTStmt::Expr(new_expr));
+        }
         // Expressions
         ASTData::Expr(ASTExpr::BlockVoid(stmts)) => {
             let block = new_GAF_List(type_info(&AST));
@@ -584,14 +675,29 @@ func __expand_helper(loc: Loc, parent: &AST, node: &AST, mapping: &GAF_HashMap, 
             bl.data = ASTData::Expr(ASTExpr::BlockVoid(block));
             return bl;
         }
-        ASTData::Expr(ASTExpr::BuiltinType { name }) => {
-            return create_expr(parent, loc, node.origin, ASTExpr::BuiltinType { name: name });
+        ASTData::Expr(ASTExpr::Call(base, args)) => {
+            let new_args = new_GAF_List(type_info(&AST));
+            let new_call = create_expr(parent, loc, node.origin, ASTExpr::Call);
+            let new_base = __expand_helper(loc, new_call, base, mapping, scopes);
+            for (let i: usize = 0; i < args.length; i = i + 1) {
+                let a = get_ref(&args, i) as &AST;
+                let new = __expand_helper(loc, new_call, a, mapping, scopes);
+                push(&new_args, new);
+            }
+            new_call.data = ASTData::Expr(ASTExpr::Call(new_base, new_args));
+            return new_call;
+        }
+        ASTData::Expr(ASTExpr::Number { value }) => {
+            return create_expr(parent, loc, node.origin, ASTExpr::Number { value: value });
         }
         ASTData::Expr(ASTExpr::StringLiteral { value }) => {
             return create_expr(parent, loc, node.origin, ASTExpr::StringLiteral { value: value });
         }
         ASTData::Expr(ASTExpr::BuiltinType { name }) => {
             return create_expr(parent, loc, node.origin, ASTExpr::BuiltinType { name: name });
+        }
+        ASTData::Expr(ASTExpr::FnIdent { name, fn }) => {
+            return create_expr(parent, loc, node.origin, ASTExpr::FnIdent { name: name, fn: fn });
         }
         ASTData::Expr(ASTExpr::Ident { name }) => {
             let last = get_ref_raw(scopes, scopes.length - 1) as &Scope_Info;
@@ -630,21 +736,36 @@ func __expand_helper(loc: Loc, parent: &AST, node: &AST, mapping: &GAF_HashMap, 
     unreachable("__expand_helper");
 }
 
-func expand_function_if_necessary(expr: &AST, base: &AST, args: &GAF_List) {
+func expand_function_if_necessary(expr: &AST, base: &AST, args: &GAF_List) -> bool {
     let &ASTData::Expr(ASTExpr::FnIdent { name, fn }) = &base.data else {
-        return; // Not a function
+        return false; // Not a function
     };
-    if (!has_attribute(fn, ASTAttrData::Expand)) return;
+    if (!has_attribute(fn, ASTAttrData::Expand)) return false;
     let func_info = get_func_info(fn);
     assert(func_info.params.length == args.length, "expand_function_if_necessary: length mismatch");
 
-    let Corot_Result::Success = wait_for_monitor(&func_info.block).1 else {
-        message(
-            error(expr.loc, "Could not expand call to function %. There were errors.", func_info.name),
-            note(fn.loc, "Function % declared here.", func_info.name));
-        unreachable(); // error terminates
+    let (resp, state) = wait_for_monitor(&func_info.block);
+    let Corot_Result::Success = state else {
+        suppress_exit_on_error();
+        match (state) {
+            Corot_Result::Cycle_Detected => {
+                message(
+                    error(expr.loc, "Could not expand call to function % due to a cyclic dependency on %.", func_info.name, corot_str(resp)),
+                    note(fn.loc, "Function % declared here.", func_info.name),
+                    help(fn.loc, "Did you call %() in another function marked `@expand`?", func_info.name),
+                );
+            }
+            Corot_Result::Fucking_Died => {
+                message(
+                    error(expr.loc, "Could not expand call to function %. There were errors.", func_info.name),
+                    note(fn.loc, "Function % declared here.", func_info.name),
+                );
+            }
+            _ => { }
+        }
+        _finish_current(state);
     };
-    assert(func_info.block != null, "monitor failed");
+    assert(func_info.block != null, "expand_function_if_necessary: monitor failed");
 
     let new_block = new_GAF_List(type_info(&AST));
     let new_block_ast = create_expr(expr.parent, expr.loc, expr.origin, ASTExpr::BlockExpr); // dummy node
@@ -653,10 +774,10 @@ func expand_function_if_necessary(expr: &AST, base: &AST, args: &GAF_List) {
     for (let i: usize = 0; i < args.length; i = i + 1) {
         let arg = get_ref(args, i) as &AST;
         let par = get_ref(&func_info.params, i) as &AST;
-        let name = par.origin;
+        let par_name = par.origin;
 
         // Create a temporary variable and assign the argument to it.
-        let new_name = format1(".expanded.%.%", name, arg);
+        let new_name = format1(".expanded.%.%", par_name, arg);
         let _n = asSubStr(&new_name);
         let pat_id = create_pattern(new_block_ast, expr.loc, blank, ASTPat::Ident(_n));
         let assign = create_stmt(new_block_ast, expr.loc, blank, ASTStmt::Let {
@@ -665,8 +786,8 @@ func expand_function_if_necessary(expr: &AST, base: &AST, args: &GAF_List) {
             trampoline: null
         });
 
-        message(dbg(expr.loc, "#expand: Added mapping % => %", name, new_name));
-        add(&mapping, name, new_name);
+        message(dbg(expr.loc, "#expand: Added mapping % => %", par_name, new_name));
+        add(&mapping, par_name, new_name);
         push(&new_block, assign);
     }
 
@@ -688,18 +809,21 @@ func expand_function_if_necessary(expr: &AST, base: &AST, args: &GAF_List) {
         // Update the call site.
         call.data = ASTData::Expr(ASTExpr::BlockVoid(new_block));
         call.type = null;
-        check_block(call, null);
+        let _ = check_block(call, null);
     }, &(expr, fn, func_info, &mapping, new_block));
 
     handle_corot_result(wait(cid),
-        error(expr.loc, "Could not expand function due to a cyclic dependency on %", corot_str(cid)),
+        error(expr.loc, "Could not expand function due to a cyclic dependency on %.", corot_str(cid)),
         note(expr.loc, "...while expanding this function call."));
+
+    return true;
 }
 
 func check_expr(scopes: &GAF_List, _expr: &AST) -> &Type {
     if (_expr.type != null) return _expr.type;
     let &ASTData::Expr(expr) = &_expr.data else {
-        unreachable("check_expr: Node is not an expression");
+        message(fatal(_expr.loc, "check_expr: Node is not an expression: %", _expr.data));
+        unreachable();
     };
     let type: &Type = null;
     match (&expr) {
@@ -708,6 +832,10 @@ func check_expr(scopes: &GAF_List, _expr: &AST) -> &Type {
         }
         &ASTExpr::BuiltinType { name } => {
             type = get_builtin_type(name);
+        }
+        &ASTExpr::FnIdent { name, fn } => {
+            message(ass(fn.type != null, _expr.loc, "FnIdent function type is null"));
+            type = fn.type;
         }
         &ASTExpr::Ident { name } => {
             type = infer_type_onto_ident(scopes, null, _expr, name);
@@ -730,6 +858,19 @@ func check_expr(scopes: &GAF_List, _expr: &AST) -> &Type {
         }
         &ASTExpr::Call(_base, _args) => {
             let base = check_expr(scopes, _base);
+            if (base == null) {
+                // base may be null because of function overloading,
+                // however we already have some information at this point:
+                // The arguments of the call. We may not know all of them,
+                // and we don't even know what we expect, but we can still try
+                // to get a candidate here.
+                let ret_type = create_base_type(BaseType::Unknown);
+                let _fn_type = infer_type_onto_call(scopes, ret_type, _expr);
+                // Still nothing, we have to retry later.
+                if (_fn_type == null) return null;
+                message(ass(_base.type != null, _expr.loc, "check_expr: infer_type_onto_call success but base type null"));
+                base = _base.type;
+            }
             if (base == null) return null;
             match (&base.base) {
                 &BaseType::Func(params, ret) => {
@@ -833,31 +974,33 @@ func check_binary_expr(scopes: &GAF_List, expr: &AST) -> &Type {
         unreachable("check_binary_expr: Node is not a binary");
     };
     let type: &Type = null;
-    match (&bin) {
-        &ASTBinary::Equal(_lhs, _rhs) => {
-            let lhs = check_expr(scopes, _lhs);
-            let rhs = check_expr(scopes, _rhs);
-            match ((lhs, rhs)) {
-                (null, null) => {
-                    message(todo(expr.loc, "check_binary_expr: both null"));
-                }
-                (null, rhs) => {
-                    lhs = infer_type_onto_expr(scopes, rhs, _lhs);
-                    message(todo(expr.loc, "check_binary_expr: lhs null"));
-                }
-                (lhs, null) => {
-                    rhs = infer_type_onto_expr(scopes, lhs, _rhs);
-                    message(todo(expr.loc, "check_binary_expr: rhs null"));
-                }
-                (lhs, rhs) => {
-                    message(todo(expr.loc, "check_binary_expr: both given"));
-                }
-            }
-            message(todo(expr.loc, "check_binary_expr: Can't check expression"));
-        }
-        _ => {
-            message(todo(expr.loc, "check_binary_expr: Can't check expression %", bin));
-        }
+    if (is_arithmetic_expr(bin)) {
+        type = check_arithmetic_expr(scopes, expr, bin);
+    } else {
+        message(todo(expr.loc, "check_binary_expr: Can't check expression %", bin));
     }
     return type;
+}
+
+func check_arithmetic_expr(scopes: &GAF_List, expr: &AST, bin: ASTBinary) -> &Type {
+    message(ass(is_arithmetic_expr(bin), expr.loc, "Expr expected to be arithmetic"));
+    let lhs: &AST = null;
+    let rhs: &AST = null;
+    extract_operands(bin, &lhs, &rhs);
+    let lhs_type = check_expr(scopes, lhs);
+    let rhs_type = check_expr(scopes, rhs);
+    match ((lhs_type, rhs_type)) {
+        (null, null) => { return null; } // Worst case, must infer everything
+        (null, rhs_) => { lhs_type = infer_type_onto_expr(scopes, rhs_, lhs); }
+        (lhs_, null) => { rhs_type = infer_type_onto_expr(scopes, lhs_, rhs); }
+        (lhs_, rhs_) => { } // No inference necessary
+    }
+    let args = new_GAF_List(type_info(&AST));
+    push(&args, lhs);
+    push(&args, rhs);
+    let name = binary_expr_to_function_name(bin);
+    let _base = create_expr(expr.parent, expr.loc, name, ASTExpr::Ident { name: name });
+    message(dbg(expr.loc, "Replacing bin expr with %(%, %)", name, to_string(lhs_type), to_string(rhs_type)));
+    expr.data = ASTData::Expr(ASTExpr::Call(_base, args));
+    return check_expr(scopes, expr);
 }

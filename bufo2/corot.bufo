@@ -56,10 +56,21 @@ func new_context() -> Context {
     return context;
 }
 
-// FIXME(2026-04-14): Using linear lookup here is not ideal.
 struct Corot_Monitor {
-    addresses: GAF_List;  // List<Any>
-    coroutines: GAF_List; // List<Corot_UUID>
+    address: Any;
+    responsible_coroutine: Corot_UUID;
+    result: Corot_Result;
+    waiting_list: GAF_List; // List<Corot_UUID>
+}
+
+func new_monitor(addr: Any) -> Corot_Monitor {
+    let monitor = Corot_Monitor {
+        address: addr,
+        responsible_coroutine: corot_id(),
+        result: Corot_Result::Pending,
+        waiting_list: new_GAF_List(type_info(Corot_UUID)),
+    };
+    return monitor;
 }
 
 struct Corot_Engine {
@@ -67,7 +78,8 @@ struct Corot_Engine {
     active: GAF_List;   // List<Corot_UUID>
     dead: GAF_List;     // List<Corot_UUID>
     current: usize;
-    monitor: Corot_Monitor;
+    // FIXME(2026-04-14): Using linear lookup here is not ideal.
+    monitors: GAF_List;  // List<Corot_Monitor>
 }
 
 let engine: Corot_Engine = blank;
@@ -79,10 +91,7 @@ func init_corot_engine() {
         active: new_GAF_List(type_info(Corot_UUID)),
         dead: new_GAF_List(type_info(Corot_UUID)),
         current: 0,
-        monitor: Corot_Monitor {
-            addresses: new_GAF_List(type_info(Any)),
-            coroutines: new_GAF_List(type_info(Corot_UUID)),
-        },
+        monitors: new_GAF_List(type_info(Corot_Monitor)),
     };
     push(&engine.contexts, new_context());
     push(&engine.active, Corot_UUID { id: 0 });
@@ -96,37 +105,56 @@ func any_active() -> bool {
     return engine.active.length > 1;
 }
 
-func register_monitor(arg: Any) {
-    let cid = corot_id();
-    let len = engine.monitor.addresses.length;
-    push(&engine.monitor.addresses, arg);
-    push(&engine.monitor.coroutines, cid);
-    message(dbg(blank, "Registered coroutine % for address %", cid, arg));
-}
-
-func is_monitored(arg: Any) -> (bool, Corot_UUID) {
-    for (let i: usize = 0; i < engine.monitor.addresses.length; i = i + 1) {
-        let e = get_ref(&engine.monitor.addresses, i) as Any;
-        if (e == arg) {
-            let id = get_ref(&engine.monitor.coroutines, i) as Corot_UUID;
-            return (true, id);
-        }
-    }
-    return (false, blank);
-}
-
-func unregister_monitor(arg: Any) {
-    for (let i: usize = 0; i < engine.monitor.addresses.length; i = i + 1) {
-        let e = get_ref(&engine.monitor.addresses, i) as Any;
-        if (e == arg) {
-            let cid = get_ref(&engine.monitor.coroutines, i) as Corot_UUID;
-            message(dbg(blank, "Unregistered coroutine % for address %", cid, arg));
-            swap_remove(&engine.monitor.addresses, i);
-            swap_remove(&engine.monitor.coroutines, i);
+func register_monitor(addr: Any) {
+    for (let i: usize = 0; i < engine.monitors.length; i = i + 1) {
+        let monitor = get_ref_raw(&engine.monitors, i) as &Corot_Monitor;
+        if (monitor.address == addr) {
+            monitor.responsible_coroutine = corot_id();
+            monitor.result = Corot_Result::Pending;
             return;
         }
     }
-    message(fatal(blank, "unregister_monitor: % wasn't registered", arg));
+
+    let monitor = new_monitor(addr);
+    push(&engine.monitors, monitor);
+}
+
+func get_monitor_for_addr(addr: Any) -> (bool, &Corot_Monitor) {
+    for (let i: usize = 0; i < engine.monitors.length; i = i + 1) {
+        let monitor = get_ref_raw(&engine.monitors, i) as &Corot_Monitor;
+        if (monitor.address == addr) {
+            return (true, monitor);
+        }
+    }
+    return (false, null);
+}
+
+func get_or_create_monitor_for_addr(addr: Any) -> (bool, &Corot_Monitor) {
+    if let (true, monitor) = get_monitor_for_addr(addr) {
+        return (false, monitor);
+    }
+    register_monitor(addr);
+    return (true, get_ref_raw(&engine.monitors, engine.monitors.length - 1));
+}
+
+func unregister_monitor(arg: Any, res: Corot_Result) {
+    let found = false;
+    for (let i: usize = 0; i < engine.monitors.length; i = i + 1) {
+        let monitor = get_ref_raw(&engine.monitors, i) as &Corot_Monitor;
+        let Corot_Result::Pending = monitor.result else {
+            continue;
+        };
+        if (monitor.address == arg) {
+            monitor.result = res;
+            for (let j: usize = 0; j < monitor.waiting_list.length; j = j + 1) {
+                let w = get_ref(&monitor.waiting_list, j) as Corot_UUID;
+                push(&engine.active, w);
+            }
+            monitor.waiting_list.length = 0;
+            found = true;
+        }
+    }
+    message(ass(found, blank, "unregister_monitor: % wasn't registered", arg));
 }
 
 union Corot_Result {
@@ -136,27 +164,17 @@ union Corot_Result {
     Success,
 }
 
-@nodiscard func wait_for_monitor(arg: Any) -> (Corot_UUID, Corot_Result) {
-    // TODO(2026-04-14): Ideally this function shouldn't call is_monitored() three times
-    //                   and ideally it also shouldn't switch() twice. However, it works
-    //                   for now. One problem is that is_monitored() might fail because
-    //                   register_monitor() may not have been called by the other coroutine
-    //                   yet.
-    //                   In an ideal world we could also remove the current coroutine from
-    //                   the active list, and only add it back when the other coroutine
-    //                   unregistered the monitor.
-    if let (true, id) = is_monitored(arg) {
-        return (id, wait(id));
+@nodiscard func wait_for_monitor(addr: Any) -> (Corot_UUID, Corot_Result) {
+    while let (false, monitor) = get_monitor_for_addr(addr) {
+        switch();
     }
-    switch();
-    if let (true, id) = is_monitored(arg) {
-        return (id, wait(id));
-    }
-    switch();
-    if let (true, id) = is_monitored(arg) {
-        message(fatal(blank, "wait_for_monitor: monitor for % is still active", arg));
-    }
-    return (corot_id(), Corot_Result::Success);
+    let (is_new, monitor) = get_or_create_monitor_for_addr(addr);
+    assert(!is_new, "wait_for_monitor: we waited for one to appear");
+    let Corot_Result::Pending = monitor.result else {
+        return (monitor.responsible_coroutine, monitor.result);
+    };
+    let id = monitor.responsible_coroutine;
+    return (id, wait(id));
 }
 
 @nodiscard func wait(dep: Corot_UUID) -> Corot_Result {
@@ -271,12 +289,14 @@ func wait_or_abort(cid: Corot_UUID) {
     }
     context.waiting_list.length = 0;
 
-    for (let _i: usize = 0; _i < engine.monitor.coroutines.length; _i = _i + 1) {
-        let i = engine.monitor.coroutines.length - _i - 1;
-        let ct = get_ref(&engine.monitor.coroutines, i) as Corot_UUID;
+    for (let _i: usize = 0; _i < engine.monitors.length; _i = _i + 1) {
+        let i = engine.monitors.length - _i - 1;
+        let monitor = get_ref_raw(&engine.monitors, i) as &Corot_Monitor;
+        let ct = monitor.responsible_coroutine;
         if (ct.id == cid.id && ct.generation == cid.generation) {
-            let addr = get_ref(&engine.monitor.addresses, i) as Any;
-            unregister_monitor(addr);
+            if let Corot_Result::Pending = monitor.result {
+                unregister_monitor(monitor.address, wr);
+            }
         }
     }
 

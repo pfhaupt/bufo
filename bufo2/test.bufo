@@ -1,7 +1,7 @@
 
-//struct A { b: B; }
-//struct B { f: C; }
-//struct C { b: A; }
+// struct A { b: B; }
+// struct B { f: C; }
+// struct C { b: A; }
 
 struct List($T) {
     // Pointer to the heap
@@ -76,17 +76,62 @@ func main() {
     comptime list_of_list_of_i32 = List(List(i32));
     comptime foo = "let bar: i32 = 1";
     let list: list_of_i32 = blank;
-    let list_of_list: list_of_list_of_i32 = blank;
-    let real_list: List(i32) = blank;
-    let s: i32 = #run {
-        #insert,expr #run get_code()
-    };
-    bar(s, list);
-    bar(list, s);
-    fun(123, &list);
-    fun(real_list, &list_of_list);
-    #insert "push(&list, s);";
-    #insert foo;                 // let bar = 1;
-    #insert "push(&list, bar);"; // push(&list, bar);
-    #insert #run push_elem();    // push(&list, 123);
+    {
+        let list_of_list: list_of_list_of_i32 = blank;
+        let real_list: List(i32) = blank;
+        let s: i32 = #run {
+            #insert,expr #run get_code()
+        };
+        bar(s, list);
+        bar(list, s);
+        fun(123, &list);
+        fun(real_list, &list_of_list);
+        #insert "push(&list, s);";
+        #insert foo;                 // let bar = 1;
+        #insert "push(&list, bar);"; // push(&list, bar);
+        #insert #run push_elem();    // push(&list, 123);
+    }
+
+    {
+        let s1: i32 = 123;
+        let s2 = "123";
+        let s3: List(i32) = blank;
+        let s4: bool = blank;
+        let _s1 /* : i32       */ = s1 + s1;
+        let _s2 /* : str       */ = s1 + s2;
+        let _s3 /* : List(str) */ = s1 + s3;
+        let _s4 /* : List(i32) */ = s3 + s1;
+        let _s5 /* : i32       */ = s3 + s3;
+        let _s6 /* : bool      */ = s1 + s4;
+
+        let _s7 = s1 - s1;
+
+        let l1: List(i32) = blank;
+        let l2: List(i32) = blank;
+        let l3: List(List(i32)) = blank;
+        let l4: List(List(i32)) = blank;
+        let _l1 /* : i32       */ = l1 + l2;
+        let _l2 /* : List(i32) */ = l3 + l4;
+    }
+}
+
+func __sub__(a: i32, b: i32) -> i32 {
+}
+
+func __add__(a: i32, b: bool) -> bool {
+}
+
+func __add__(a: i32, b: str) -> str {
+}
+
+func __add__(a: List(i32), b: i32) -> List(i32) {
+}
+
+func __add__(a: i32, b: List(i32)) -> List(str) {
+}
+
+func __add__(l1: List($T), l2: List($T)) -> $T {
+}
+
+func __add__(a: i32, b: i32) -> i32 {
 }
