@@ -137,6 +137,9 @@ func get_or_create_monitor_for_addr(addr: Any) -> (bool, &Corot_Monitor) {
     return (true, get_ref_raw(&engine.monitors, engine.monitors.length - 1));
 }
 
+func unregister_monitor(arg: Any) {
+    unregister_monitor(arg, Corot_Result::Success);
+}
 func unregister_monitor(arg: Any, res: Corot_Result) {
     let found = false;
     for (let i: usize = 0; i < engine.monitors.length; i = i + 1) {
@@ -209,8 +212,10 @@ union Corot_Result {
     __switch(current_context);
     // If control ever returns here, the function has been removed from the waiting list
 
+    current_context = get_context(current);
     current_context.waiting_for = blank;
 
+    next_context = get_context(dep);
     return get_ref(&next_context.results, dep.generation) as Corot_Result;
 }
 

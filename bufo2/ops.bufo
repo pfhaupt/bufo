@@ -1,0 +1,90 @@
+
+func __lte__(a: $T, b: $T) -> bool @naked {
+    comptime ty = $T;
+    #bir {
+        entry:
+        param ty r0, 1;
+        param ty r1, 0;
+        lte  bool r2, r1, r0;
+        ret  bool r2;
+    };
+}
+
+func __gte__(a: $T, b: $T) -> bool @naked {
+    comptime ty = $T;
+    #bir {
+        entry:
+        param ty r0, 1;
+        param ty r1, 0;
+        gte  bool r2, r1, r0;
+        ret  bool r2;
+    };
+}
+
+func __mul__(a: $T, b: $T) -> $T @naked {
+    comptime ty = $T;
+    #bir {
+        entry:
+        param ty r0, 1;
+        param ty r1, 0;
+        mul   ty r2, r1, r0;
+        ret   ty r2;
+    };
+}
+
+func __assign__(a: *$T, b: $T) -> $T @naked {
+    comptime ty = $T;
+    #bir {
+        entry:
+        param  ty r0, 1;
+        param *ty r1, 0;
+        store  ty r1, r0;
+        ret    ty r0;
+    };
+}
+
+func __plus_assign__(a: *$T, b: $T) -> $T @naked {
+    comptime ty = $T;
+    #bir {
+        entry:
+        param ty r0, 1;
+        param *ty r1, 0;
+        load  ty r2, r1;
+        add   ty r3, r2, r0;
+        store ty r1, r3;
+        ret   ty r3;
+    };
+}
+
+func __equals__(a: $T, b: $T) -> bool @naked {
+    comptime ty = $T;
+    #bir {
+        entry:
+        param ty r0, 1;
+        param ty r1, 0;
+        eq   bool r2, r0, r1;
+        ret  bool r2;
+    };
+}
+
+func __sub__(a: $T, b: $T) -> $T @naked {
+    comptime ty = $T;
+    #bir {
+        entry:
+        param ty r1, 1;
+        param ty r0, 0;
+        sub   ty r2, r0, r1;
+        ret   ty r2;
+    };
+}
+
+func __add__(a: $T, b: $T) -> $T @naked {
+    comptime ty = $T;
+    #bir {
+        entry:
+        param ty r1, 1;
+        param ty r0, 0;
+        add   ty r2, r0, r1;
+        ret   ty r2;
+    };
+}

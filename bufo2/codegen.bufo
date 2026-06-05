@@ -11,6 +11,8 @@ import "ast.bufo";
 import "common.bufo";
 import "type.bufo";
 import "interp.bufo";
+import "lexer.bufo";
+import "lookup.bufo";
 
 struct BID { _i: usize; }
 struct Reg { _i: usize; offset: usize; size: usize; }
@@ -23,7 +25,7 @@ struct Code {
     owner: &AST; // Function the Code belongs to
     runtime: Code_Context;
     komptime: Code_Context;
-    comptime_variables: GAF_HashMap; // HashMap<String, Value>
+    comptime_variables: GAF_HashMap; // HashMap<SubStr, Value>
     comptime_level: usize;
     comptime_interp: Interp;
 }
@@ -35,12 +37,6 @@ func end_comptime(code: &Code) {
     code.comptime_level = code.comptime_level - 1;
 }
 func get_comptime_variable(code: &Code, name: SubStr) -> (Value, bool) {
-    let _name = toString(&name);
-    let val = get_comptime_variable(code, _name);
-    drop(&_name);
-    return val;
-}
-func get_comptime_variable(code: &Code, name: String) -> (Value, bool) {
     let val = get(&code.comptime_variables, name);
     if (val.ptr == null) return (Value::Invalid, false);
     return (val as Value, true);
@@ -51,7 +47,7 @@ func create_code(owner: &AST) -> Code {
         owner: owner,
         runtime: create_code_context(),
         komptime: create_code_context(),
-        comptime_variables: new_hashmap_with_string_key(type_info(Value)),
+        comptime_variables: new_hashmap_with_substr_key(type_info(Value)),
     };
 }
 
@@ -74,13 +70,8 @@ func set_current_block(code: &Code, id: BID) {
 func allocate_register(code: &Code, type: &Type) -> Reg {
     return allocate_register(get_context(code), type);
 }
-func create_instr(code: &Code, orig: &AST, op: Op) -> Instr {
-    if (code.comptime_level > 0) {
-        message(dbg(orig.loc, "create_instr: \x1b[92mcomptime\x1b[0m %", op));
-    } else {
-        message(dbg(orig.loc, "create_instr: %", op));
-    }
-    return create_instr(get_context(code), orig, op);
+func create_instr(code: &Code, loc: Loc, type: &Type, op: Op) -> Instr {
+    return create_instr(get_context(code), loc, type, op);
 }
 func create_block(code: &Code, name: String) -> Block {
     message(dbg(code.owner.loc, "create_block: Generated %", name));
@@ -95,10 +86,18 @@ struct Code_Context {
     return_register: Reg;
     register_count: usize;
     total_register_size: usize;
-    variable_map: GAF_HashMap; // HashMap<String, Var>
+    variable_map: GAF_HashMap; // HashMap<SubStr, Var>
+    alloca_counter: usize;
 }
 
 func reset(cc: &Code_Context) {
+    free(&cc.blocks);
+    cc.blocks = new_GAF_List(type_info(Block));
+    cc.entry = create_block(cc, comptime newReadonlyString("entry")).id;
+    set_current_block(cc, cc.entry);
+    // cc.return_register = blank;
+    // cc.return_block = blank;
+    cc.alloca_counter = 0;
     cc.register_count = 0;
     cc.total_register_size = 0;
     reset(&cc.variable_map);
@@ -129,14 +128,23 @@ func allocate_register(cc: &Code_Context, size: usize) -> Reg {
     return reg;
 }
 
-func allocate_variable(code: &Code, node: &AST, name: SubStr) -> Reg {
+func allocate_variable(code: &Code, loc: Loc, type: &Type, name: SubStr) -> Reg {
     let cc = get_context(code);
     let curr = get_current_block(cc);
     set_current_block(cc, cc.entry);
 
-    let _ptr = create_base_type(BaseType::Ptr(node.type));
-    let var = allocate_register(code, _ptr);
-    create_instr(code, node, Op::Alloca(var, toString(&name)));
+    let _ptr = create_base_type(BaseType::Ptr(type));
+    let var = allocate_register(cc, comptime get_size(BaseType::Ptr));
+    let alloca = Instr {
+        id: cc.alloca_counter,
+        loc: loc,
+        type: type,
+        op: Op::Alloca(var, name),
+    };
+    let block = get_current_block(cc);
+    insert_at_index(&block.ir, cc.alloca_counter, alloca);
+    cc.alloca_counter = cc.alloca_counter + 1;
+
     add(&cc.variable_map, name, Var {
         alloca_reg: var
     });
@@ -170,15 +178,17 @@ func is_terminated(block: &Block) -> bool {
 
 struct Instr {
     id: usize;
-    ast: &AST;
+    loc: Loc;
+    type: &Type;
     op: Op;
 }
 
-func create_instr(cc: &Code_Context, orig: &AST, op: Op) -> Instr {
+func create_instr(cc: &Code_Context, loc: Loc, type: &Type, op: Op) -> Instr {
     let block = get_current_block(cc);
     let instr = Instr {
         id: block.ir.length,
-        ast: orig,
+        loc: loc,
+        type: type,
         op: op,
     };
     push(&block.ir, instr);
@@ -186,54 +196,227 @@ func create_instr(cc: &Code_Context, orig: &AST, op: Op) -> Instr {
 }
 
 func is_terminator(instr: &Instr) -> bool {
-    (comptime assert(tag(&Op::__count) == 16, "is_terminator: Op was added"));
+    (comptime assert(tag(&Op::__count) == 25, "is_terminator: Op was added"));
     match (instr.op) {
-        Op::ReturnVoid => { return true; }
-        Op::Return(_)  => { return true; }
-        Op::Jump(_)    => { return true; }
-        _              => { }
+        Op::ReturnVoid   => { return true; }
+        Op::Return(_)    => { return true; }
+        Op::Br(_)        => { return true; }
+        Op::CondBr(..)   => { return true; }
+        _                => { }
     }
     return false;
 }
 
 union Op {
-    LoadI32(Reg, i32),
     LoadFunction(Reg, &AST),
     LoadParameter(Reg, usize),
     LoadString(Reg, String),
+    LoadNumber(Reg, u64),
     LoadBool(Reg, bool),
     LoadBlank(Reg),
-    Alloca(Reg, String), // associate Allocas with an identifier for later use
+    Alloca(Reg, SubStr), // associate Allocas with an identifier for later use
     Load(Reg, Reg),
     Store(Reg, Reg),
     Move(Reg, Reg),
-    Jump(BID),
+    Br(BID),
+    CondBr(Reg, BID, BID),
     ReturnVoid,
     Return(Reg),
     Call(Reg, Reg, GAF_List), // List<Reg> - The arguments
     LoadComptimeValue(Reg, Value),
+    Add(Reg, Reg, Reg), // add <dst>, <src1>, <src2>
+    Sub(Reg, Reg, Reg), // sub <dst>, <src1>, <src2>
+    Mul(Reg, Reg, Reg), // mul <dst>, <src1>, <src2>
+    Eq(Reg, Reg, Reg),  // eq  <dst>, <src1>, <src2>
+    Gte(Reg, Reg, Reg), // gte <dst>, <src1>, <src2>
+    Lte(Reg, Reg, Reg), // lte <dst>, <src1>, <src2>
+    ComptimeAssert(Reg, String),
     Noop,
+    Debug,
     __count,
 }
 
+func _h(lexer: &Lexer) -> (Token, SubStr, Loc) {
+    let tkn = expect(lexer, TokenData::Ident, TokenData::BuiltinType, TokenData::Number);
+    let name: SubStr = blank;
+    if let TokenData::Ident       { _name } = tkn.data { name = _name; }
+    if let TokenData::BuiltinType { _name } = tkn.data { name = _name; }
+    if let TokenData::Number      { _name } = tkn.data { name = _name; }
+    return (tkn, name, tkn.loc);
+}
+func _r(fi: &ASTFunction, register_map: &GAF_HashMap, loc: Loc, type: &Type, name: SubStr) -> Reg {
+    let existing_reg = get(register_map, name);
+    if (existing_reg.ptr != null) {
+        return existing_reg as Reg;
+    } else {
+        let reg = allocate_register(&fi.code, type);
+        add(register_map, name, reg);
+        return reg;
+    }
+}
+func _t(fn: &AST, lexer: &Lexer, checked_type: &Type) -> &Type {
+    let func_info = get_func_info(fn);
+    let is_pointer = eat(lexer, TokenData::AsteriskSingle);
+    let (typ_tkn, typ_name, typ_loc) = _h(lexer);
+
+    if (checked_type != null) return checked_type;
+
+    let type: &Type = null;
+    if let (var, true) = get_variable_by_name(&func_info.scopes, typ_name) {
+        message(ass(var.type != null, typ_loc, "variable type is now known here"));
+        message(ass(var.type.meta_level > 0, typ_loc, "variable type is not a meta type"));
+        type = unwrap_meta_type(var.type, 1);
+    } else {
+        if (is_builtin_type(typ_name)) {
+            type = unwrap_meta_type(get_builtin_type(typ_name), 1);
+        } else {
+            message(todo(typ_loc, "allow composite types in IR"));
+        }
+    }
+    if (is_pointer) type = into_pointer_type(type);
+    return type;
+}
+
+func parse_bufo_ir_into_function_body(fn: &AST, register_map: &GAF_HashMap, lexer: &Lexer, checked_type: &Type, insert_op: bool) -> &Type {
+    let func_info = get_func_info(fn);
+
+    let (op_tkn, op_name, op_loc) = _h(lexer);
+
+    if (eat(lexer, TokenData::ColonSingle)) {
+        let curr = get_current_block(&func_info.code);
+        let block = create_block(&func_info.code, toString(&op_name));
+        if (insert_op) {
+            create_instr(&func_info.code, op_loc, null, Op::Br(block.id));
+            set_current_block(&func_info.code, block.id);
+        }
+        return create_base_type(PrimType::None);
+    }
+
+    let type = _t(fn, lexer, checked_type);
+
+    let _2 = func (lexer: &Lexer, fi: &ASTFunction, rm: &GAF_HashMap, type: &Type) -> (Reg, Reg) {
+        let (dst_tkn, dst_name, dst_loc) = _h(lexer);
+        expect(lexer, TokenData::Comma);
+        let (src_tkn, src_name, src_loc) = _h(lexer);
+        let dst_reg = _r(fi, rm, dst_loc, type, dst_name);
+        let src_reg = _r(fi, rm, src_loc, type, src_name);
+        return (dst_reg, src_reg);
+    };
+    let _3 = func (lexer: &Lexer, fi: &ASTFunction, rm: &GAF_HashMap, type: &Type) -> (Reg, Reg, Reg) {
+        let (dst_tkn, dst_name, dst_loc) = _h(lexer);
+        expect(lexer, TokenData::Comma);
+        let (src1_tkn, src1_name, src1_loc) = _h(lexer);
+        expect(lexer, TokenData::Comma);
+        let (src2_tkn, src2_name, src2_loc) = _h(lexer);
+        let dst_reg = _r(fi, rm, dst_loc, type, dst_name);
+        let src1_reg = _r(fi, rm, src1_loc, type, src1_name);
+        let src2_reg = _r(fi, rm, src2_loc, type, src2_name);
+        return (dst_reg, src1_reg, src2_reg);
+    };
+
+    let op = Op::Noop;
+    if (equals(&op_name, &comptime newSubStrOfStrLit("param"))) {
+        let (reg_tkn, reg_name, reg_loc) = _h(lexer);
+        expect(lexer, TokenData::Comma);
+        let (index_tkn, index_name, index_loc) = _h(lexer);
+        let reg = _r(func_info, register_map, reg_loc, type, reg_name);
+        let index = toU64(&index_name);
+        op = Op::LoadParameter(reg, index as usize);
+    } else if (equals(&op_name, &comptime newSubStrOfStrLit("add"))) {
+        let (dst_reg, src1_reg, src2_reg) = _3(lexer, func_info, register_map, type);
+        op = Op::Add(dst_reg, src1_reg, src2_reg);
+    } else if (equals(&op_name, &comptime newSubStrOfStrLit("mul"))) {
+        let (dst_reg, src1_reg, src2_reg) = _3(lexer, func_info, register_map, type);
+        op = Op::Mul(dst_reg, src1_reg, src2_reg);
+    } else if (equals(&op_name, &comptime newSubStrOfStrLit("sub"))) {
+        let (dst_reg, src1_reg, src2_reg) = _3(lexer, func_info, register_map, type);
+        op = Op::Sub(dst_reg, src1_reg, src2_reg);
+    } else if (equals(&op_name, &comptime newSubStrOfStrLit("eq"))) {
+        let (dst_reg, src1_reg, src2_reg) = _3(lexer, func_info, register_map, type);
+        op = Op::Eq(dst_reg, src1_reg, src2_reg);
+    } else if (equals(&op_name, &comptime newSubStrOfStrLit("gte"))) {
+        let (dst_reg, src1_reg, src2_reg) = _3(lexer, func_info, register_map, type);
+        op = Op::Gte(dst_reg, src1_reg, src2_reg);
+    } else if (equals(&op_name, &comptime newSubStrOfStrLit("lte"))) {
+        let (dst_reg, src1_reg, src2_reg) = _3(lexer, func_info, register_map, type);
+        op = Op::Lte(dst_reg, src1_reg, src2_reg);
+    } else if (equals(&op_name, &comptime newSubStrOfStrLit("store"))) {
+        let (dst_reg, src_reg) = _2(lexer, func_info, register_map, type);
+        op = Op::Store(dst_reg, src_reg);
+    } else if (equals(&op_name, &comptime newSubStrOfStrLit("load"))) {
+        let (dst_reg, src_reg) = _2(lexer, func_info, register_map, type);
+        op = Op::Load(dst_reg, src_reg);
+    } else if (equals(&op_name, &comptime newSubStrOfStrLit("ret"))) {
+        assert(func_info.code.comptime_level == 0, "Return in comptime context?");
+        if (lexer_at(lexer, TokenData::Ident)) {
+            let (src_tkn, src_name, src_loc) = _h(lexer);
+            let reg = _r(func_info, register_map, src_loc, type, src_name);
+            let &BaseType::Func(_, ret_type) = &fn.type.base else {
+                unreachable("parse_bufo_ir_into_function_body: Function has unexpected type");
+            };
+            assert(ret_type != null, "parse_bufo_ir_into_function_body: Function doesn't have return type set");
+            assert(ret_type.meta_level > 0, "parse_bufo_ir_into_function_body: Function doesn't have meta return type");
+            let instance_of_ret_type = unwrap_meta_type(ret_type, 1);
+            if (!is_equal_to(type, instance_of_ret_type)) {
+                let t1 = to_string(instance_of_ret_type);
+                let t2 = to_string(type);
+                message(error(op_loc, "Function was declared to return %, but we got %.", t1, t2));
+            }
+            op = Op::Return(reg);
+        } else {
+            let &BaseType::Func(_, ret_type) = &fn.type.base else {
+                unreachable("parse_bufo_ir_into_function_body: Function has unexpected type");
+            };
+            assert(ret_type != null, "parse_bufo_ir_into_function_body: Function doesn't have return type set");
+            if (!is_equal_to(ret_type, create_meta_type(1, PrimType::None))) {
+                message(
+                    error(op_loc, "Missing return value for function."),
+                    note(fn.loc, "Function % is declared to return %.", func_info.name, to_string(ret_type)));
+            }
+            op = Op::ReturnVoid;
+        }
+    } else {
+        message(error(op_loc, "Unknown or unhandled instruction %", op_name));
+    }
+    if (insert_op) create_instr(&func_info.code, op_loc, type, op);
+    expect(lexer, TokenData::SemiColon);
+    return type;
+}
+
+func codegen_function_exit(fn: &AST) {
+    let &ASTData::Function(func_state) = &fn.data else {
+        unreachable("codegen_function_exit: Node is not a function");
+    };
+
+    let rt = &func_state.code.runtime;
+    let curr = get_current_block(rt);
+    if (!is_terminated(curr)) {
+        let BaseType::Func(_, ret) = fn.type.base else {
+            unreachable("codegen_function_exit");
+        };
+        let loc = fn.loc;
+        let op = Op::Noop;
+        if (curr.ir.length > 0) {
+            let in = get_ref(&curr.ir, curr.ir.length - 1) as Instr;
+            loc = in.loc;
+            op = in.op;
+        }
+        if (is_equal_to(ret, create_meta_type(1, PrimType::None))) {
+            create_instr(rt, loc, null, Op::Br(rt.return_block));
+        } else {
+            message(
+                error(loc, "Not all paths through this function return a value."),
+                note(loc, "last instruction: %", op),
+            );
+        }
+    }
+}
 func codegen_function_entry(fn: &AST) {
     let &ASTData::Function(func_state) = &fn.data else {
         unreachable("codegen_function_entry: Node is not a function");
     };
 
     let rt = &func_state.code.runtime;
-    rt.return_block = create_block(rt, comptime newReadonlyString("return")).id;
-    set_current_block(rt, rt.return_block);
-
-    let none = create_meta_type(1, PrimType::None);
-    if (is_equal_to(func_state.return_type.type, none)) {
-        create_instr(&func_state.code, fn, Op::ReturnVoid);
-    } else {
-        let base_type = unwrap_meta_type(func_state.return_type.type, 1);
-        rt.return_register = allocate_register(rt, base_type);
-        create_instr(&func_state.code, fn, Op::Return(rt.return_register));
-    }
-
     rt.entry = create_block(rt, comptime newReadonlyString("entry")).id;
     set_current_block(rt, rt.entry);
 
@@ -241,13 +424,30 @@ func codegen_function_entry(fn: &AST) {
     ct.entry = create_block(ct, comptime newReadonlyString("entry")).id;
     set_current_block(ct, ct.entry);
 
+    if (has_attribute(fn, ASTAttrData::Naked)) return;
+
+    rt.return_block = create_block(rt, comptime newReadonlyString("return")).id;
+    set_current_block(rt, rt.return_block);
+
+    let none = create_meta_type(1, PrimType::None);
+    if (is_equal_to(func_state.return_type.type, none)) {
+        create_instr(&func_state.code, fn.loc, fn.type, Op::ReturnVoid);
+    } else {
+        let base_type = unwrap_meta_type(func_state.return_type.type, 1);
+        rt.return_register = allocate_register(rt, base_type);
+        create_instr(&func_state.code, fn.loc, fn.type, Op::Return(rt.return_register));
+    }
+
+    set_current_block(rt, rt.entry);
+    set_current_block(ct, ct.entry);
+
     for (let i: usize = func_state.params.length; i > 0; i = i - 1) {
         let p = get_ref(&func_state.params, i - 1) as &AST;
         let p_type = unwrap_meta_type(p.type, 1);
         let reg = allocate_register(&func_state.code, p_type);
-        create_instr(&func_state.code, p, Op::LoadParameter(reg, i - 1));
-        let var = allocate_variable(&func_state.code, p, p.origin);
-        create_instr(&func_state.code, p, Op::Store(var, reg));
+        create_instr(&func_state.code, p.loc, p_type, Op::LoadParameter(reg, i - 1));
+        let var = allocate_variable(&func_state.code, p.loc, p_type, p.origin);
+        create_instr(&func_state.code, p.loc, p_type, Op::Store(var, reg));
     }
 }
 
@@ -287,16 +487,43 @@ func codegen_stmt(fn: &ASTFunction, stmt: &AST) {
         }
         &ASTStmt::ReturnVoid => {
             assert(fn.code.comptime_level == 0, "Return in comptime context?");
-            create_instr(&fn.code, stmt, Op::Jump(fn.code.runtime.return_block));
+            create_instr(&fn.code, stmt.loc, stmt.type, Op::Br(fn.code.runtime.return_block));
         }
         &ASTStmt::ReturnExpr(expr) => {
             let (register, _) = codegen_expr(fn, expr, false);
             assert(fn.code.comptime_level == 0, "Return in comptime context?");
-            create_instr(&fn.code, stmt, Op::Move(fn.code.runtime.return_register, register));
-            create_instr(&fn.code, stmt, Op::Jump(fn.code.runtime.return_block));
+            create_instr(&fn.code, stmt.loc, stmt.type, Op::Move(fn.code.runtime.return_register, register));
+            create_instr(&fn.code, stmt.loc, stmt.type, Op::Br(fn.code.runtime.return_block));
         }
         &ASTStmt::Expr(expr) => {
             let (reg, _) = codegen_expr(fn, expr, false);
+        }
+        &ASTStmt::Directive(dir) => {
+            match (&dir.data) {
+                &ASTData::Directive(Directive::Assert(expr, msg)) => {
+                    let (reg, _) = codegen_expr(fn, expr, false);
+                    create_instr(&fn.code, stmt.loc, stmt.type, Op::ComptimeAssert(reg, msg));
+                }
+                &ASTData::Directive(Directive::Debug) => {
+                    create_instr(&fn.code, stmt.loc, stmt.type, Op::Debug);
+                }
+                &ASTData::Directive(Directive::CheckedBir(lexer, types)) => {
+                    let fn_node = get_parent_function(dir);
+                    assert(fn_node != null, "codegen_stmt: Directive parent is null");
+                    let start = expect(&lexer, TokenData::CurlyOpen);
+                    let register_map = new_hashmap_with_substr_key(type_info(Reg));
+                    let index: usize = 0;
+                    while (!lexer_at(&lexer, TokenData::CurlyClose)) {
+                        let type = get_ref(&types, index) as &Type;
+                        parse_bufo_ir_into_function_body(fn_node, &register_map, &lexer, type, true);
+                        index = index + 1;
+                    }
+                    let end = expect(&lexer, TokenData::CurlyClose);
+                }
+                _ => {
+                    message(todo(stmt.loc, "codegen_stmt: Can't generate directive yet: %", dir.data));
+                }
+            }
         }
         _ => {
             message(todo(stmt.loc, "codegen_stmt: Can't generate stmt yet: %", stmt.data));
@@ -306,7 +533,7 @@ func codegen_stmt(fn: &ASTFunction, stmt: &AST) {
 
 func codegen_expr(fn: &ASTFunction, expr: &AST, wants_ptr: bool) -> (Reg, Instr) {
     let &ASTData::Expr(actual_expr) = &expr.data else {
-        unreachable("codegen_expr: Node is not an expression");
+        funreachable("% codegen_expr: Node is not an expression, got %", expr.loc, expr.data);
     };
     match (&actual_expr) {
         &ASTExpr::Ident { name } => {
@@ -315,34 +542,54 @@ func codegen_expr(fn: &ASTFunction, expr: &AST, wants_ptr: bool) -> (Reg, Instr)
             let var = _var as Var;
             if (wants_ptr) return (var.alloca_reg, Instr {});
             let dst = allocate_register(&fn.code, expr.type);
-            return (dst, create_instr(&fn.code, expr, Op::Load(dst, var.alloca_reg)));
+            return (dst, create_instr(&fn.code, expr.loc, expr.type, Op::Load(dst, var.alloca_reg)));
         }
         &ASTExpr::FnIdent { name, _fn } => {
             let &ASTData::Function(func_state) = &_fn.data else {
                 unreachable("codegen_expr: FnIdent does not have a function");
             };
             let reg = allocate_register(&fn.code, expr.type);
-            return (reg, create_instr(&fn.code, expr, Op::LoadFunction(reg, _fn)));
+            return (reg, create_instr(&fn.code, expr.loc, expr.type, Op::LoadFunction(reg, _fn)));
         }
         &ASTExpr::Number { value } => {
             let number = toU64(&value);
             let reg = allocate_register(&fn.code, expr.type);
-            if let &BaseType::Prim(PrimType::I32) = &expr.type.base {
-                // FIXME(2026-04-11): Move this to checker.bufo
-                if (number >= I32_MAX) {
-                    message(error(expr.loc, "Number literal % is too big for target type %.", number, to_string(expr.type)));
-                }
-                return (reg, create_instr(&fn.code, expr, Op::LoadI32(reg, number as i32)));
-            }
-            message(todo(expr.loc, "codegen_expr: Can't codegen expression %", actual_expr));
+            return (reg, create_instr(&fn.code, expr.loc, expr.type, Op::LoadNumber(reg, number)));
         }
         &ASTExpr::StringLiteral { value } => {
             let reg = allocate_register(&fn.code, expr.type);
-            return (reg, create_instr(&fn.code, expr, Op::LoadString(reg, value)));
+            return (reg, create_instr(&fn.code, expr.loc, expr.type, Op::LoadString(reg, value)));
         }
         &ASTExpr::Blank => {
             let reg = allocate_register(&fn.code, expr.type);
-            return (reg, create_instr(&fn.code, expr, Op::LoadBlank(reg)));
+            return (reg, create_instr(&fn.code, expr.loc, expr.type, Op::LoadBlank(reg)));
+        }
+        &ASTExpr::Dot(lhs, member) => {
+            let (lhs_reg, lhs_instr) = codegen_expr(fn, lhs, !is_pointer(lhs.type));
+            message(ass(lhs_reg.size == 8, lhs.loc, "Expected pointer sized register as LHS of dot, got %", lhs_reg.size));
+            let lhs_type = get_underlying_type(lhs.type);
+            if let BaseType::Struct(struct_node) = lhs_type.base {
+                let struct_info = get_struct_info(struct_node);
+                let &ASTData::Expr(ASTExpr::Ident { field }) = &member.data else {
+                    unreachable("codegen_expr: check_member_expr should've prevented this");
+                };
+                let (true, offset, size, align) = get_field_offset_size_and_align(struct_info, field) else {
+                    unreachable("codegen_expr: Only fields are supported now, and methods will be handled differently later");
+                };
+                let offset_reg = allocate_register(&fn.code, create_base_type(PrimType::Usize));
+                create_instr(&fn.code, expr.loc, expr.type, Op::LoadNumber(offset_reg, offset as u64));
+                let dst_ptr = allocate_register(&fn.code, into_pointer_type(expr.type));
+                let dst_inst = create_instr(&fn.code, expr.loc, expr.type, Op::Add(dst_ptr, lhs_reg, offset_reg));
+                if (wants_ptr) {
+                    return (dst_ptr, dst_inst);
+                } else {
+                    let dst_reg = allocate_register(&fn.code, expr.type);
+                    dst_inst = create_instr(&fn.code, expr.loc, expr.type, Op::Load(dst_reg, dst_ptr));
+                    return (dst_reg, dst_inst);
+                }
+            } else {
+                unreachable("codegen_expr: Only structs are allowed for the Dot operator");
+            }
         }
         &ASTExpr::Call(_base, _args) => {
             let (reg, _) = codegen_expr(fn, _base, false);
@@ -353,14 +600,14 @@ func codegen_expr(fn: &ASTFunction, expr: &AST, wants_ptr: bool) -> (Reg, Instr)
                 push(&args, areg);
             }
             let ret = allocate_register(&fn.code, expr.type);
-            return (ret, create_instr(&fn.code, expr, Op::Call(ret, reg, args)));
+            return (ret, create_instr(&fn.code, expr.loc, expr.type, Op::Call(ret, reg, args)));
         }
         &ASTExpr::Directive(dir) => {
             message(todo(expr.loc, "codegen_expr: Can't codegen directive"));
         }
         &ASTExpr::ComptimeValue(val) => {
             let ret = allocate_register(&fn.code, expr.type);
-            return (ret, create_instr(&fn.code, expr, Op::LoadComptimeValue(ret, val)));
+            return (ret, create_instr(&fn.code, expr.loc, expr.type, Op::LoadComptimeValue(ret, val)));
         }
         &ASTExpr::Unary(unary) => {
             return codegen_unary(fn, expr, wants_ptr);
@@ -370,7 +617,7 @@ func codegen_expr(fn: &ASTFunction, expr: &AST, wants_ptr: bool) -> (Reg, Instr)
                 let s = get_ref(&stmts, i) as &AST;
                 codegen_stmt(fn, s);
             }
-            return blank;
+           return blank;
         }
         &ASTExpr::BlockExpr(stmts, value) => {
             for (let i: usize = 0; i < stmts.length; i = i + 1) {
@@ -378,6 +625,25 @@ func codegen_expr(fn: &ASTFunction, expr: &AST, wants_ptr: bool) -> (Reg, Instr)
                 codegen_stmt(fn, s);
             }
             return codegen_expr(fn, value, wants_ptr);
+        }
+        &ASTExpr::If(cond, then) => {
+            let (cond_reg, cond_inst) = codegen_expr(fn, cond, false);
+            let then_block = create_block(&fn.code, format1("then.%", expr));
+            let cont_block = create_block(&fn.code, format1("cont.%", expr));
+            create_instr(&fn.code, expr.loc, null, Op::CondBr(cond_reg, then_block.id, cont_block.id));
+
+            set_current_block(&fn.code, then_block.id);
+            codegen_stmt(fn, then);
+            let curr = get_current_block(&fn.code);
+            if (!is_terminated(curr)) {
+                create_instr(&fn.code, expr.loc, null, Op::Br(cont_block.id));
+            }
+
+            set_current_block(&fn.code, cont_block.id);
+            return (blank, blank);
+        }
+        &ASTExpr::Noop => {
+            return (blank, blank);
         }
         _ => {
             message(todo(expr.loc, "codegen_expr: Can't codegen expression %", actual_expr));
@@ -407,12 +673,12 @@ func codegen_pattern(fn: &ASTFunction, pat: &AST, expr: Reg, is_comptime: bool) 
     };
     match (&actual_pat) {
         &ASTPat::Ident(ident) => {
-            let var = allocate_variable(&fn.code, pat, ident);
-            create_instr(&fn.code, pat, Op::Store(var, expr));
+            let var = allocate_variable(&fn.code, pat.loc, pat.type, ident);
+            create_instr(&fn.code, pat.loc, pat.type, Op::Store(var, expr));
 
             let b = create_base_type(PrimType::Bool);
             let succ = allocate_register(&fn.code, b);
-            create_instr(&fn.code, pat, Op::LoadBool(succ, true));
+            create_instr(&fn.code, pat.loc, pat.type, Op::LoadBool(succ, true));
             return succ;
         }
         &ASTPat::PatWithType(subpat, type) => {

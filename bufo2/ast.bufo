@@ -17,31 +17,35 @@ import "parser.bufo";
 import "codegen.bufo";
 import "interp.bufo";
 
-comptime FUNCTION_STATE_IS_GENERIC       : u8 = 0b0000001;
-comptime FUNCTION_STATE_PARSED_SIGNATURE : u8 = 0b0000010;
-comptime FUNCTION_STATE_CHECKED_SIGNATURE: u8 = 0b0000100;
-comptime FUNCTION_STATE_PARSED_BODY      : u8 = 0b0001000;
-comptime FUNCTION_STATE_CHECKED_BODY     : u8 = 0b0010000;
-comptime FUNCTION_STATE_GENERATED_CODE   : u8 = 0b0100000;
-comptime FUNCTION_STATE_MONOMORPHIZED    : u8 = 0b1000000;
-struct FunctionState { i: u8; }
+struct FunctionState {
+    is_generic: bool;
+    is_monomorphized: bool;
+    did_parse_signature: bool;
+    did_check_signature: bool;
+    did_parse_body: bool;
+    did_check_body: bool;
+    did_codegen_body: bool;
+}
 
-comptime STRUCT_STATE_PARSED_SIGNATURE: u8 = 0b0001;
-comptime STRUCT_STATE_PARSED_FIELDS   : u8 = 0b0010;
-comptime STRUCT_STATE_CHECKED         : u8 = 0b0100;
-comptime STRUCT_STATE_MONOMORPHIZED   : u8 = 0b1000;
-struct StructState { i: u8; }
+struct StructState {
+    is_monomorphized: bool;
+    did_parse_signature: bool;
+    did_parse_fields: bool;
+    did_check_fields: bool;
+}
 
 func create_mapping_key(out: &String, mapping: &GAF_HashMap) {
-    enumerate(mapping, func (index: usize, key: Data, value: Data, arg: &String) {
-        if (index > 0) pushStr(arg, ", ");
-        let type = value as &Type;
-        to_string(arg, type);
-    }, out);
+    for (let i: usize = 0; i < mapping.capacity; i = i + 1) {
+        if (!mapping.set_elements[i]) continue;
+        let (key_ptr, val_ptr) = getAtIndex(mapping, i);
+        let type = *(val_ptr as &&Type);
+        to_string(out, type);
+    }
 }
 
 struct AST {
-    parent: &AST;
+    super_node: &AST; // Function, Struct or the like
+    parent: &AST;     // Expr can be parent of Expr
     origin: SubStr;
     loc: Loc;
     attributes: GAF_List; // List<ASTAttr>
@@ -50,42 +54,48 @@ struct AST {
 }
 
 func has_attribute(node: &AST, attr: ASTAttrData) -> bool {
-    let has = false;
-    foreach(&node.attributes, func (a: Data, arg: &(&bool, ASTAttrData)) {
-        let &(&has, attr) = arg;
-        if (has) return;
-        let at = a as ASTAttr;
-        if (tag(&at.data) == tag(&attr)) {
-            has = true;
+    for (let i: usize = 0; i < node.attributes.length; i = i + 1) {
+        let a = get_ref(&node.attributes, i) as ASTAttr;
+        if (tag(&a.data) == tag(&attr)) {
+            return true;
         }
-    }, &(&has, attr));
-    return has;
+    }
+    return false;
 }
 
 func is_in_function(node: &AST) -> bool {
-    while (node != null) {
-        if let ASTData::Function { .. } = node.data {
-            return true;
-        }
-        node = get_parent_node(node);
+    if let ASTData::Function { .. } = node.super_node.data {
+        return true;
     }
     return false;
 }
 func get_parent_function(node: &AST) -> &AST {
-    while (node != null) {
-        if let ASTData::Function { .. } = node.data {
-            return node;
-        }
-        node = get_parent_node(node);
+    if let ASTData::Function { .. } = node.super_node.data {
+        return node.super_node;
     }
     unreachable("get_parent_function: Node is not inside a function");
 }
-func get_parent_node(node: &AST) -> &AST {
-    return node.parent;
-}
 
+func is_assignment(node: &AST) -> bool {
+    let ASTData::Expr(ASTExpr::Binary(bin)) = node.data else {
+        return false;
+    };
+    return is_assignment(bin);
+}
 func is_statement(node: &AST) -> bool {
     if let ASTData::Stmt(_) = node.data {
+        return true;
+    }
+    return false;
+}
+func is_if(node: &AST) -> bool {
+    if let ASTData::Stmt(ASTStmt::Expr(expr)) = node.data {
+        return is_if(expr);
+    }
+    if let ASTData::Expr(ASTExpr::If(_, _)) = node.data {
+        return true;
+    }
+    if let ASTData::Expr(ASTExpr::IfElse(_, _, _)) = node.data {
         return true;
     }
     return false;
@@ -116,6 +126,7 @@ union ASTData {
 
 struct ASTStruct {
     state: StructState;
+    loc: Loc;
     name: SubStr;
     parameters: GAF_List; // List<&AST>
     fields: GAF_List; // List<&AST>
@@ -125,25 +136,75 @@ struct ASTStruct {
 }
 
 func is_generic(struct_info: &ASTStruct) -> bool {
-    while ((struct_info.state.i & STRUCT_STATE_PARSED_SIGNATURE) == 0) switch();
+    let (handler, state) = wait_for_monitor(&struct_info.state.did_parse_signature);
+    let Corot_Result::Success = state else {
+        handle_corot_result(state,
+            error(struct_info.loc, "Could not check if structure is generic due to a cyclic dependency on %.", corot_str(handler)),
+            error(struct_info.loc, "Could not check if structure is generic. There were errors."));
+        unreachable(); // above terminates
+    };
+    assert(struct_info.state.did_parse_signature, "is_generic(Struct): monitor failed");
     return struct_info.parameters.length != 0;
+}
+
+func get_field_offset_size_and_align(struct_info: &ASTStruct, name: SubStr) -> (bool, usize, usize, usize) {
+    let offset: usize = 0;
+    let size: usize = 0;
+    let align: usize = 1;
+    for (let i: usize = 0; i < struct_info.fields.length; i = i + 1) {
+        let field = get_ref(&struct_info.fields, i) as &AST;
+        let &ASTData::Field(field_name, _) = &field.data else {
+            unreachable("get_field_offset: Stored entry is not a Field!");
+        };
+        let field_type = unwrap_meta_type(field.type, 1);
+        let field_size = get_size(field_type);
+        if (equals(&field_name, &name)) {
+            let field_align = get_align(field_type);
+            return (true, offset, field_size, field_align);
+        } else if (i != struct_info.fields.length - 1) {
+            let next_field = get_ref(&struct_info.fields, i + 1) as &AST;
+            let next_field_type = unwrap_meta_type(next_field.type, 1);
+            let next_field_align = get_align(next_field_type);
+            offset = next_multiple_of(offset + field_size, next_field_align);
+        }
+    }
+    return (false, 0, 0, 0);
+}
+
+func get_field_by_name(struct_info: &ASTStruct, name: SubStr) -> (bool, &AST) {
+    for (let i: usize = 0; i < struct_info.fields.length; i = i + 1) {
+        let field = get_ref(&struct_info.fields, i) as &AST;
+        let &ASTData::Field(field_name, field_type) = &field.data else {
+            unreachable("get_field_by_name: Stored entry is not a Field!");
+        };
+        if (equals(&field_name, &name)) {
+            return (true, field);
+        }
+    }
+    return (false, null);
 }
 
 func get_align(node: &AST) -> usize {
     let struct_info = get_struct_info(node);
     let (handler, result) = wait_for_monitor(&struct_info.align_in_bytes);
-    handle_corot_result(result,
-        error(node.loc, "Could not get alignment of structure due to a cyclic dependency on %.", corot_str(handler)),
-        error(node.loc, "Could not get alignment of structure. There were errors."));
+    let Corot_Result::Success = result else {
+        handle_corot_result(result,
+            error(node.loc, "Could not get alignment of structure due to a cyclic dependency on %.", corot_str(handler)),
+            error(node.loc, "Could not get alignment of structure. There were errors."));
+        unreachable(); // above terminates
+    };
     return struct_info.align_in_bytes;
 }
 
 func get_size(node: &AST) -> usize {
     let struct_info = get_struct_info(node);
     let (handler, result) = wait_for_monitor(&struct_info.size_in_bytes);
-    handle_corot_result(result,
-        error(node.loc, "Could not get size of structure due to a cyclic dependency on %.", corot_str(handler)),
-        error(node.loc, "Could not get size of structure. There were errors."));
+    let Corot_Result::Success = result else {
+        handle_corot_result(result,
+            error(node.loc, "Could not get size of structure due to a cyclic dependency on %.", corot_str(handler)),
+            error(node.loc, "Could not get size of structure. There were errors."));
+        unreachable(); // above terminates
+    };
     return struct_info.size_in_bytes;
 }
 
@@ -168,6 +229,7 @@ func get_func_info(fn: &AST) -> &ASTFunction {
 
 struct ASTFunction {
     state: FunctionState;
+    loc: Loc;
     name: SubStr;
     scopes: GAF_List;     // List<Scope_Info>
     return_type: &AST;
@@ -178,22 +240,29 @@ struct ASTFunction {
 }
 
 func is_generic(func_info: &ASTFunction) -> bool {
-    while ((func_info.state.i & FUNCTION_STATE_PARSED_SIGNATURE) == 0) switch();
-    return (func_info.state.i & FUNCTION_STATE_IS_GENERIC) != 0;
+    let (handler, state) = wait_for_monitor(&func_info.state.did_parse_signature);
+    let Corot_Result::Success = state else {
+        handle_corot_result(state,
+            error(func_info.loc, "Could not check if function is generic due to a cyclic dependency on %.", corot_str(handler)),
+            error(func_info.loc, "Could not check if function is generic. There were errors."));
+        unreachable(); // above terminates
+    };
+    assert(func_info.state.did_parse_signature, "is_generic(Function): monitor failed");
+    return func_info.state.is_generic;
 }
 
-func finalize_function_type(ast: &AST, state: &ASTFunction) {
+func finalize_function_type(ast: &AST, func_info: &ASTFunction) {
     assert(ast.type == null, "finalize_function_type: Node already has a type");
-    assert((state.state.i & FUNCTION_STATE_CHECKED_SIGNATURE) != 0, "finalize_function_type: Function signature is not type checked");
+    assert(func_info.state.did_check_signature, "finalize_function_type: Function signature is not type checked");
 
     let params = new_GAF_List(type_info(&Type));
-    for (let i: usize = 0; i < state.params.length; i = i + 1) {
-        let p = get_ref(&state.params, i) as &AST;
+    for (let i: usize = 0; i < func_info.params.length; i = i + 1) {
+        let p = get_ref(&func_info.params, i) as &AST;
         assert(p.type != null, "finalize_function_type: Param type is null");
         push(&params, p.type);
     }
 
-    let ret_type = state.return_type.type;
+    let ret_type = func_info.return_type.type;
     assert(ret_type != null, "finalize_function_type: Return type is null");
 
     ast.type = create_base_type(BaseType::Func(params, ret_type));
@@ -210,12 +279,14 @@ func is_function_attribute(attr: ASTAttr) -> bool {
 }
 union ASTAttrData {
     Expand,
+    Naked,
     __count,
 }
 func is_function_attribute(attr: ASTAttrData) -> bool {
-    (comptime assert(tag(&ASTAttrData::__count) == 1, "is_function_attribute: Added more ASTAttrData"));
+    (comptime assert(tag(&ASTAttrData::__count) == 2, "is_function_attribute: Added more ASTAttrData"));
     match (attr) {
         ASTAttrData::Expand => { return true; }
+        ASTAttrData::Naked  => { return true; }
         _ => { }
     }
     return false;
@@ -244,6 +315,7 @@ union ASTPat {
 }
 
 union ASTExpr {
+    Noop, // See FIXME for union Directive
     BuiltinType { name: SubStr },
     Ident { name: SubStr },
     FnIdent { name: SubStr, fn: &AST },
@@ -266,6 +338,7 @@ union ASTExpr {
     Generic,
     ResolvedGeneric(&Type),
     As(&AST, &AST),
+    Dot(&AST, &AST),
 }
 
 func get_statements(node: &ASTExpr) -> &GAF_List {
@@ -281,6 +354,12 @@ func get_statements(node: &ASTExpr) -> &GAF_List {
 union Directive {
     Run(&AST),
     Insert(&AST, Insert_Context),
+    Assert(&AST, String),
+    // FIXME(2026-06-05): Ideally we dont wanna have a CheckedBir,
+    //                    but the code around #bir is kinda sloppy rn
+    Bir(Lexer),
+    CheckedBir(Lexer, GAF_List), // List<Type>
+    Debug,
 }
 
 union ASTUnary {
@@ -290,68 +369,122 @@ union ASTUnary {
 }
 
 union ASTBinary {
+    Assign(&AST, &AST),
+    PlusAssign(&AST, &AST),
+    MinusAssign(&AST, &AST),
+    MultAssign(&AST, &AST),
+    DivAssign(&AST, &AST),
     Equal(&AST, &AST),
     Plus(&AST, &AST),
     Minus(&AST, &AST),
     Mult(&AST, &AST),
     Div(&AST, &AST),
+    LessThan(&AST, &AST),
+    LessEqual(&AST, &AST),
+    GreaterThan(&AST, &AST),
+    GreaterEqual(&AST, &AST),
     __count,
 }
 
-func binary_expr_to_function_name(bin: ASTBinary) -> SubStr {
-    (comptime assert(tag(&ASTBinary::__count) == 5, "binary_expr_to_function_name: Added more Operands"));
+func is_assignment(bin: ASTBinary) -> bool {
+    (comptime assert(tag(&ASTBinary::__count) == 14, "is_assignment: Added more Operands"));
     match (bin) {
-        ASTBinary::Equal(..) => { return comptime newSubStrOfStrLit("__equals__"); }
-        ASTBinary::Plus(..)  => { return comptime newSubStrOfStrLit("__add__"); }
-        ASTBinary::Minus(..)  => { return comptime newSubStrOfStrLit("__sub__"); }
-        ASTBinary::Mult(..)  => { return comptime newSubStrOfStrLit("__mul__"); }
-        ASTBinary::Div(..)  => { return comptime newSubStrOfStrLit("__div__"); }
+        ASTBinary::Assign(..)      => { return true; }
+        ASTBinary::PlusAssign(..)  => { return true; }
+        ASTBinary::MinusAssign(..) => { return true; }
+        ASTBinary::MultAssign(..)  => { return true; }
+        ASTBinary::DivAssign(..)   => { return true; }
+        _ => { }
+    }
+    return false;
+}
+
+func binary_expr_to_function_name(bin: ASTBinary) -> SubStr {
+    (comptime assert(tag(&ASTBinary::__count) == 14, "binary_expr_to_function_name: Added more Operands"));
+    match (bin) {
+        ASTBinary::Assign(..)       => { return comptime newSubStrOfStrLit("__assign__"); }
+        ASTBinary::PlusAssign(..)   => { return comptime newSubStrOfStrLit("__plus_assign__"); }
+        ASTBinary::MinusAssign(..)  => { return comptime newSubStrOfStrLit("__minus_assign__"); }
+        ASTBinary::MultAssign(..)   => { return comptime newSubStrOfStrLit("__mult_assign__"); }
+        ASTBinary::DivAssign(..)    => { return comptime newSubStrOfStrLit("__div_assign__"); }
+        ASTBinary::Equal(..)        => { return comptime newSubStrOfStrLit("__equals__"); }
+        ASTBinary::Plus(..)         => { return comptime newSubStrOfStrLit("__add__"); }
+        ASTBinary::Minus(..)        => { return comptime newSubStrOfStrLit("__sub__"); }
+        ASTBinary::Mult(..)         => { return comptime newSubStrOfStrLit("__mul__"); }
+        ASTBinary::Div(..)          => { return comptime newSubStrOfStrLit("__div__"); }
+        ASTBinary::LessThan(..)     => { return comptime newSubStrOfStrLit("__lt__"); }
+        ASTBinary::LessEqual(..)    => { return comptime newSubStrOfStrLit("__lte__"); }
+        ASTBinary::GreaterThan(..)  => { return comptime newSubStrOfStrLit("__gt__"); }
+        ASTBinary::GreaterEqual(..) => { return comptime newSubStrOfStrLit("__gte__"); }
         _ => { }
     }
     unreachable("binary_expr_to_function_name");
 }
 
 func binary_expr_from_op(op: Token, lhs: &AST, rhs: &AST) -> ASTExpr {
-    (comptime assert(tag(&ASTBinary::__count) == 5, "binary_expr_from_op: Added more Operands"));
+    (comptime assert(tag(&ASTBinary::__count) == 14, "binary_expr_from_op: Added more Operands"));
     let bin = ASTBinary::Equal;
     match (op.data) {
+        TokenData::EqualSingle    => { bin = ASTBinary::Assign(lhs, rhs); }
+        TokenData::PlusEqual      => { bin = ASTBinary::PlusAssign(lhs, rhs); }
+        TokenData::MinusEqual     => { bin = ASTBinary::MinusAssign(lhs, rhs); }
+        TokenData::AsteriskEqual  => { bin = ASTBinary::MultAssign(lhs, rhs); }
+        TokenData::SlashEqual     => { bin = ASTBinary::DivAssign(lhs, rhs); }
         TokenData::EqualDouble    => { bin = ASTBinary::Equal(lhs, rhs); }
         TokenData::PlusSingle     => { bin = ASTBinary::Plus(lhs, rhs); }
         TokenData::MinusSingle    => { bin = ASTBinary::Minus(lhs, rhs); }
         TokenData::AsteriskSingle => { bin = ASTBinary::Mult(lhs, rhs); }
         TokenData::SlashSingle    => { bin = ASTBinary::Div(lhs, rhs); }
+        TokenData::LessThan       => { bin = ASTBinary::LessThan(lhs, rhs); }
+        TokenData::LessEqual      => { bin = ASTBinary::LessEqual(lhs, rhs); }
+        TokenData::GreaterThan    => { bin = ASTBinary::GreaterThan(lhs, rhs); }
+        TokenData::GreaterEqual   => { bin = ASTBinary::GreaterEqual(lhs, rhs); }
         _ => { }
     }
     return ASTExpr::Binary(bin);
 }
 
 func extract_operands(bin: ASTBinary, lhs: &&AST, rhs: &&AST) {
-    (comptime assert(tag(&ASTBinary::__count) == 5, "extract_operands: Added more Operands"));
+    (comptime assert(tag(&ASTBinary::__count) == 14, "extract_operands: Added more Operands"));
     match (bin) {
-        ASTBinary::Equal(_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
-        ASTBinary::Plus(_lhs, _rhs)  => { *lhs = _lhs; *rhs = _rhs; }
-        ASTBinary::Minus(_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
-        ASTBinary::Mult(_lhs, _rhs)  => { *lhs = _lhs; *rhs = _rhs; }
-        ASTBinary::Div(_lhs, _rhs)   => { *lhs = _lhs; *rhs = _rhs; }
+        ASTBinary::Assign      (_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
+        ASTBinary::PlusAssign  (_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
+        ASTBinary::MinusAssign (_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
+        ASTBinary::MultAssign  (_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
+        ASTBinary::DivAssign   (_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
+        ASTBinary::Equal       (_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
+        ASTBinary::Plus        (_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
+        ASTBinary::Minus       (_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
+        ASTBinary::Mult        (_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
+        ASTBinary::Div         (_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
+        ASTBinary::LessThan    (_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
+        ASTBinary::LessEqual   (_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
+        ASTBinary::GreaterThan (_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
+        ASTBinary::GreaterEqual(_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
         _ => { unreachable("extract_operands"); }
     }
 }
 
-func is_arithmetic_expr(bin: ASTBinary) -> bool {
-    (comptime assert(tag(&ASTBinary::__count) == 5, "is_arithmetic_expr: Added more Operands"));
-    match (bin) {
-        ASTBinary::Plus(..)  => { return true; }
-        ASTBinary::Minus(..) => { return true; }
-        ASTBinary::Mult(..)  => { return true; }
-        ASTBinary::Div(..)   => { return true; }
-        _ => { }
-    }
-    return false;
-}
+comptime AST_BUFFER_SIZE: usize = 1_000_000;
+let ast_buffer_ptr: &AST = null;
+let ast_buffer_base: &AST = null;
 
+let node_counter: usize = 0;
 func create_node(parent: &AST, loc: Loc, origin: SubStr) -> &AST {
-    let ptr: &AST = C::calloc(1, sizeof AST);
-    assert(ptr != null, "create_node failed");
+    if (ast_buffer_ptr == null) {
+        ast_buffer_ptr = C::calloc(AST_BUFFER_SIZE, sizeof(AST));
+        ast_buffer_base = ast_buffer_ptr;
+    }
+    if (ast_buffer_ptr - ast_buffer_base >= AST_BUFFER_SIZE * sizeof(AST)) {
+        ast_buffer_ptr = C::calloc(AST_BUFFER_SIZE, sizeof(AST));
+        ast_buffer_base = ast_buffer_ptr;
+    }
+    let ptr = ast_buffer_ptr as &AST;
+    ast_buffer_ptr = ast_buffer_ptr + sizeof(AST);
+    if (parent != null) {
+        fassert(parent.super_node != null, "Parent at % doesn't belong to a super node", loc);
+        ptr.super_node = parent.super_node;
+    }
     ptr.parent = parent;
     ptr.origin = origin;
     ptr.loc = loc;
@@ -362,6 +495,7 @@ func create_struct(parent: &AST, loc: Loc, origin: SubStr, name: SubStr) -> &AST
     let ptr = create_node(parent, loc, origin);
     ptr.data = ASTData::Struct(ASTStruct {
         state: blank,
+        loc: loc,
         name: name,
         fields: new_GAF_List(type_info(&AST)),
         parameters: new_GAF_List(type_info(&AST)),
@@ -398,7 +532,10 @@ func monomorphize_function_node(ast: &AST, mapping: GAF_HashMap) -> &AST {
     let name: String = blank;
     format(&name, "%(%)", parent.name, key);
     ptr.data = ASTData::Function(ASTFunction {
-        state: FunctionState { i: FUNCTION_STATE_MONOMORPHIZED },
+        state: FunctionState {
+            is_monomorphized: true,
+        },
+        loc: ast.loc,
         name: asSubStr(&name),
         scopes: new_GAF_List(type_info(Scope_Info)),
         params: new_GAF_List(type_info(&AST)),
@@ -432,7 +569,10 @@ func monomorphize_struct_node(ast: &AST, mapping: GAF_HashMap) -> &AST {
     let name: String = blank;
     format(&name, "%(%)", parent.name, key);
     ptr.data = ASTData::Struct(ASTStruct {
-        state: StructState { i: STRUCT_STATE_MONOMORPHIZED },
+        state: StructState {
+            is_monomorphized: true,
+        },
+        loc: ast.loc,
         name: asSubStr(&name),
         parameters: parent.parameters,
         fields: new_GAF_List(type_info(&AST)),
@@ -477,7 +617,7 @@ func __collect_generic_type_mapping(ast: &AST, type: &Type, mapping: &GAF_HashMa
                     return false;
                 }
             }
-            return true;
+            return __collect_generic_type_mapping(func_state.return_type, ret, mapping);
         }
         &ASTData::Param(p) => {
             return __collect_generic_type_mapping(p, type, mapping);
@@ -555,22 +695,16 @@ func collect_generic_type_mapping(fn: &AST, type: &Type) -> (GAF_HashMap, bool, 
 
     let mapping = new_generic_type_mapping();
     let success = __collect_generic_type_mapping(fn, type, &mapping);
-    let unknown = false;
-    foreach(&mapping, func (k: Data, v: Data) {
-        let n = k as SubStr;
-        let t = v as &Type;
-        message(dbg(blank, "  map: % => %", n, to_string(t)));
-    });
-    foreach(&mapping, func (k: Data, v: Data, arg: &(&bool, &bool)) {
-        let &(success, unknown) = arg;
-        if (!*success) return;
-        let t = v as &Type;
+    for (let i: usize = 0; i < mapping.capacity; i = i + 1) {
+        if (!mapping.set_elements[i]) continue;
+        let (k, v) = getAtIndex(&mapping, i);
+        let s = k as &SubStr;
+        let t = *(v as &&Type);
         if (is_unknown(t)) {
-            *success = false;
-            *unknown = true;
+            return (mapping, false, true);
         }
-    }, &(&success, &unknown));
-    return (mapping, success, unknown);
+    }
+    return (mapping, success, false);
 }
 
 func create_function(parent: &AST, loc: Loc, origin: SubStr, name: SubStr) -> &AST {
@@ -579,6 +713,7 @@ func create_function(parent: &AST, loc: Loc, origin: SubStr, name: SubStr) -> &A
     reserve_capacity(&scopes, 16);
     ptr.data = ASTData::Function(ASTFunction {
         state: blank,
+        loc: loc,
         name: name,
         scopes: scopes,
         params: new_GAF_List(type_info(&AST)),

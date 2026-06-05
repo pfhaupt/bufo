@@ -2,6 +2,7 @@
 import "type_info.bufo";
 import "libc.bufo";
 import "prelude.bufo";
+import "format.bufo";
 
 struct GAF_List {
     elements: Any;
@@ -21,7 +22,7 @@ func new_GAF_List(ti: TypeInfo) -> GAF_List {
         length: 0,
         capacity: 0,
         type: ti,
-        type_size: get_size(&ti),
+        type_size: next_multiple_of(get_size(&ti), get_align(&ti)),
     };
 }
 
@@ -112,4 +113,27 @@ func index_of(list: &GAF_List, elem: Any) -> usize {
     assert((elem as usize - start) % list.type_size == 0, "GAF_List.index_of: Element is not part of the list: Invalid offset");
     let index = (elem as usize - start) / list.type_size;
     return index;
+}
+
+func insert_at_index(list: &GAF_List, index: usize, elem: Data) {
+    assert(index <= list.length, "GAF_List.insert_at_index: Out of bounds insertion");
+    assert(equals(&list.type, &elem.info), "GAF_List.insert_at_index: Type mismatch");
+
+    if (list.length + 1 > list.capacity) {
+        let new_capacity = list.capacity * 3 / 2;
+        if (new_capacity == 0) new_capacity = 16;
+        reserve_capacity(list, new_capacity);
+    }
+
+    let type_size = list.type_size;
+    let base = list.elements as &u8;
+    let ptr = base + index * type_size;
+
+    let count = list.length - index;
+    if (count > 0) {
+        C::memmove(ptr + type_size, ptr, count * type_size);
+    }
+
+    C::memcpy(ptr, elem.ptr, type_size);
+    list.length = list.length + 1;
 }

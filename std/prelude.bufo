@@ -33,7 +33,14 @@ comptime ERR_STR: &char = "\x1b[91merror\x1b[0m";
 comptime WARN_STR: &char = "\x1b[93mwarning\x1b[0m";
 comptime NOTE_STR: &char = "\x1b[92mnote\x1b[0m";
 
-comptime U32_MAX: u32 = 0 - 1;
+comptime I8_MAX : u64 = 0x7f;
+comptime I16_MAX: u64 = 0x7fff;
+comptime I32_MAX: u64 = 0x7fffffff;
+comptime I64_MAX: u64 = 0x7fffffffffffffff;
+comptime U8_MAX : u64 = 0xff;
+comptime U16_MAX: u64 = 0xffff;
+comptime U32_MAX: u64 = 0xffffffff;
+comptime U64_MAX: u64 = 0xffffffffffffffff;
 
 let stdin: Any = null;
 let stdout: Any = null;

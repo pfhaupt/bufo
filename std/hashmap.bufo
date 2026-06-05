@@ -77,7 +77,9 @@ func enumerate(this: &GAF_HashMap, fn: func (usize, Data, Data)) {
     let index: usize = 0;
     for (let i: usize = 0; i < this.capacity; i = i + 1) {
         if (this.set_elements[i]) {
-            let (key, value) = getAtIndex(this, i);
+            let (key_ptr, val_ptr) = getAtIndex(this, i);
+            let key = Data { ptr: key_ptr, info: this.key_type };
+            let value = Data { ptr: val_ptr, info: this.value_type };
             fn(index, key, value);
             index = index + 1;
         }
@@ -88,7 +90,9 @@ func enumerate(this: &GAF_HashMap, fn: func (usize, Data, Data, Any), arg: Any) 
     let index: usize = 0;
     for (let i: usize = 0; i < this.capacity; i = i + 1) {
         if (this.set_elements[i]) {
-            let (key, value) = getAtIndex(this, i);
+            let (key_ptr, val_ptr) = getAtIndex(this, i);
+            let key = Data { ptr: key_ptr, info: this.key_type };
+            let value = Data { ptr: val_ptr, info: this.value_type };
             fn(index, key, value, arg);
             index = index + 1;
         }
@@ -98,7 +102,9 @@ func enumerate(this: &GAF_HashMap, fn: func (usize, Data, Data, Any), arg: Any) 
 func foreach(this: &GAF_HashMap, fn: func (Data, Data)) {
     for (let i: usize = 0; i < this.capacity; i = i + 1) {
         if (this.set_elements[i]) {
-            let (key, value) = getAtIndex(this, i);
+            let (key_ptr, val_ptr) = getAtIndex(this, i);
+            let key = Data { ptr: key_ptr, info: this.key_type };
+            let value = Data { ptr: val_ptr, info: this.value_type };
             fn(key, value);
         }
     }
@@ -107,7 +113,9 @@ func foreach(this: &GAF_HashMap, fn: func (Data, Data)) {
 func foreach(this: &GAF_HashMap, fn: func (Data, Data, Any), arg: Any) {
     for (let i: usize = 0; i < this.capacity; i = i + 1) {
         if (this.set_elements[i]) {
-            let (key, value) = getAtIndex(this, i);
+            let (key_ptr, val_ptr) = getAtIndex(this, i);
+            let key = Data { ptr: key_ptr, info: this.key_type };
+            let value = Data { ptr: val_ptr, info: this.value_type };
             fn(key, value, arg);
         }
     }
@@ -147,8 +155,11 @@ func resizeIfNecessary(this: &GAF_HashMap) {
         key_equals_fn: this.key_equals_fn,
     };
     for (let i: usize = 0; i < this.capacity; i = i + 1) {
-        let (key, value) = getAtIndex(this, i);
-        if (this.set_elements[i]) add(&newThis, key, value);
+        if (!this.set_elements[i]) continue;
+        let (key_ptr, val_ptr) = getAtIndex(this, i);
+        let key = Data { ptr: key_ptr, info: this.key_type };
+        let value = Data { ptr: val_ptr, info: this.value_type };
+        add(&newThis, key, value);
     }
     C::free(this.elements);
     C::free(this.keys);
@@ -165,7 +176,9 @@ func add(this: &GAF_HashMap, key: Data, value: Data) {
     let stop: usize = _hash - 1;
     if (_hash == 0) stop = this.capacity - 1;
     while (_hash != stop) {
-        let (_key, _value) = getAtIndex(this, _hash);
+        let (key_ptr, val_ptr) = getAtIndex(this, _hash);
+        let _key = Data { ptr: key_ptr, info: this.key_type };
+
         let must_write = false;
         if (!this.set_elements[_hash]) {
             must_write = true;
@@ -174,8 +187,8 @@ func add(this: &GAF_HashMap, key: Data, value: Data) {
             must_write = true;
         }
         if (must_write) {
-            C::memcpy(_key.ptr, key.ptr, this.key_type_size);
-            C::memcpy(_value.ptr, value.ptr, this.value_type_size);
+            C::memcpy(key_ptr, key.ptr, this.key_type_size);
+            C::memcpy(val_ptr, value.ptr, this.value_type_size);
             this.set_elements[_hash] = true;
             return;
         }
@@ -194,16 +207,29 @@ func getRaw(this: &GAF_HashMap, key: Data) -> Any {
 
 func get(this: &GAF_HashMap, key: Data) -> Data {
     assert(equals(&this.key_type, &key.info), "GAF_HashMap.get: Key type mismatch");
-    if (this.length == 0) return Data { info: this.value_type, ptr: null };
+
+    let empty = Data { info: this.value_type, ptr: null };
+    if (this.length == 0) return empty;
+
     assert(this.capacity > 0);
-    let _hash: usize = this.key_hash_fn(key) % this.capacity;
-    let stop: usize = _hash - 1;
-    if (_hash == 0) stop = this.capacity - 1;
+
+    let capacity = this.capacity;
+    let set_elements = this.set_elements;
+    let _hash = this.key_hash_fn(key) % capacity;
+    let stop = _hash - 1;
+    if (_hash == 0) stop = capacity - 1;
+
     while (_hash != stop) {
-        let (_key, _value) = getAtIndex(this, _hash);
-        if (!this.set_elements[_hash]) return Data { info: this.value_type, ptr: null };
-        if (this.key_equals_fn(_key, key)) return _value;
-        _hash = (_hash + 1) % this.capacity;
+        if (!set_elements[_hash]) return empty;
+
+        let (key_ptr, val_ptr) = getAtIndex(this, _hash);
+        let _key = Data { ptr: key_ptr, info: this.key_type };
+
+        if (this.key_equals_fn(_key, key)) {
+            return Data { ptr: val_ptr, info: this.value_type };
+        }
+
+        _hash = (_hash + 1) % capacity;
     }
     unreachable("Load Factor guarantees that there's always at least one unset Entry in the HashMap.");
 }
@@ -216,16 +242,19 @@ func index_of(this: &GAF_HashMap, elem: Data) -> usize {
     let stop: usize = _hash - 1;
     if (_hash == 0) stop = this.capacity - 1;
     while (_hash != stop) {
-        let (_key, _value) = getAtIndex(this, _hash);
+        let (key_ptr, val_ptr) = getAtIndex(this, _hash);
+
+        let _key = Data { ptr: key_ptr, info: this.key_type };
         if (this.key_equals_fn(_key, elem)) return _hash;
+
         _hash = (_hash + 1) % this.capacity;
     }
     unreachable("index_of: HashMap contains element but wasnt found");
 }
 
-func getAtIndex(this: &GAF_HashMap, index: usize) -> (Data, Data) {
+func getAtIndex(this: &GAF_HashMap, index: usize) -> (Any, Any) {
     assert(index < this.capacity, "Out of bounds access in GAF_HashMap.getAtIndex");
-    let key = Data { ptr: (this.keys as &char) + index * this.key_type_size, info: this.key_type };
-    let value = Data { ptr: (this.elements as &char) + index * this.value_type_size, info: this.value_type };
-    return (key, value);
+    let key_ptr = (this.keys as &char) + index * this.key_type_size;
+    let val_ptr = (this.elements as &char) + index * this.value_type_size;
+    return (key_ptr, val_ptr);
 }

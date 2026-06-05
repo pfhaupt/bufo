@@ -64,6 +64,7 @@ module C {
     }
     @extern @mangle("memcmp") func memcmp(lhs: Any, rhs: Any, count: usize) -> i32;
     @extern @mangle("memset") func memset(s: Any, b: i32, count: usize) -> Any;
+    @extern @mangle("memmove") func memmove(dst: Any, src: Any, n: usize) -> Any;
 
     @os(WINDOWS) func aligned_alloc(alignment: usize, size: usize) -> Any {
         return _aligned_malloc(size, alignment);

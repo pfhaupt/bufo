@@ -1,7 +1,8 @@
 
-// struct A { b: B; }
-// struct B { f: C; }
-// struct C { b: A; }
+#load "ops.bufo";
+
+#load "tests/long_func.bufo";
+#load "tests/fib.bufo";
 
 struct List($T) {
     // Pointer to the heap
@@ -27,36 +28,19 @@ struct List($T) {
 //     }
 // }
 
-func bar(a: $T, b: $V) {
-}
-
-func fun(b: $T, a: *List($T)) {
-    push(a, b);
-}
-
-func urmom() @expand {
-    let a: i32 = 0;
-    aboba(a);
-    let b = "urmom";
-    aboba(b);
-    insert("123");
-}
-
-func insert(b: $T) @expand {
-    let a: str = "123";
-    let c = b;
-}
-
-func aboba(a: $T) {
-    #insert "let foo: $T = a;";
-}
-
 func push(list: *List($T), elem: $T) {
+    if (list.length >= list.capacity) {
+        let new_cap = list.capacity * 2;
+        if (new_cap == 0) new_cap = 16;
+        #assert new_cap == 16, "Expected new capacity to be 16";
+        list.capacity = new_cap;
+    }
+    list.length += 1;
     // if (list.length >= list.capacity) {
     //     let new_cap = list.capacity * 2;
     //     if (new_cap == 0) new_cap = 16;
-    //     list.elements = realloc(list.elements, new_cap * sizeof(elem));
-    //     assert(list.elements != null, "Could not allocate List elements");
+    //     // list.elements = realloc(list.elements, new_cap * sizeof(elem));
+    //     // assert(list.elements != null, "Could not allocate List elements");
     //     list.capacity = new_cap;
     // }
     // list.elements[list.length] = elem;
@@ -68,70 +52,22 @@ func push_elem() -> str {
 }
 
 func get_code() -> str {
-    return "{ let n: i32 = 123; n }";
+    return "{ let n: i32 = 123; let m: i32 = 123; n + m }";
 }
 
 func main() {
     comptime list_of_i32 = List(i32);
-    comptime list_of_list_of_i32 = List(List(i32));
     comptime foo = "let bar: i32 = 1";
-    let list: list_of_i32 = blank;
-    {
-        let list_of_list: list_of_list_of_i32 = blank;
-        let real_list: List(i32) = blank;
-        let s: i32 = #run {
+    #run {
+        let list: list_of_i32 = blank;
+        let s: i32 = {
             #insert,expr #run get_code()
         };
-        bar(s, list);
-        bar(list, s);
-        fun(123, &list);
-        fun(real_list, &list_of_list);
+        #insert "#assert s == 246;";
         #insert "push(&list, s);";
         #insert foo;                 // let bar = 1;
         #insert "push(&list, bar);"; // push(&list, bar);
         #insert #run push_elem();    // push(&list, 123);
-    }
-
-    {
-        let s1: i32 = 123;
-        let s2 = "123";
-        let s3: List(i32) = blank;
-        let s4: bool = blank;
-        let _s1 /* : i32       */ = s1 + s1;
-        let _s2 /* : str       */ = s1 + s2;
-        let _s3 /* : List(str) */ = s1 + s3;
-        let _s4 /* : List(i32) */ = s3 + s1;
-        let _s5 /* : i32       */ = s3 + s3;
-        let _s6 /* : bool      */ = s1 + s4;
-
-        let _s7 = s1 - s1;
-
-        let l1: List(i32) = blank;
-        let l2: List(i32) = blank;
-        let l3: List(List(i32)) = blank;
-        let l4: List(List(i32)) = blank;
-        let _l1 /* : i32       */ = l1 + l2;
-        let _l2 /* : List(i32) */ = l3 + l4;
-    }
-}
-
-func __sub__(a: i32, b: i32) -> i32 {
-}
-
-func __add__(a: i32, b: bool) -> bool {
-}
-
-func __add__(a: i32, b: str) -> str {
-}
-
-func __add__(a: List(i32), b: i32) -> List(i32) {
-}
-
-func __add__(a: i32, b: List(i32)) -> List(str) {
-}
-
-func __add__(l1: List($T), l2: List($T)) -> $T {
-}
-
-func __add__(a: i32, b: i32) -> i32 {
+        #insert "#assert list.length == 3";
+    };
 }

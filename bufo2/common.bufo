@@ -9,8 +9,6 @@ import "format.bufo";
 
 import "corot.bufo";
 
-comptime I32_MAX: u64 = 0x7fffffff;
-
 func wrap(d: Data) -> Any {
     let size = get_size(&d.info);
     let ptr = C::malloc(size);
@@ -20,13 +18,13 @@ func wrap(d: Data) -> Any {
 }
 
 struct Loc {
-    file: &char;
+    file: SubStr;
     offset: usize; // TODO: line and column
 }
 
-func new_loc(offset: usize) -> Loc {
+func new_loc(file: SubStr, offset: usize) -> Loc {
     return Loc {
-        file: "idk where",
+        file: file,
         offset: offset,
     };
 }
@@ -133,7 +131,7 @@ func message(errors: ...Message) {
             }
             _ => { unreachable("message"); }
         }
-        if (loc.file == null && loc.offset == 0) {
+        if (loc.file.start == null && loc.offset == 0) {
             fprint("% %\n", corot, msg);
         } else {
             fprint("% %:%: %\n", corot, loc.file, loc.offset, msg);

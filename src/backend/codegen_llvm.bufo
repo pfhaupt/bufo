@@ -2,6 +2,7 @@ import "prelude.bufo";
 import "libc.bufo";
 import "string.bufo";
 import "substr.bufo";
+import "format.bufo";
 import "asm.bufo";
 import "../bufo.bufo";
 import "../util/span.bufo";
@@ -280,7 +281,7 @@ func generateRuntimeInitialization(this: &LLVMCodegen, initRuntime: &IRFunc) -> 
                 break;
             }
         }
-        assert(file != null);
+        fassert(file != null, "Could not find file %", *flags.file);
         let line: usize = 0;
         let col: usize = 0;
         getLineAndColumnFromSpan(file, &initRuntime.span, &line, &col);
@@ -327,7 +328,7 @@ func generateEntryPoint(this: &LLVMCodegen) -> bool {
     let main: LLVMValue = addFunction(&this.llvmModule, newSubStrOfStrLit("main"), retFnType);
     if (equals(flags.target, &comptime newReadonlyString("WASM"))) {
         let attr = createStringAttribute(&this.llvmContext, comptime newSubStrOfStrLit("wasm-export-name"), newSubStrOfStrLit("main"));
-        addAttribute(&main, U32_MAX, attr);
+        addAttribute(&main, U32_MAX as u32, attr);
     }
     let entry: LLVMBasicBlock = appendBasicBlock(&this.llvmContext, main, newSubStrOfStrLit("entry"));
     positionAtEnd(&this.llvmBuilder, entry);
@@ -338,7 +339,7 @@ func generateEntryPoint(this: &LLVMCodegen) -> bool {
         let runtime_func: LLVMValue = getFunction(&this.llvmModule, rt_name);
         if (equals(flags.target, &comptime newReadonlyString("WASM"))) {
             let attr = createStringAttribute(&this.llvmContext, comptime newSubStrOfStrLit("wasm-export-name"), rt_name);
-            addAttribute(&runtime_func, U32_MAX, attr);
+            addAttribute(&runtime_func, U32_MAX as u32, attr);
         }
         let _retType: LLVMType = createVoidType(&this.llvmContext);
         let _params: LLVMTypeList = blank;
@@ -374,18 +375,18 @@ func generateLLVMFunctionHeader(this: &LLVMCodegen, irFunc: &IRFunc) {
     if (equals(flags.target, &comptime newReadonlyString("WASM"))) {
         if (hasAttribute(function, ParsedAttribute::Wasm_Export)) {
             let attr = createStringAttribute(&this.llvmContext, comptime newSubStrOfStrLit("wasm-export-name"), asSubStr(&irFunc.name));
-            addAttribute(&llvmFuncValue, U32_MAX, attr);
+            addAttribute(&llvmFuncValue, U32_MAX as u32, attr);
         }
     }
     if (hasAttribute(irFunc, ParsedAttribute::Noreturn)) {
         let id = LLVM::GetEnumAttributeKindForName("noreturn", 8 /* sizeof "noreturn" */);
         assert(id != 0, "Could not get noreturn attribute from LLVM");
-        addAttribute(&llvmFuncValue, U32_MAX, createEnumAttribute(&this.llvmContext, id, 1));
+        addAttribute(&llvmFuncValue, U32_MAX as u32, createEnumAttribute(&this.llvmContext, id, 1));
     }
     if (hasAttribute(irFunc, ParsedAttribute::Naked)) {
         let id = LLVM::GetEnumAttributeKindForName("naked", 5 /* sizeof "naked" */);
         assert(id != 0, "Could not get naked attribute from LLVM");
-        addAttribute(&llvmFuncValue, U32_MAX, createEnumAttribute(&this.llvmContext, id, 1));
+        addAttribute(&llvmFuncValue, U32_MAX as u32, createEnumAttribute(&this.llvmContext, id, 1));
     }
     if (*flags.debug) {
         let file = getParentFile(function);
@@ -533,8 +534,8 @@ func generateLLVMInstr(
 ) -> LLVMValue {
     let isGlobal: bool = LLVM::isNull(llvmFunc.ref);
     if (instr.kind == INSTR_DEBUG_INFO_PARAM) {
-        assert(*flags.debug);
-        assert(!isGlobal);
+        assert(*flags.debug, "We're not in debug mode");
+        assert(!isGlobal, "Function is not a global");
         let reg: &IRReg = getRegister(irFunc, instr.dst);
         let dstLLVM = asLLVM(at(regs, instr.dst.i), "LLVM DebugInfo Param");
         let file = at(&files, instr.span.file);
@@ -554,7 +555,7 @@ func generateLLVMInstr(
         insertDeclareRecordAtEnd(this.llvmDIBuilder, dstLLVM, meta, expr, loc, getInsertBlock(&this.llvmBuilder));
         return dstLLVM;
     } else if (instr.kind == INSTR_DEBUG_INFO_ALLOCA) {
-        assert(*flags.debug);
+        assert(*flags.debug, "We're not in debug mode");
         let reg: &IRReg = getRegister(irFunc, instr.dst);
         let dstLLVM = asLLVM(at(regs, instr.dst.i), "LLVM DebugInfo Alloca");
         let file = at(&files, instr.span.file);
@@ -594,7 +595,7 @@ func generateLLVMInstr(
             return buildAlloca(&this.llvmBuilder, typ, newSubStrOfStrLit("v"));
         }
     } else if (instr.kind == INSTR_GET_PARAM) {
-        assert(!isGlobal);
+        assert(!isGlobal, "Expected local function");
         let param: LLVMValue = getNthParam(llvmFunc, instr.src.i);
         setName(&param, newSubStrOfStrLit("p"));
         return param;
@@ -988,7 +989,7 @@ func generateTypeFromASM(this: &LLVMCodegen, context: &ASMContext) -> LLVMType {
         return getType(&arg);
     }
     let fields: &LLVMType = C::calloc(context.out.length, sizeof LLVMType);
-    assert(fields != null);
+    assert(fields != null, "generateTypeFromASM: Could not allocate fields");
     for (let i: usize = 0; i < context.out.length; i = i + 1) {
         let arg = newLLVMValueFromRef(getArg(context, i));
         fields[i] = getType(&arg);
@@ -1229,7 +1230,7 @@ func generateLLVMType(this: &LLVMCodegen, type: &Type) -> LLVMType {
         }
         &Type::Variadic(_) => {
             let fields: &LLVMType = C::calloc(2, sizeof LLVMType);
-            assert(fields != null);
+            assert(fields != null, "Could not allocate fields for Variadic");
             fields[0] = intoPointerType(&createIntegerType(&this.llvmContext, 64));
             fields[1] = createIntegerType(&this.llvmContext, 64);
             typ = createStructType(&this.llvmContext, fields, 2, false);

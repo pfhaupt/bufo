@@ -5,6 +5,8 @@ import "string.bufo";
 import "type_info.bufo";
 import "list.bufo";
 import "format.bufo";
+import "hashset.bufo";
+import "hashmap.bufo";
 
 import "ast.bufo";
 import "common.bufo";
@@ -13,39 +15,60 @@ import "common.bufo";
 //                    including the Lexer. Would be cool to collect that into a single place
 //                    so modifications are easier to catch.
 union PrimType {
+    I8,
+    I16,
     I32,
+    I64,
+    U8,
+    U16,
+    U32,
+    U64,
     Usize,
-    Str,
     Bool,
+    Str,
     None,
     __count,
 }
 func get_align(t: PrimType) -> usize {
-    (comptime assert(tag(&PrimType::__count) == 5, "PrimType::get_align: Added primitive type"));
+    (comptime assert(tag(&PrimType::__count) == 12, "PrimType::get_align: Added primitive type"));
     match (t) {
+        PrimType::I8    => { return 1; }
+        PrimType::I16   => { return 2; }
+        PrimType::I32   => { return 4; }
+        PrimType::I64   => { return 8; }
+        PrimType::U8    => { return 1; }
+        PrimType::U16   => { return 2; }
+        PrimType::U32   => { return 4; }
+        PrimType::U64   => { return 8; }
         PrimType::Usize => { return 8; }
-        PrimType::I32 => { return 4; }
-        PrimType::Bool => { return 1; }
-        PrimType::Str => {
+        PrimType::Bool  => { return 1; }
+        PrimType::Str   => {
             let ptr = get_align(BaseType::Ptr);
             let size = get_align(PrimType::Usize);
             assert(size == ptr, "get_align(str)");
             return size;
         }
-        PrimType::None => { return 0; }
+        PrimType::None => { return 1; }
         _ => {
-            message(todo(new_loc(0), "get_align(PrimType): %", t));
+            message(todo(blank, "get_align(PrimType): %", t));
         }
     }
     unreachable("get_align(PrimType)");
 }
 func get_size(t: PrimType) -> usize {
-    (comptime assert(tag(&PrimType::__count) == 5, "PrimType::get_size: Added primitive type"));
+    (comptime assert(tag(&PrimType::__count) == 12, "PrimType::get_size: Added primitive type"));
     match (t) {
+        PrimType::I8    => { return 1; }
+        PrimType::I16   => { return 2; }
+        PrimType::I32   => { return 4; }
+        PrimType::I64   => { return 8; }
+        PrimType::U8    => { return 1; }
+        PrimType::U16   => { return 2; }
+        PrimType::U32   => { return 4; }
+        PrimType::U64   => { return 8; }
         PrimType::Usize => { return 8; }
-        PrimType::I32 => { return 4; }
-        PrimType::Bool => { return 1; }
-        PrimType::Str => {
+        PrimType::Bool  => { return 1; }
+        PrimType::Str   => {
             let ptr = get_size(BaseType::Ptr);
             let size = get_size(PrimType::Usize);
             assert(size == ptr, "get_size(str)");
@@ -53,16 +76,35 @@ func get_size(t: PrimType) -> usize {
         }
         PrimType::None => { return 0; }
         _ => {
-            message(todo(new_loc(0), "get_size(PrimType): %", t));
+            message(todo(blank, "get_size(PrimType): %", t));
         }
     }
     unreachable("get_size(PrimType)");
 }
 
-func is_number(pt: PrimType) -> bool {
-    (comptime assert(tag(&PrimType::__count) == 5, "PrimType::is_number: Added primitive type"));
+func is_signed_integer(pt: PrimType) -> bool {
+    (comptime assert(tag(&PrimType::__count) == 12, "PrimType::is_signed_integer: Added primitive type"));
     match (pt) {
-        PrimType::I32 => { return true; }
+        PrimType::I8    => { return true; }
+        PrimType::I16   => { return true; }
+        PrimType::I32   => { return true; }
+        PrimType::I64   => { return true; }
+        _ => { }
+    }
+    return false;
+}
+
+func is_number(pt: PrimType) -> bool {
+    (comptime assert(tag(&PrimType::__count) == 12, "PrimType::is_number: Added primitive type"));
+    match (pt) {
+        PrimType::I8    => { return true; }
+        PrimType::I16   => { return true; }
+        PrimType::I32   => { return true; }
+        PrimType::I64   => { return true; }
+        PrimType::U8    => { return true; }
+        PrimType::U16   => { return true; }
+        PrimType::U32   => { return true; }
+        PrimType::U64   => { return true; }
         PrimType::Usize => { return true; }
         _ => { }
     }
@@ -72,10 +114,17 @@ func is_number(pt: PrimType) -> bool {
 func to_string(out: &String, t: PrimType) {
     let _tag = tag(&t) as usize;
     comptime names = [
+        newSubStrOfStrLit("i8"),
+        newSubStrOfStrLit("i16"),
         newSubStrOfStrLit("i32"),
+        newSubStrOfStrLit("i64"),
+        newSubStrOfStrLit("u8"),
+        newSubStrOfStrLit("u16"),
+        newSubStrOfStrLit("u32"),
+        newSubStrOfStrLit("u64"),
         newSubStrOfStrLit("usize"),
-        newSubStrOfStrLit("str"),
         newSubStrOfStrLit("bool"),
+        newSubStrOfStrLit("str"),
         newSubStrOfStrLit("none"),
     ];
     (comptime assert(names.length == tag(&PrimType::__count) as usize, "PrimType::to_string: Added primitive type"));
@@ -112,18 +161,18 @@ func to_string(out: &String, bt: BaseType) {
             };
             pushSubStr(out, &struct_info.name);
             if (node.parent == null) {
-                if (((struct_info.state.i & STRUCT_STATE_MONOMORPHIZED) == 0) && struct_info.parameters.length > 0) {
+                if (!struct_info.state.is_monomorphized && struct_info.parameters.length > 0) {
                     // Generic struct, print as List($T)
                     pushChar(out, '(');
-                    enumerate(&struct_info.parameters, func (index: usize, val: Data, out: &String) {
-                        if (index > 0) pushStr(out, ", ");
-                        let _node = val as &AST;
+                    for (let i: usize = 0; i < struct_info.parameters.length; i = i + 1) {
+                        if (i > 0) pushStr(out, ", ");
+                        let _node = get_ref(&struct_info.parameters, i) as &AST;
                         let ASTData::Expr(ASTExpr::Generic) = _node.data else {
                             unreachable();
                         };
                         pushChar(out, '$');
                         pushSubStr(out, &_node.origin);
-                    }, out);
+                    }
                     pushChar(out, ')');
                 }
             }
@@ -136,7 +185,7 @@ func to_string(out: &String, bt: BaseType) {
             to_string(out, sub);
         }
         _ => {
-            message(todo(new_loc(0), "to_string(BaseType): %", bt));
+            message(todo(blank, "to_string(BaseType): %", bt));
         }
     }
 }
@@ -149,7 +198,7 @@ func get_align(t: BaseType) -> usize {
         BaseType::Prim(pt) => { return get_align(pt); }
         BaseType::Struct(str) => { return get_align(str); }
         _ => {
-            message(todo(new_loc(0), "get_align(BaseType): %", t));
+            message(todo(blank, "get_align(BaseType): %", t));
         }
     }
     unreachable("get_align(BaseType)");
@@ -162,7 +211,7 @@ func get_size(t: BaseType) -> usize {
         BaseType::Prim(pt) => { return get_size(pt); }
         BaseType::Struct(str) => { return get_size(str); }
         _ => {
-            message(todo(new_loc(0), "get_size(BaseType): %", t));
+            message(todo(blank, "get_size(BaseType): %", t));
         }
     }
     unreachable("get_size(BaseType)");
@@ -193,8 +242,36 @@ struct Type {
     base: BaseType;
 }
 
+func into_pointer_type(t: &Type) -> &Type {
+    return create_meta_type(t.meta_level, BaseType::Ptr(t));
+}
+func get_underlying_type(pt: &Type) -> &Type {
+    while let BaseType::Ptr(under) = pt.base {
+        pt = under;
+    }
+    return pt;
+}
+
+let base_types: [Type; 12] = blank;
 func create_base_type(pt: PrimType) -> &Type {
-    return create_base_type(BaseType::Prim(pt));
+    (comptime assert(tag(&PrimType::__count) == 12, "create_base_type: Update table"));
+    if (tag(&base_types[0].base) == comptime tag(&BaseType::Unknown)) {
+        base_types = [
+            Type { meta_level: 0, base: BaseType::Prim(PrimType::I8) },
+            Type { meta_level: 0, base: BaseType::Prim(PrimType::I16) },
+            Type { meta_level: 0, base: BaseType::Prim(PrimType::I32) },
+            Type { meta_level: 0, base: BaseType::Prim(PrimType::I64) },
+            Type { meta_level: 0, base: BaseType::Prim(PrimType::U8) },
+            Type { meta_level: 0, base: BaseType::Prim(PrimType::U16) },
+            Type { meta_level: 0, base: BaseType::Prim(PrimType::U32) },
+            Type { meta_level: 0, base: BaseType::Prim(PrimType::U64) },
+            Type { meta_level: 0, base: BaseType::Prim(PrimType::Usize) },
+            Type { meta_level: 0, base: BaseType::Prim(PrimType::Bool) },
+            Type { meta_level: 0, base: BaseType::Prim(PrimType::Str) },
+            Type { meta_level: 0, base: BaseType::Prim(PrimType::None) },
+        ];
+    }
+    return &base_types[tag(&pt) as usize];
 }
 func create_base_type(bt: BaseType) -> &Type {
     return create_meta_type(0, bt);
@@ -216,11 +293,18 @@ func wrap_meta_type(t: &Type, level: usize) -> &Type {
 
 func get_builtin_type(name: SubStr) -> &Type {
     let map = [
-        (comptime newSubStrOfStrLit("i32"), BaseType::Prim(PrimType::I32)),
+        (comptime newSubStrOfStrLit("i8"),    BaseType::Prim(PrimType::I8)),
+        (comptime newSubStrOfStrLit("i16"),   BaseType::Prim(PrimType::I16)),
+        (comptime newSubStrOfStrLit("i32"),   BaseType::Prim(PrimType::I32)),
+        (comptime newSubStrOfStrLit("i64"),   BaseType::Prim(PrimType::I64)),
+        (comptime newSubStrOfStrLit("u8"),    BaseType::Prim(PrimType::U8)),
+        (comptime newSubStrOfStrLit("u16"),   BaseType::Prim(PrimType::U16)),
+        (comptime newSubStrOfStrLit("u32"),   BaseType::Prim(PrimType::U32)),
+        (comptime newSubStrOfStrLit("u64"),   BaseType::Prim(PrimType::U64)),
         (comptime newSubStrOfStrLit("usize"), BaseType::Prim(PrimType::Usize)),
-        (comptime newSubStrOfStrLit("str"), BaseType::Prim(PrimType::Str)),
-        (comptime newSubStrOfStrLit("bool"), BaseType::Prim(PrimType::Bool)),
-        (comptime newSubStrOfStrLit("none"), BaseType::Prim(PrimType::None)),
+        (comptime newSubStrOfStrLit("bool"),  BaseType::Prim(PrimType::Bool)),
+        (comptime newSubStrOfStrLit("str"),   BaseType::Prim(PrimType::Str)),
+        (comptime newSubStrOfStrLit("none"),  BaseType::Prim(PrimType::None)),
     ];
     assert(map.length == tag(&PrimType::__count) as usize, "get_builtin_type: Added primitive type");
     for (let i: usize = 0; i < map.length; i = i + 1) {
@@ -228,7 +312,7 @@ func get_builtin_type(name: SubStr) -> &Type {
             return create_meta_type(1, map[i].1);
         }
     }
-    message(todo(new_loc(0), "get_builtin_type: Unknown type name %", name));
+    message(todo(blank, "get_builtin_type: Unknown type name %", name));
     unreachable(); // todo terminates
 }
 
@@ -251,7 +335,7 @@ func to_string(out: &String, t: &Type) {
 
 func get_align(t: &Type) -> usize {
     if (t.meta_level == 0) return get_align(t.base);
-    message(todo(blank, "get_align of meta type"));
+    message(todo(blank, "get_align of meta type %", t.base));
     unreachable();
 }
 func get_size_in_bits(t: &Type) -> usize {
@@ -259,7 +343,7 @@ func get_size_in_bits(t: &Type) -> usize {
 }
 func get_size(t: &Type) -> usize {
     if (t.meta_level == 0) return get_size(t.base);
-    message(todo(blank, "get_size of meta type %", t.base));
+    message(todo(blank, "get_size of meta type %", *t));
     unreachable();
 }
 
@@ -268,6 +352,13 @@ func is_unknown(t: &Type) -> bool {
         return true;
     }
     return false;
+}
+
+func is_signed_integer(t: &Type) -> bool {
+    let BaseType::Prim(pt) = t.base else {
+        return false;
+    };
+    return is_signed_integer(pt);
 }
 
 func is_number(t: &Type) -> bool {

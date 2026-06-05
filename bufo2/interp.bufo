@@ -13,6 +13,7 @@ import "common.bufo";
 import "codegen.bufo";
 import "type.bufo";
 import "corot.bufo";
+import "lookup.bufo";
 
 union Value {
     Invalid,
@@ -25,8 +26,8 @@ union Value {
 
 comptime STACK_SIZE: usize = 1024*1024;
 comptime REG_STACK_SIZE: usize = 1024*1024;
-comptime ARG_STACK_SIZE: usize = 32*1024;
-comptime VAR_STACK_SIZE: usize = 32*1024;
+comptime ARG_STACK_SIZE: usize = 1024*1024;
+comptime VAR_STACK_SIZE: usize = 1024*1024;
 struct Interp {
     fn: &AST;
     // Stack for variables and execution
@@ -45,7 +46,7 @@ struct Interp {
     var_stack_base: &u8;
     var_stack_pointer: &u8;
     var_stack_size: usize;
-    variable_map: GAF_HashMap; // HashMap<String, Value>
+    variable_map: GAF_HashMap; // HashMap<SubStr, Value>
 }
 
 func align_pointer(ptr: &&u8) {
@@ -91,38 +92,28 @@ func allocate_register(interp: &Interp, loc: Loc, bytes: usize) -> &u8 {
     if (interp.register_stack_pointer >= interp.register_stack_base + interp.register_stack_size) {
         message(fatal(loc, "Register Stack Overflow during compile time execution. Attempted to allocate % byte(s).", bytes));
     }
-    // message(dbg(interp.fn.loc, "allocate_register(%): %", bytes, ptr));
     return ptr;
 }
-func get_register_pointer(interp: &Interp, reg: Reg) -> &u8 {
-    return get_register_pointer_and_size(interp, reg).0;
-}
 func get_register_pointer_and_size(interp: &Interp, reg: Reg) -> (&u8, usize) {
-    let ptr = interp.register_stack_pointer + reg.offset;
-    // message(dbg(interp.fn.loc, "get_register_pointer(%): % %", reg, ptr, reg.size));
+    let ptr = interp.register_stack_pointer - reg.offset - reg.size;
     return (ptr, reg.size);
 }
 func push_argument(interp: &Interp, loc: Loc, reg: &u8, size: usize) {
-    let ptr = interp.arg_stack_pointer;
-    // message(dbg(interp.fn.loc, "push_argument: % % => %", reg, size, ptr));
-    interp.arg_stack_pointer = interp.arg_stack_pointer + size;
-    align_pointer(&interp.arg_stack_pointer);
-    if (interp.arg_stack_pointer >= interp.arg_stack_base + interp.arg_stack_size) {
+    if (interp.arg_stack_pointer + size >= interp.arg_stack_base + interp.arg_stack_size) {
         message(fatal(loc, "Argument Stack Overflow during compile time execution. Attempted to push % byte(s).", size));
     }
-    C::memcpy(ptr, reg, size);
+    C::memcpy(interp.arg_stack_pointer, reg, size);
+    interp.arg_stack_pointer = interp.arg_stack_pointer + size;
 }
 func pop_argument(interp: &Interp, loc: Loc, reg: &u8, size: usize) {
-    interp.arg_stack_pointer = interp.arg_stack_pointer - size;
-    if (interp.arg_stack_pointer < interp.arg_stack_base) {
+    if (interp.arg_stack_pointer - size < interp.arg_stack_base) {
         message(fatal(loc, "Argument Stack Underflow during compile time execution. Attempted to pop % byte(s).", size));
     }
-    // message(dbg(interp.fn.loc, "pop_argument: % % => %", interp.arg_stack_pointer, size, reg));
+    interp.arg_stack_pointer = interp.arg_stack_pointer - size;
     C::memcpy(reg, interp.arg_stack_pointer, size);
 }
 
 func reset_interpreter(interp: &Interp, fn: &AST) {
-    message(dbg(fn.loc, "reset_interpreter"));
     if (interp.stack_base == null) *interp = create_interpreter(fn);
     interp.stack_pointer = interp.stack_base;
     interp.register_stack_pointer = interp.register_stack_base;
@@ -130,7 +121,6 @@ func reset_interpreter(interp: &Interp, fn: &AST) {
 }
 
 func create_interpreter(fn: &AST) -> Interp {
-    message(dbg(fn.loc, "create_interpreter"));
     let stack = C::malloc(STACK_SIZE);
     assert(stack != null, "create_interpreter: Could not allocate stack");
     let reg_stack = C::malloc(REG_STACK_SIZE);
@@ -153,11 +143,11 @@ func create_interpreter(fn: &AST) -> Interp {
         var_stack_base: var_stack,
         var_stack_pointer: var_stack,
         var_stack_size: VAR_STACK_SIZE,
-        variable_map: new_hashmap_with_string_key(type_info(Value)),
+        variable_map: new_hashmap_with_substr_key(type_info(Value)),
     };
 }
 
-func evaluate_comptime_variables(fn: &AST) {
+func evaluate_comptime_variables(fn: &AST, target: &SubStr) {
     let &ASTData::Function(func_state) = &fn.data else { unreachable(); };
 
     // No comptime variables since last time we ran this
@@ -183,22 +173,25 @@ func evaluate_comptime_variables(fn: &AST) {
         block = get_ref_raw(&ct.blocks, curr_block._i);
     }
 
-    foreach(&interp.variable_map, func (_k: Data, _v: Data, fn: &AST) {
-        let &ASTData::Function(func_state) = &fn.data else { unreachable(); };
-        let k = _k as String;
-        let v = _v as Value;
-        message(dbg(fn.loc, "evaluate_comptime_variables: % => %", k, v));
-        if (contains(&func_state.code.comptime_variables, k)) {
-            message(todo(fn.loc, "Redeclaration of compile time variable?"));
+    for (let i: usize = 0; i < interp.variable_map.capacity; i = i + 1) {
+        if (!interp.variable_map.set_elements[i]) continue;
+        let (_k, _v) = getAtIndex(&interp.variable_map, i);
+        let k = *(_k as &SubStr);
+        let v = *(_v as &Value);
+        if (target != null) {
+            if (!equals(&k, target)) continue;
         }
-        let interp = &func_state.code.comptime_interp;
-        let var = allocate_comptime_variable(interp, fn.loc, v);
+        let _var = get(&func_state.code.comptime_variables, k);
+        let var = Value::Invalid;
+        if (_var.ptr != null) {
+            var = _var as Value;
+        } else {
+            var = allocate_comptime_variable(interp, fn.loc, v);
+        }
         add(&func_state.code.comptime_variables, k, var);
-    }, fn);
+    }
 
     interp.register_stack_pointer = ptr;
-    reset(ct);
-    reset(&interp.variable_map);
 }
 
 func evaluate_call(interp: &Interp, fn: &AST) {
@@ -206,11 +199,16 @@ func evaluate_call(interp: &Interp, fn: &AST) {
         unreachable("evaluate_call: Not a function");
     };
 
-    while ((func_state.state.i & FUNCTION_STATE_GENERATED_CODE) == 0) {
-        message(dbg(fn.loc, "evaluate_call % function not ready!", func_state.name));
-        switch();
+    if (!func_state.state.did_codegen_body) {
+        let (handler, result) = wait_for_monitor(&func_state.state.did_codegen_body);
+        let Corot_Result::Success = result else {
+            handle_corot_result(result,
+                error(fn.loc, "Could not evaluate function call due to a cyclic dependency on %.", corot_str(handler)),
+                error(fn.loc, "Could not evaluate function call. There were errors."));
+            unreachable(); // above terminates
+        };
+        assert(func_state.state.did_codegen_body, "evaluate_call: monitor failed");
     }
-    message(dbg(fn.loc, "evaluate_call %", func_state.name));
 
     let rt = &func_state.code.runtime;
 
@@ -220,9 +218,6 @@ func evaluate_call(interp: &Interp, fn: &AST) {
     let curr_block = rt.entry;
     let block: &Block = get_ref_raw(&rt.blocks, curr_block._i);
     assert(equals(&block.name, &comptime newReadonlyString("entry")), "evaluate_call: Expected first block to be entry");
-    if (!is_terminated(block)) {
-        message(todo(fn.loc, "Expected block to have a terminator"));
-    }
     while (evaluate_block(interp, fn, block, &curr_block, false)) {
         block = get_ref_raw(&rt.blocks, curr_block._i);
     }
@@ -230,52 +225,108 @@ func evaluate_call(interp: &Interp, fn: &AST) {
     interp.register_stack_pointer = ptr;
 }
 
-func evaluate_block(interp: &Interp, fn: &AST, block: &Block, bid: &BID, is_comptime: bool) -> bool {
+func evaluate_block(interp: &Interp, fn: &AST, block: &Block, bid: &BID, is_evaluate_comptime: bool) -> bool {
     let &ASTData::Function(func_state) = &fn.data else { unreachable(); };
-
-    // message(dbg(fn.loc, "evaluate_block %", *bid));
 
     for (let ip: usize = 0; ip < block.ir.length; ip = ip + 1) {
         let instr: &Instr = get_ref_raw(&block.ir, ip);
-        assert(instr.id == ip, "evaluate_block: Sanity assertion failed");
         let result = evaluate_single(interp, fn, instr);
-        if let Value::Jump(new_bid) = result {
-            *bid = new_bid;
-            return true;
+        if (is_evaluate_comptime) {
+            // `comptime foo = 123;` instead of `#run { 123 };`
+            // Here it's a bit more flexible what's allowed and what not.
+            if let Value::Jump(new_bid) = result {
+                *bid = new_bid;
+                return true;
+            }
+            if let Value::Return = result {
+                return false;
+            }
+        } else {
+            if (ip == block.ir.length - 1) {
+                fassert(is_terminator(instr), "evaluate_block: Unexpected non-terminator at the end of a block: Found %", instr.op);
+                if let Value::Jump(new_bid) = result {
+                    *bid = new_bid;
+                    return true;
+                }
+                if let Value::Return = result {
+                    return false;
+                }
+                message(todo(instr.loc, "Unimplemented terminator %", instr.op));
+            } else {
+                fassert(!is_terminator(instr), "evaluate_block: Unexpected terminator in the middle of a block: Found %", instr.op);
+            }
         }
-        if let Value::Return = result {
-            return false;
-        }
-        // REVIEW(2026-04-10): This is a very dirty hack, ew.
-        //                     When we call evaluate_comptime_variables() in #run,
-        //                     we evaluate the whole function again.
-        //                     We "patch" this here so the second time around we
-        //                     don't do the whole work, which could lead to side
-        //                     effects, again. Ideally we could remember where we left
-        //                     off so we can just continue from there, or fold the
-        //                     instructions in a more intuitive way. After all, once
-        //                     we evaluated stuff like `comptime foo = 12;`, we don't
-        //                     need those instructions anymore.
-        if (is_comptime) instr.op = Op::Noop;
     }
 
     return false;
 }
 
 func evaluate_single(interp: &Interp, fn: &AST, instr: &Instr) -> Value {
+    // message(note(instr.loc, "evaluate_single %", instr.op));
     if let Op::Noop = instr.op {
         return Value::Noop;
     }
-    message(dbg(instr.ast.loc, "evaluate_single %", instr.op));
     match (&instr.op) {
+        &Op::Alloca(_dst, name) => {
+            let (dst, dst_size) = get_register_pointer_and_size(interp, _dst);
+            assert(dst_size == 8, "Alloca expected pointer sized destination");
+            let size = get_size(instr.type);
+            let stack_pointer = allocate_stack(interp, instr.loc, size);
+            *(dst as &usize) = stack_pointer as usize;
+            add(&interp.variable_map, name, Value::Var { reg: stack_pointer, size: size });
+            return Value::Reg(dst, dst_size);
+        }
+        &Op::Load(_dst, _src) => {
+            let (dst, dst_size) = get_register_pointer_and_size(interp, _dst);
+            let (src, src_size) = get_register_pointer_and_size(interp, _src);
+            assert(src_size == 8, "Load expected pointer sized source");
+            src = *(src as &&u8);
+            C::memcpy(dst, src, dst_size);
+            return Value::Reg(dst, dst_size);
+        }
+        &Op::Store(_dst, _src) => {
+            let (dst, dst_size) = get_register_pointer_and_size(interp, _dst);
+            let (src, src_size) = get_register_pointer_and_size(interp, _src);
+            assert(dst_size == 8, "Store expected pointer sized destination");
+            dst = *(dst as &&u8);
+            C::memcpy(dst, src, src_size);
+            return Value::Reg(dst, dst_size);
+        }
+        &Op::Move(_dst, _src) => {
+            let (dst, dst_size) = get_register_pointer_and_size(interp, _dst);
+            let (src, src_size) = get_register_pointer_and_size(interp, _src);
+            fassert(dst_size == src_size, "evaluate_single: Expected Move to have same size for source and destination, but got % and %.", src_size, dst_size);
+            C::memcpy(dst, src, src_size);
+            return Value::Reg(dst, dst_size);
+        }
         &Op::LoadParameter(dst, _) => {
             let (reg, size) = get_register_pointer_and_size(interp, dst);
-            pop_argument(interp, instr.ast.loc, reg, size);
+            pop_argument(interp, instr.loc, reg, size);
             return Value::Reg(reg, size);
         }
-        &Op::LoadI32(dst, val) => {
+        &Op::LoadNumber(dst, val) => {
             let (reg, size) = get_register_pointer_and_size(interp, dst);
-            *(reg as &i32) = val;
+            let signed = is_signed_integer(instr.type);
+            if (size == 1) {
+                if (signed) *(reg as &i8) = val as i8;
+                else *(reg as &u8) = val as u8;
+            } else if (size == 2) {
+                if (signed) *(reg as &i16) = val as i16;
+                else *(reg as &u16) = val as u16;
+            } else if (size == 4) {
+                if (signed) *(reg as &i32) = val as i32;
+                else *(reg as &u32) = val as u32;
+            } else if (size == 8) {
+                if (signed) *(reg as &i64) = val as i64;
+                else *(reg as &u64) = val as u64;
+            } else {
+                message(todo(instr.loc, "Op::LoadNumber for %", to_string(instr.type)));
+            }
+            return Value::Reg(reg, size);
+        }
+        &Op::LoadBlank(dst) => {
+            let (reg, size) = get_register_pointer_and_size(interp, dst);
+            C::memset(reg, 0, size);
             return Value::Reg(reg, size);
         }
         &Op::LoadBool(dst, val) => {
@@ -284,79 +335,272 @@ func evaluate_single(interp: &Interp, fn: &AST, instr: &Instr) -> Value {
             return Value::Reg(reg, size);
         }
         &Op::LoadString(dst, string) => {
-            let reg_ptr = get_register_pointer(interp, dst);
+            let (reg_ptr, reg_size) = get_register_pointer_and_size(interp, dst);
             (comptime assert(sizeof(SubStr) == 16, "evaluate_single: SubStr assumed to be 16 bytes"));
             (comptime assert(sizeof(SubStr) == get_size(PrimType::Str), "evaluate_single: Str doesn't have same size as SubStr"));
             *(reg_ptr as &SubStr) = asSubStr(&string);
-            return Value::Reg(reg_ptr, comptime get_size(PrimType::Str));
+            return Value::Reg(reg_ptr, reg_size);
         }
-        &Op::LoadFunction(dst, node) => {
-            let ptr = get_register_pointer(interp, dst);
-            *(ptr as &usize) = node as usize;
-            return Value::Reg(ptr, comptime get_size(BaseType::Ptr));
-        }
-        &Op::Alloca(dst, name) => {
-            let reg_ptr = get_register_pointer(interp, dst);
-            let size = get_size(instr.ast.type);
-            let ptr = allocate_stack(interp, instr.ast.loc, size);
-            *(reg_ptr as &usize) = ptr as usize;
-            add(&interp.variable_map, name, Value::Var { reg: ptr, size: size });
-            return Value::Reg(reg_ptr, comptime get_size(BaseType::Ptr));
-        }
-        &Op::Load(_dst, _src) => {
-            let size = get_size(instr.ast.type);
-            let dst = get_register_pointer(interp, _dst);
-            let ptr = get_register_pointer(interp, _src);
-            let src = *(ptr as &usize) as &u8;
-            C::memcpy(dst, src, size);
-            return Value::Reg(dst, size);
-        }
-        &Op::Store(_dst, _src) => {
-            let size = get_size(instr.ast.type);
-            let ptr = get_register_pointer(interp, _dst);
-            let dst = *(ptr as &usize) as &u8;
-            let src = get_register_pointer(interp, _src);
-            C::memcpy(dst, src, size);
-            return Value::Reg(ptr, size);
-        }
-        &Op::Move(_dst, _src) => {
+        &Op::LoadFunction(_dst, node) => {
             let (dst, dst_size) = get_register_pointer_and_size(interp, _dst);
-            let (src, src_size) = get_register_pointer_and_size(interp, _src);
-            message(ass(dst_size == src_size, instr.ast.loc, "evaluate_single: Expected Move to have same size for source and destination, but got % and %.", src_size, dst_size));
-            C::memcpy(dst, src, src_size);
+            assert(dst_size == 8, "LoadFunction got non-function");
+            *(dst as &usize) = node as usize;
             return Value::Reg(dst, dst_size);
         }
         &Op::Call(_dst, _base, args) => {
+            let arg_stack_pointer = interp.arg_stack_pointer;
+            let register_stack_pointer = interp.register_stack_pointer;
+            let stack_pointer = interp.stack_pointer;
+            let var_stack_pointer = interp.var_stack_pointer;
+
             for (let i: usize = 0; i < args.length; i = i + 1) {
-                let arg: &Reg = get_ref_raw(&args, i);
-                let (aptr, asize) = get_register_pointer_and_size(interp, *arg);
-                push_argument(interp, instr.ast.loc, aptr, asize);
+                let arg = get_ref(&args, i) as Reg;
+                let (aptr, asize) = get_register_pointer_and_size(interp, arg);
+                push_argument(interp, instr.loc, aptr, asize);
             }
-            let base = get_register_pointer(interp, _base);
+
+            let (base, base_size) = get_register_pointer_and_size(interp, _base);
+            assert(base_size == 8, "evaluate_single: Expected Call to have a pointer base");
             let node = *(base as &&AST);
+
             evaluate_call(interp, node);
-            let size = get_size(instr.ast.type);
+
+            let size = get_size(instr.type);
             let (reg, _size) = get_register_pointer_and_size(interp, _dst);
-            message(ass(size == _size, instr.ast.loc, "evaluate_single: Expected Call to have same size for return type, but got % and %.", size, _size));
-            pop_argument(interp, instr.ast.loc, reg, size);
+            fassert(size == _size, "evaluate_single: Expected Call to have same size for return type, but got % and %.", size, _size);
+            pop_argument(interp, instr.loc, reg, size);
+
+            assert(arg_stack_pointer == interp.arg_stack_pointer, "Imbalanced argument stack after Call");
+            assert(register_stack_pointer == interp.register_stack_pointer, "Imbalanced register stack after Call");
+            assert(var_stack_pointer == interp.var_stack_pointer, "Imbalanced real varstack after Call");
+            interp.stack_pointer = stack_pointer;
             return Value::Reg(reg, size);
         }
-        &Op::Jump(block) => {
+        &Op::Br(block) => {
             return Value::Jump(block);
+        }
+        &Op::CondBr(_cond, if_true, if_false) => {
+            let (cond, cond_size) = get_register_pointer_and_size(interp, _cond);
+            assert(cond_size == 1, "evaluate_single: CondBr got more than one byte");
+            let val = *cond;
+            if (val == 1) return Value::Jump(if_true);
+            if (val == 0) return Value::Jump(if_false);
+            message(todo(instr.loc, "evaluate_single: Got invalid boolean value %", val));
+        }
+        &Op::ReturnVoid => {
+            return Value::Return;
         }
         &Op::Return(val) => {
             let (ret, ret_size) = get_register_pointer_and_size(interp, val);
-            push_argument(interp, instr.ast.loc, ret, ret_size);
+            push_argument(interp, instr.loc, ret, ret_size);
             return Value::Return;
+        }
+        &Op::Add(_dst, _src1, _src2) => {
+            let (dst, dst_size) = get_register_pointer_and_size(interp, _dst);
+            let (src1, src1_size) = get_register_pointer_and_size(interp, _src1);
+            let (src2, src2_size) = get_register_pointer_and_size(interp, _src2);
+            assert(dst_size == src1_size && src1_size == src2_size, "evaluate_single: Add operands don't match");
+            let signed = is_signed_integer(instr.type);
+            if (dst_size == 1) {
+                if (signed) *(dst as &i8) = *(src1 as &i8) + *(src2 as &i8);
+                else *(dst as &u8) = *(src1 as &u8) + *(src2 as &u8);
+            } else if (dst_size == 2) {
+                if (signed) *(dst as &i16) = *(src1 as &i16) + *(src2 as &i16);
+                else *(dst as &u16) = *(src1 as &u16) + *(src2 as &u16);
+            } else if (dst_size == 4) {
+                if (signed) *(dst as &i32) = *(src1 as &i32) + *(src2 as &i32);
+                else *(dst as &u32) = *(src1 as &u32) + *(src2 as &u32);
+            } else if (dst_size == 8) {
+                if (signed) *(dst as &i64) = *(src1 as &i64) + *(src2 as &i64);
+                else *(dst as &u64) = *(src1 as &u64) + *(src2 as &u64);
+            } else {
+                message(todo(instr.loc, "Op::Add for %", to_string(instr.type)));
+            }
+            return Value::Reg(dst, dst_size);
+        }
+        &Op::Sub(_dst, _src1, _src2) => {
+            let (dst, dst_size) = get_register_pointer_and_size(interp, _dst);
+            let (src1, src1_size) = get_register_pointer_and_size(interp, _src1);
+            let (src2, src2_size) = get_register_pointer_and_size(interp, _src2);
+            assert(dst_size == src1_size && src1_size == src2_size, "evaluate_single: Sub operands don't match");
+            let signed = is_signed_integer(instr.type);
+            if (dst_size == 1) {
+                if (signed) *(dst as &i8) = *(src1 as &i8) - *(src2 as &i8);
+                else *(dst as &u8) = *(src1 as &u8) - *(src2 as &u8);
+            } else if (dst_size == 2) {
+                if (signed) *(dst as &i16) = *(src1 as &i16) - *(src2 as &i16);
+                else *(dst as &u16) = *(src1 as &u16) - *(src2 as &u16);
+            } else if (dst_size == 4) {
+                if (signed) *(dst as &i32) = *(src1 as &i32) - *(src2 as &i32);
+                else *(dst as &u32) = *(src1 as &u32) - *(src2 as &u32);
+            } else if (dst_size == 8) {
+                if (signed) *(dst as &i64) = *(src1 as &i64) - *(src2 as &i64);
+                else *(dst as &u64) = *(src1 as &u64) - *(src2 as &u64);
+            } else {
+                message(todo(instr.loc, "Op::Sub for %", to_string(instr.type)));
+            }
+            return Value::Reg(dst, dst_size);
+        }
+        &Op::Mul(_dst, _src1, _src2) => {
+            let (dst, dst_size) = get_register_pointer_and_size(interp, _dst);
+            let (src1, src1_size) = get_register_pointer_and_size(interp, _src1);
+            let (src2, src2_size) = get_register_pointer_and_size(interp, _src2);
+            assert(dst_size == src1_size && src1_size == src2_size, "evaluate_single: Mul operands don't match");
+            let signed = is_signed_integer(instr.type);
+            if (dst_size == 1) {
+                if (signed) *(dst as &i8) = *(src1 as &i8) * *(src2 as &i8);
+                else *(dst as &u8) = *(src1 as &u8) * *(src2 as &u8);
+            } else if (dst_size == 2) {
+                if (signed) *(dst as &i16) = *(src1 as &i16) * *(src2 as &i16);
+                else *(dst as &u16) = *(src1 as &u16) * *(src2 as &u16);
+            } else if (dst_size == 4) {
+                if (signed) *(dst as &i32) = *(src1 as &i32) * *(src2 as &i32);
+                else *(dst as &u32) = *(src1 as &u32) * *(src2 as &u32);
+            } else if (dst_size == 8) {
+                if (signed) *(dst as &i64) = *(src1 as &i64) * *(src2 as &i64);
+                else *(dst as &u64) = *(src1 as &u64) * *(src2 as &u64);
+            } else {
+                message(todo(instr.loc, "Op::Mul for %", to_string(instr.type)));
+            }
+            return Value::Reg(dst, dst_size);
+        }
+        &Op::Eq(_dst, _src1, _src2) => {
+            let (dst, dst_size) = get_register_pointer_and_size(interp, _dst);
+            let (src1, src1_size) = get_register_pointer_and_size(interp, _src1);
+            let (src2, src2_size) = get_register_pointer_and_size(interp, _src2);
+            assert(dst_size == 1, "evaluate_single: Eq dst is not 1 byte");
+            assert(src1_size == src2_size, "evaluate_single: Eq operands don't match");
+            let signed = is_signed_integer(instr.type);
+            let eq = false;
+            if (dst_size == 1) {
+                if (signed) eq = *(src1 as &i8) == *(src2 as &i8);
+                else eq = *(src1 as &u8) == *(src2 as &u8);
+            } else if (dst_size == 2) {
+                if (signed) eq = *(src1 as &i16) == *(src2 as &i16);
+                else eq = *(src1 as &u16) == *(src2 as &u16);
+            } else if (dst_size == 4) {
+                if (signed) eq = *(src1 as &i32) == *(src2 as &i32);
+                else eq = *(src1 as &u32) == *(src2 as &u32);
+            } else if (dst_size == 8) {
+                if (signed) eq = *(src1 as &i64) == *(src2 as &i64);
+                else eq = *(src1 as &u64) == *(src2 as &u64);
+            } else {
+                message(todo(instr.loc, "Op::Eq for %", to_string(instr.type)));
+            }
+            let r: u8 = 0;
+            if (eq) r = 1;
+            *dst = r;
+            return Value::Reg(dst, dst_size);
+        }
+        &Op::Gte(_dst, _src1, _src2) => {
+            let (dst, dst_size) = get_register_pointer_and_size(interp, _dst);
+            let (src1, src1_size) = get_register_pointer_and_size(interp, _src1);
+            let (src2, src2_size) = get_register_pointer_and_size(interp, _src2);
+            assert(dst_size == 1, "evaluate_single: Gte dst is not 1 byte");
+            assert(src1_size == src2_size, "evaluate_single: Gte operands don't match");
+            let signed = is_signed_integer(instr.type);
+            let gte = false;
+            if (dst_size == 1) {
+                if (signed) gte = *(src1 as &i8) >= *(src2 as &i8);
+                else gte = *(src1 as &u8) >= *(src2 as &u8);
+            } else if (dst_size == 2) {
+                if (signed) gte = *(src1 as &i16) >= *(src2 as &i16);
+                else gte = *(src1 as &u16) >= *(src2 as &u16);
+            } else if (dst_size == 4) {
+                if (signed) gte = *(src1 as &i32) >= *(src2 as &i32);
+                else gte = *(src1 as &u32) >= *(src2 as &u32);
+            } else if (dst_size == 8) {
+                if (signed) gte = *(src1 as &i64) >= *(src2 as &i64);
+                else gte = *(src1 as &u64) >= *(src2 as &u64);
+            } else {
+                message(todo(instr.loc, "Op::Gte for %", to_string(instr.type)));
+            }
+            let r: u8 = 0;
+            if (gte) r = 1;
+            *dst = r;
+            return Value::Reg(dst, dst_size);
+        }
+        &Op::Lte(_dst, _src1, _src2) => {
+            let (dst, dst_size) = get_register_pointer_and_size(interp, _dst);
+            let (src1, src1_size) = get_register_pointer_and_size(interp, _src1);
+            let (src2, src2_size) = get_register_pointer_and_size(interp, _src2);
+            assert(dst_size == 1, "evaluate_single: Lte dst is not 1 byte");
+            assert(src1_size == src2_size, "evaluate_single: Lte operands don't match");
+            let signed = is_signed_integer(instr.type);
+            let lte = false;
+            if (dst_size == 1) {
+                if (signed) lte = *(src1 as &i8) <= *(src2 as &i8);
+                else lte = *(src1 as &u8) <= *(src2 as &u8);
+            } else if (dst_size == 2) {
+                if (signed) lte = *(src1 as &i16) <= *(src2 as &i16);
+                else lte = *(src1 as &u16) <= *(src2 as &u16);
+            } else if (dst_size == 4) {
+                if (signed) lte = *(src1 as &i32) <= *(src2 as &i32);
+                else lte = *(src1 as &u32) <= *(src2 as &u32);
+            } else if (dst_size == 8) {
+                if (signed) lte = *(src1 as &i64) <= *(src2 as &i64);
+                else lte = *(src1 as &u64) <= *(src2 as &u64);
+            } else {
+                message(todo(instr.loc, "Op::Lte for %", to_string(instr.type)));
+            }
+            let r: u8 = 0;
+            if (lte) r = 1;
+            *dst = r;
+            return Value::Reg(dst, dst_size);
+        }
+        &Op::ComptimeAssert(expr, msg) => {
+            let (dst, dst_size) = get_register_pointer_and_size(interp, expr);
+            assert(dst_size == 1, "evaluate_single: Assert expr is not 1 byte");
+            let succ = *dst == 1;
+            message(ass(succ, instr.loc, "%", msg));
+            return Value::Noop;
         }
         &Op::LoadComptimeValue(_dst, Value::Var { ptr, size }) => {
             let (dst, dst_size) = get_register_pointer_and_size(interp, _dst);
-            message(ass(size == dst_size, instr.ast.loc, "evaluate_single: Expected ComptimeValue to have matching sizes, but got % and %.", size, dst_size));
+            fassert(size == dst_size, "evaluate_single: Expected ComptimeValue to have matching sizes, but got % and %.", size, dst_size);
             C::memcpy(dst, ptr, size);
             return Value::Reg(dst, dst_size);
         }
+        &Op::Debug => {
+            suppress_exit_on_error();
+            let fn = interp.fn;
+            let func_info = get_func_info(fn);
+            let scopes = &func_info.scopes;
+            message(error(instr.loc, "#debug encountered!"));
+            message(note(fn.loc, "We are in function %", func_info.name));
+            message(note(instr.loc, "Scopes:"));
+            for (let i: usize = 0; i < scopes.length; i = i + 1) {
+                message(note(instr.loc, "Scope %:", i));
+                let s = get_ref(scopes, i) as Scope_Info;
+                for (let j: usize = 0; j < s.variables.capacity; j = j + 1) {
+                    if (!s.variables.set_elements[j]) continue;
+                    let (k, v) = getAtIndex(&s.variables, j);
+                    let name = k as &SubStr;
+                    let value = v as &Variable;
+                    message(note(instr.loc, "  % => %", *name, to_string(value.type)));
+                }
+            }
+            message(note(instr.loc, "Interp Variables:"));
+            for (let j: usize = 0; j < interp.variable_map.capacity; j = j + 1) {
+                if (!interp.variable_map.set_elements[j]) continue;
+                let (k, v) = getAtIndex(&interp.variable_map, j);
+                let name = k as &SubStr;
+                let _value = v as &Value;
+                let Value::Var { ptr, size } = *_value else {
+                    unreachable("Expected variable");
+                };
+                let _s: String = blank;
+                for (let i: usize = 0; i < size; i = i + 1) {
+                    let c = *((ptr + i) as &u8);
+                    pushNumberAsHex(&_s, c as usize);
+                    if (i != size - 1) pushChar(&_s, ' ');
+                }
+                message(note(instr.loc, "  % (% bytes) => %", *name, size, _s));
+            }
+            message(finalize_error());
+        }
         _ => {
-            message(todo(instr.ast.loc, "Cannot evaluate % yet", instr.op));
+            message(todo(instr.loc, "Cannot evaluate % yet", instr.op));
         }
     }
     return Value::Invalid;

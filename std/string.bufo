@@ -306,6 +306,14 @@ func newStringFromStrLit(s: &char) -> String {
     };
 }
 
+func canReadFileToString(path: SubStr, source: &String) -> bool {
+    let _path = toString(&path);
+    pushChar(&_path, '\0');
+    let succ = canReadFileToString(_path.buffer, source);
+    drop(&_path);
+    return succ;
+}
+
 func canReadFileToString(path: &char, source: &String) -> bool {
     // `b` needed because otherwise `\r` would be dropped, leading to wrong Spans
     let file: Any = C::fopen(path, "rb");

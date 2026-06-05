@@ -99,7 +99,7 @@ func print_global_lookup() {
             let ASTData::Function(function) = node.data else {
                 unreachable("func node is not a function");
             };
-            if ((function.state.i & FUNCTION_STATE_IS_GENERIC) != 0) {
+            if (function.state.is_generic) {
                 foreach(&function.monomorphized_instances, func (key: Data, value: Data) {
                     let _key = key as String;
                     let node = value as &AST;

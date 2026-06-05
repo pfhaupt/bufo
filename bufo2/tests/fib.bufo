@@ -1,0 +1,14 @@
+
+#load "ops.bufo";
+
+func fib(n: $T) -> $T {
+    if (n <= 2) return 1;
+    return fib(n - 1) + fib(n - 2);
+}
+
+func main() {
+    #run {
+        let n: i32 = fib(20);
+        #assert n == 6765;
+    };
+}

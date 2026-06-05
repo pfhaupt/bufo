@@ -41,18 +41,17 @@ func main(argc: i32, argv: &&char) -> i32 {
         C::fprintf(stderr, "error: Expected file input\n");
         return 1;
     }
-    let source: String = blank;
-    if (!canReadFileToString(argv[1], &source)) {
-        C::fprintf(stderr, "error: Could not read file %s\n", argv[1]);
-        return 1;
-    }
 
     let start = get_high_resolution_timestamp();
 
     init_corot_engine();
     init_global_lookup();
 
-    let file = spawn(parse_file, &source);
+    let file_name = newSubStrOfStrLit(argv[1]);
+    let file = spawn(load_file, wrap(Load_Context {
+        file_name: file_name,
+        loc: new_loc(file_name, 0),
+    }));
 
     // The main function only switches between scheduled coroutines
     while (any_active()) switch();
@@ -62,8 +61,8 @@ func main(argc: i32, argv: &&char) -> i32 {
     let dt = get_duration_between_high_resolution_timestamps_in_microseconds(start, end);
     let ms = dt / 1000;
 
-    message(note(blank, "In total, we spawned % coroutine(s).", get_corot_count()));
-    message(note(blank, "In total, we took %.%ms.", ms, (dt / 10) % 100));
+    fprint("In total, we spawned % coroutine(s).\n", get_corot_count());
+    fprint("In total, we took %.%ms.\n", ms, (dt / 10) % 100);
 
     if (error_happened) {
         C::fprintf(stderr, "error: Could not compile program due to the above errors.\n");

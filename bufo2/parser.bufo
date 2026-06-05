@@ -36,10 +36,39 @@ func new_generic_type_mapping() -> GAF_HashMap {
     return new_hashmap_with_substr_key(type_info(&Type));
 }
 
-func parse_file(src: &String) {
-    let slice = asSubStr(src);
+struct Load_Context {
+    file_name: SubStr;
+    loc: Loc;
+}
+
+let loaded_files: GAF_HashMap = blank;
+
+func load_file(context: &Load_Context) {
+    if (loaded_files.key_type_size == 0) {
+        loaded_files = new_hashmap_with_string_key(type_info(bool));
+    }
+    let file_name = context.file_name;
+    let _file = toString(&file_name);
+    let full_path = toAbsolutePath(&_file);
+    drop(&_file);
+    if (contains(&loaded_files, full_path)) {
+        return;
+    }
+    let source: String = blank;
+    if (!canReadFileToString(asSubStr(&full_path), &source)) {
+        message(error(context.loc, "Could not read file %", file_name));
+    }
+    add(&loaded_files, full_path, true);
+    let file = spawn(parse_file, wrap((source, file_name)));
+}
+
+func parse_file(arg: &(String, SubStr)) {
+    let src = arg.0;
+    let file_name = arg.1;
+    let slice = asSubStr(&src);
     assert(slice.len != 0, "Empty source");
     let lexer = Lexer {
+        file_name: file_name,
         offset_in_file: 0,
         source: slice,
     };
@@ -49,19 +78,37 @@ func parse_file(src: &String) {
             TokenData::EndOfFile => {
                 return;
             }
+            TokenData::Hash => {
+                let _name = expect(&lexer, TokenData::Ident);
+                let dir_name = get_name(&_name);
+                if (equals(&dir_name, &comptime newSubStrOfStrLit("load"))) {
+                    let _file = expect(&lexer, TokenData::StringLiteral);
+                    let TokenData::StringLiteral { origin, value } = _file.data else {
+                        unreachable();
+                    };
+                    expect(&lexer, TokenData::SemiColon);
+                    load_file(wrap(Load_Context {
+                        file_name: asSubStr(&value),
+                        loc: _file.loc,
+                    }));
+                } else {
+                    message(error(_name.loc, "Invalid top level directive %.", dir_name));
+                }
+            }
             TokenData::KeywordStruct => {
                 let _name = expect(&lexer, TokenData::Ident);
-                if (at(&lexer, TokenData::ParenOpen)) {
+                if (lexer_at(&lexer, TokenData::ParenOpen)) {
                     skip_until_matching(&lexer, TokenData::ParenOpen, TokenData::ParenClose);
                 }
                 let end = skip_until_matching(&lexer, TokenData::CurlyOpen, TokenData::CurlyClose);
-                let struct_size = end.offset_in_file + 1;
+                let struct_size = end.loc.offset + 1;
                 let struct_name = get_name(&_name);
-                let loc = new_loc(_name.offset_in_file);
-                let source = substring(&slice, tkn.offset_in_file, struct_size);
-                let struct_node = create_struct(null, loc, source, struct_name);
+                let source = substring(&slice, tkn.loc.offset, struct_size);
+                let struct_node = create_struct(null, _name.loc, source, struct_name);
+                struct_node.super_node = struct_node;
                 let _lexer = Lexer {
-                    offset_in_file: tkn.offset_in_file,
+                    offset_in_file: tkn.loc.offset,
+                    file_name: file_name,
                     source: source,
                 };
                 let context = Parse_Context {
@@ -74,19 +121,20 @@ func parse_file(src: &String) {
             TokenData::KeywordFunc => {
                 let _name = expect(&lexer, TokenData::Ident);
                 skip_until_matching(&lexer, TokenData::ParenOpen, TokenData::ParenClose);
-                while (!at(&lexer, TokenData::CurlyOpen)) next(&lexer);
+                while (!lexer_at(&lexer, TokenData::CurlyOpen)) next(&lexer);
                 let end = skip_until_matching(&lexer, TokenData::CurlyOpen, TokenData::CurlyClose);
                 // func foo ( ) { } .......
                 // ^offset_in_file
                 //                ^end.offset_in_file
                 // + 1 because the curly bracket is also contained
-                let fn_size = end.offset_in_file + 1;
+                let fn_size = end.loc.offset + 1;
                 let fn_name = get_name(&_name);
-                let loc = new_loc(_name.offset_in_file);
-                let source = substring(&slice, tkn.offset_in_file, fn_size);
-                let func_node = create_function(null, loc, source, fn_name);
+                let source = substring(&slice, tkn.loc.offset, fn_size);
+                let func_node = create_function(null, _name.loc, source, fn_name);
+                func_node.super_node = func_node;
                 let _lexer = Lexer {
-                    offset_in_file: tkn.offset_in_file,
+                    offset_in_file: tkn.loc.offset,
+                    file_name: file_name,
                     source: source,
                 };
                 let context = Parse_Context {
@@ -97,7 +145,7 @@ func parse_file(src: &String) {
                 let _ = spawn(parse_function_signature, wrap(context));
             }
             t => {
-                message(todo(new_loc(lexer.offset_in_file), "unknown tag %", tag(&t)));
+                message(todo(new_loc(lexer.file_name, lexer.offset_in_file), "unhandled TLI %", t));
             }
         }
     }
@@ -106,21 +154,23 @@ func parse_file(src: &String) {
 func parse_struct_with_mapping(ast: &AST, mapping: GAF_HashMap) -> &AST {
     let _lexer = Lexer {
         offset_in_file: ast.loc.offset,
+        file_name: ast.loc.file,
         source: ast.origin,
     };
     expect(&_lexer, TokenData::KeywordStruct);
     let _name = expect(&_lexer, TokenData::Ident);
 
     // Generic Parameters are ignored here, as we got a mapping.
-    if (at(&_lexer, TokenData::ParenOpen)) {
+    if (lexer_at(&_lexer, TokenData::ParenOpen)) {
         skip_until_matching(&_lexer, TokenData::ParenOpen, TokenData::ParenClose);
     }
 
     let &ASTData::Struct(struct_state) = &ast.data else {
         unreachable("parse_struct_with_mapping called with non-struct AST");
     };
-    struct_state.state.i = struct_state.state.i | STRUCT_STATE_PARSED_SIGNATURE;
+    struct_state.state.did_parse_signature = true;
 
+    ast.super_node = ast;
     let context = Parse_Context {
         parent: ast,
         lexer: _lexer,
@@ -143,21 +193,26 @@ func parse_struct(_context: &Parse_Context) {
     let &ASTData::Struct(struct_state) = &struct_node.data else {
         unreachable();
     };
+
+    register_monitor(&struct_state.state.did_parse_signature);
+
     if (eat(lexer, TokenData::ParenOpen)) {
-        while (!at(lexer, TokenData::ParenClose)) {
+        while (!lexer_at(lexer, TokenData::ParenClose)) {
             let (_, param) = parse_type(&context);
             let &ASTData::Expr(ASTExpr::Generic) = &param.data else {
                 message(todo(param.loc, "Parameter must be $Generic"));
                 unreachable(); // todo() terminates
             };
             push(&struct_state.parameters, param);
-            if (!at(lexer, TokenData::ParenClose)) {
+            if (!lexer_at(lexer, TokenData::ParenClose)) {
                 expect(lexer, TokenData::Comma);
             }
         }
         expect(lexer, TokenData::ParenClose);
     }
-    struct_state.state.i = struct_state.state.i | STRUCT_STATE_PARSED_SIGNATURE;
+    struct_state.state.did_parse_signature = true;
+    unregister_monitor(&struct_state.state.did_parse_signature);
+
     if (!is_generic(&struct_state)) {
         let cid = spawn(parse_struct_body, wrap(Parse_Context {
             parent: context.parent,
@@ -179,20 +234,23 @@ func parse_struct_body(context: &Parse_Context) {
 
     register_monitor(&struct_state.size_in_bytes);
     register_monitor(&struct_state.align_in_bytes);
+    register_monitor(&struct_state.state.did_parse_fields);
+    register_monitor(&struct_state.state.did_check_fields);
 
     expect(lexer, TokenData::CurlyOpen);
-    while (!at(lexer, TokenData::CurlyClose)) {
+    while (!lexer_at(lexer, TokenData::CurlyClose)) {
         let name = expect(lexer, TokenData::Ident);
         let TokenData::Ident { _name } = name.data else { unreachable(); };
         expect(lexer, TokenData::ColonSingle);
         let (generic, type) = parse_type(context);
-        assert(!generic, "parse_struct_body: Expected resolved generics at this point");
-        if (!at(lexer, TokenData::CurlyClose)) {
+        assert(!generic, "parse_struct_body: Expected resolved generics lexer_at this point");
+        if (!lexer_at(lexer, TokenData::CurlyClose)) {
             expect(lexer, TokenData::SemiColon);
         }
-        add_field(struct_node, &struct_state, new_loc(name.offset_in_file), _name, type);
+        add_field(struct_node, &struct_state, name.loc, _name, type);
     }
-    struct_state.state.i = struct_state.state.i | STRUCT_STATE_PARSED_FIELDS;
+    struct_state.state.did_parse_fields = true;
+    unregister_monitor(&struct_state.state.did_parse_fields);
 
     check_struct(struct_node);
 }
@@ -207,24 +265,27 @@ func parse_attribute(context: &Parse_Context) -> ASTAttr {
         (comptime newSubStrOfStrLit("expand"), func (context: &Parse_Context) -> ASTAttrData {
             return ASTAttrData::Expand;
         }),
+        (comptime newSubStrOfStrLit("naked"), func (context: &Parse_Context) -> ASTAttrData {
+            return ASTAttrData::Naked;
+        }),
     ];
     for (let i: usize = 0; i < attrs.length; i = i + 1) {
         if (equals(&attribute, &attrs[i].0)) {
             return ASTAttr {
                 name: attribute,
-                loc: new_loc(tkn.offset_in_file),
+                loc: tkn.loc,
                 data: attrs[i].1(context),
             };
         }
     }
-    message(error(new_loc(tkn.offset_in_file), "Use of unknown attribute `%`.", attribute));
+    message(error(tkn.loc, "Use of unknown attribute `%`.", attribute));
     unreachable("parse_attribute"); // error terminates
 }
 
 func parse_function_attributes(context: &Parse_Context) {
     let func_node = context.parent;
     let attributes = new_GAF_List(type_info(ASTAttr));
-    while (!at(&context.lexer, TokenData::CurlyOpen)) {
+    while (!lexer_at(&context.lexer, TokenData::CurlyOpen)) {
         let attr = parse_attribute(context);
         if (!is_function_attribute(attr)) {
             message(error(attr.loc, "Attribute `%` cannot be used on functions.", attr.name));
@@ -237,8 +298,10 @@ func parse_function_attributes(context: &Parse_Context) {
 func parse_function_with_mapping(ast: &AST, mapping: GAF_HashMap) -> &AST {
     let _lexer = Lexer {
         offset_in_file: ast.loc.offset,
+        file_name: ast.loc.file,
         source: ast.origin,
     };
+    ast.super_node = ast;
     let context = Parse_Context {
         parent: ast,
         lexer: _lexer,
@@ -262,10 +325,12 @@ func parse_function_signature(_context: &Parse_Context) {
     let _name = expect(lexer, TokenData::Ident);
     let func_state = get_func_info(func_node);
 
+    register_monitor(&func_state.state.did_parse_signature);
+
     expect(lexer, TokenData::ParenOpen);
-    while (!at(lexer, TokenData::ParenClose)) {
+    while (!lexer_at(lexer, TokenData::ParenClose)) {
         parse_parameter(&context, &func_node.data);
-        if (!at(lexer, TokenData::ParenClose)) {
+        if (!lexer_at(lexer, TokenData::ParenClose)) {
             expect(lexer, TokenData::Comma);
         }
     }
@@ -273,7 +338,7 @@ func parse_function_signature(_context: &Parse_Context) {
     if (eat(lexer, TokenData::Arrow)) {
         let (has_generic, return_type) = parse_type(&context);
         if (has_generic) {
-            func_state.state.i = func_state.state.i | FUNCTION_STATE_IS_GENERIC;
+            func_state.state.is_generic = true;
         }
         func_state.return_type = return_type;
     } else {
@@ -281,9 +346,10 @@ func parse_function_signature(_context: &Parse_Context) {
         func_state.return_type = create_expr(context.parent, func_node.loc, name, ASTExpr::BuiltinType { name: name });
     }
     parse_function_attributes(&context);
-    func_state.state.i = func_state.state.i | FUNCTION_STATE_PARSED_SIGNATURE;
+    func_state.state.did_parse_signature = true;
+    unregister_monitor(&func_state.state.did_parse_signature);
 
-    if ((func_state.state.i & FUNCTION_STATE_IS_GENERIC) == 0) {
+    if (!func_state.state.is_generic) {
         let cid = spawn(parse_function_body, wrap(Parse_Context {
             parent: context.parent,
             lexer: *lexer,
@@ -301,7 +367,7 @@ func parse_parameter(context: &Parse_Context, func_node: &ASTData) {
     let TokenData::Ident { _name } = name.data else { unreachable(); };
     expect(&context.lexer, TokenData::ColonSingle);
     let (has_generic, type) = parse_type(context);
-    if (has_generic) func_state.state.i = func_state.state.i | FUNCTION_STATE_IS_GENERIC;
+    if (has_generic) func_state.state.is_generic = true;
     let param = create_node(context.parent, type.loc, _name);
     param.data = ASTData::Param(type);
     push(&func_state.params, param);
@@ -311,35 +377,49 @@ func parse_function_body(context: &Parse_Context) {
     let func_state = get_func_info(context.parent);
     register_monitor(&context.parent.type);
     register_monitor(&func_state.block);
+    register_monitor(&func_state.state.did_parse_body);
+    register_monitor(&func_state.state.did_check_body);
+    register_monitor(&func_state.state.did_codegen_body);
+    register_monitor(&func_state.state.did_check_signature);
 
     assert(func_state.scopes.length == 0, "Function already has scopes");
     push(&func_state.scopes, new_stack());
 
     check_function_parameters(func_state);
     check_function_return_type(func_state);
-    func_state.state.i = func_state.state.i | FUNCTION_STATE_CHECKED_SIGNATURE;
+    func_state.state.did_check_signature = true;
+    unregister_monitor(&func_state.state.did_check_signature);
     finalize_function_type(context.parent, func_state);
 
     codegen_function_entry(context.parent);
 
     expect(&context.lexer, TokenData::CurlyOpen);
     let (is_generic, block) = parse_block(context);
-    message(ass(!is_generic, context.parent.loc, "parse_function_body: Unexpected generics in function"));
-    func_state.block = block;
+    assert(!is_generic, "parse_function_body: Unexpected generics in function");
     expect(&context.lexer, TokenData::EndOfFile);
+    func_state.block = block;
+    func_state.state.did_parse_body = true;
+    unregister_monitor(&func_state.state.did_parse_body);
+
+    check_block(block);
+    func_state.state.did_check_body = true;
+    unregister_monitor(&func_state.state.did_check_body);
+
+    codegen_expr(func_state, block, false);
+    func_state.state.did_codegen_body = true;
+    unregister_monitor(&func_state.state.did_codegen_body);
+
+    codegen_function_exit(context.parent);
 
     pop(&func_state.scopes);
     assert(func_state.scopes.length == 0, "parse_function_body: Stack not empty");
 
-    func_state.state.i = func_state.state.i | FUNCTION_STATE_PARSED_BODY;
-    func_state.state.i = func_state.state.i | FUNCTION_STATE_CHECKED_BODY;
-    func_state.state.i = func_state.state.i | FUNCTION_STATE_GENERATED_CODE;
     message(dbg(context.parent.loc, "Parsed, type checked and generated function %", func_state.name));
 }
 
 func parse_block(context: &Parse_Context) -> (bool, &AST) {
     let old_parent = context.parent;
-    let loc = new_loc(context.lexer.offset_in_file);
+    let loc = new_loc(context.lexer.file_name, context.lexer.offset_in_file);
 
     let block_expr = context.parent = create_expr(context.parent, loc, blank, ASTExpr::BlockExpr); // dummy block
     let block = new_GAF_List(type_info(&AST));
@@ -351,10 +431,10 @@ func parse_block(context: &Parse_Context) -> (bool, &AST) {
     push(&func_state.scopes, new_stack());
 
     let is_generic = false;
-    while (!at(&context.lexer, TokenData::CurlyClose)) {
+    while (!lexer_at(&context.lexer, TokenData::CurlyClose)) {
         let (gen_stmt, stmt) = parse_stmt(context);
         if (gen_stmt) is_generic = true;
-        if (at(&context.lexer, TokenData::CurlyClose)) {
+        if (lexer_at(&context.lexer, TokenData::CurlyClose)) {
             match (&stmt.data) {
                 &ASTData::Stmt(ASTStmt::Expr(expr)) => { value = expr; }
                 &ASTData::Stmt(ASTStmt::Directive(dir)) => {
@@ -362,36 +442,21 @@ func parse_block(context: &Parse_Context) -> (bool, &AST) {
                 }
                 _ => {
                     expect(&context.lexer, TokenData::SemiColon);
-                    unreachable(); // We know that we're at a {
+                    unreachable(); // We know that we're lexer_at a {
                 }
             }
             value.parent = context.parent;
         } else {
-            if (!is_block(stmt)) expect(&context.lexer, TokenData::SemiColon);
+            if (!is_block(stmt) && !is_if(stmt)) expect(&context.lexer, TokenData::SemiColon);
             push(&block, stmt);
-
-            // let _ = check_stmt(&func_state.scopes, stmt);
-            let cid = spawn(func (arg: Any) {
-                let &(scopes, stmt) = arg as &(&GAF_List, &AST);
-                let _ = check_stmt(scopes, stmt);
-            }, &(&func_state.scopes, stmt));
-
-            handle_corot_result(wait(cid),
-                error(stmt.loc, "Could not type check statement due to a cyclic dependency on %.", corot_str(cid)),
-                error(stmt.loc, "Could not type check this statement. There were errors."),
-            );
-
-            evaluate_comptime_variables(fn);
         }
     }
     expect(&context.lexer, TokenData::CurlyClose);
 
     if (value != null) {
         block_expr.data = ASTData::Expr(ASTExpr::BlockExpr(block, value));
-        block_expr.type = check_expr(&func_state.scopes, value);
     } else {
         block_expr.data = ASTData::Expr(ASTExpr::BlockVoid(block));
-        block_expr.type = create_base_type(PrimType::None);
     }
 
     block_expr.parent = context.parent = old_parent;
@@ -433,8 +498,7 @@ func parse_stmt(context: &Parse_Context) -> (bool, &AST) {
         origin.len = end - origin.start;
         return (origin, pat, expr, trampoline, is_generic);
     };
-    let loc = new_loc(tkn.offset_in_file);
-    let stmt = context.parent = create_stmt(context.parent, loc, blank, ASTStmt::Let); // dummy statement
+    let stmt = context.parent = create_stmt(context.parent, tkn.loc, blank, ASTStmt::Let); // dummy statement
     let is_generic = false;
     match (tkn.data) {
         TokenData::KeywordLet => {
@@ -459,7 +523,7 @@ func parse_stmt(context: &Parse_Context) -> (bool, &AST) {
         }
         TokenData::KeywordReturn => {
             next(&context.lexer);
-            if (!at(&context.lexer, TokenData::SemiColon)) {
+            if (!lexer_at(&context.lexer, TokenData::SemiColon)) {
                 let (gen_expr, expr) = parse_expr(context);
                 is_generic = gen_expr;
                 stmt.data = ASTData::Stmt(ASTStmt::ReturnExpr(expr));
@@ -486,32 +550,31 @@ func parse_stmt(context: &Parse_Context) -> (bool, &AST) {
 
 func parse_pattern(context: &Parse_Context) -> &AST {
     let tkn = next(&context.lexer);
-    let loc = new_loc(tkn.offset_in_file);
     let ret_pat: &AST = null;
     match (tkn.data) {
         TokenData::Ident { name } => {
-            ret_pat = create_pattern(context.parent, loc, name, ASTPat::Ident(name));
+            ret_pat = create_pattern(context.parent, tkn.loc, name, ASTPat::Ident(name));
         }
         _ => {
-            message(todo(new_loc(tkn.offset_in_file), "unknown pattern"));
+            message(todo(tkn.loc, "unknown pattern"));
         }
     }
     assert(ret_pat != null, "parse_pattern");
     let origin = ret_pat.origin;
     if (eat(&context.lexer, TokenData::ColonSingle)) {
         let (has_generic, type) = parse_type(context);
-        assert(!has_generic, "parse_pattern: Generics should be resolved at this point");
+        assert(!has_generic, "parse_pattern: Generics should be resolved lexer_at this point");
         let end = type.origin.start + type.origin.len;
         origin.len = end - origin.start;
-        ret_pat = create_pattern(context.parent, loc, origin, ASTPat::PatWithType(ret_pat, type));
+        ret_pat = create_pattern(context.parent, tkn.loc, origin, ASTPat::PatWithType(ret_pat, type));
     }
     return ret_pat;
 }
 
 func parse_type(context: &Parse_Context) -> (bool, &AST) {
     let (gen_expr, type) = parse_primary_expr(context);
-    let (gen_post, expr) = parse_postfix_expr(context, type);
-    return (gen_expr || gen_post, expr);
+    // REVIEW(2026-06-05): Limit what we accept here?
+    return (gen_expr, type);
 }
 
 func parse_expr(context: &Parse_Context) -> (bool, &AST) {
@@ -530,7 +593,7 @@ func parse_expr(context: &Parse_Context) -> (bool, &AST) {
 union Assoc { Left, Right }
 
 func matches_unary_expr(context: &Parse_Context) -> bool {
-    (comptime assert(tag(&TokenData::EndOfFile) == 45, "Parser::matches_unary_expr: Added more tokens"));
+    (comptime assert(tag(&TokenData::EndOfFile) == 47, "Parser::matches_unary_expr: Added more tokens"));
     match (peek(&context.lexer).data) {
         TokenData::MinusSingle     => { return true; }
         TokenData::AmpersandSingle => { return true; }
@@ -543,84 +606,64 @@ func matches_unary_expr(context: &Parse_Context) -> bool {
     unreachable("matches_unary_expr");
 }
 func matches_binary_expr(context: &Parse_Context) -> bool {
-    (comptime assert(tag(&TokenData::EndOfFile) == 45, "Parser::matches_binary_expr: Added more tokens"));
+    (comptime assert(tag(&TokenData::EndOfFile) == 47, "Parser::matches_binary_expr: Added more tokens"));
     match (peek(&context.lexer).data) {
+        TokenData::ParenOpen       => { return true; }
         TokenData::KeywordAs       => { return true; }
         TokenData::MinusSingle     => { return true; }
         TokenData::PlusSingle      => { return true; }
-        TokenData::AmpersandSingle => { return true; }
-        TokenData::AmpersandDouble => { return true; }
         TokenData::AsteriskSingle  => { return true; }
-        TokenData::NotEqual        => { return true; }
-        TokenData::EqualSingle     => { return true; }
         TokenData::EqualDouble     => { return true; }
-        TokenData::GreaterThan     => { return true; }
-        TokenData::GreaterEqual    => { return true; }
-        TokenData::SlashSingle     => { return true; }
+        TokenData::EqualSingle     => { return true; }
         TokenData::PlusEqual       => { return true; }
         TokenData::MinusEqual      => { return true; }
         TokenData::AsteriskEqual   => { return true; }
         TokenData::SlashEqual      => { return true; }
+        TokenData::GreaterThan     => { return true; }
+        TokenData::GreaterEqual    => { return true; }
+        TokenData::LessThan        => { return true; }
+        TokenData::LessEqual       => { return true; }
+        TokenData::Dot             => { return true; }
         _ => { return false; }
     }
     unreachable("matches_binary_expr");
 }
 func get_binary_precedence(tkn: Token) -> usize {
-    (comptime assert(tag(&TokenData::EndOfFile) == 45, "Parser::get_binary_precedence: Added more tokens"));
-    (comptime assert(tag(&ASTBinary::__count) == 5, "get_binary_precedence: Added more Operands"));
+    (comptime assert(tag(&TokenData::EndOfFile) == 47, "Parser::get_binary_precedence: Added more tokens"));
+    (comptime assert(tag(&ASTBinary::__count) == 14, "get_binary_precedence: Added more Operands"));
     match (tkn.data) {
+        TokenData::Dot            => { return 17; }
+        TokenData::ParenOpen      => { return 16; }
         TokenData::SlashSingle    => { return 12; }
         TokenData::AsteriskSingle => { return 12; }
         TokenData::PlusSingle     => { return 11; }
         TokenData::MinusSingle    => { return 11; }
+        TokenData::LessThan       => { return 9; }
+        TokenData::LessEqual      => { return 9; }
+        TokenData::GreaterThan    => { return 9; }
+        TokenData::GreaterEqual   => { return 9; }
         TokenData::EqualDouble    => { return 8; }
+        TokenData::EqualSingle    => { return 2; }
+        TokenData::PlusEqual      => { return 2; }
+        TokenData::MinusEqual     => { return 2; }
+        TokenData::AsteriskEqual  => { return 2; }
+        TokenData::SlashEqual     => { return 2; }
         _ => { }
     }
-    message(todo(new_loc(tkn.offset_in_file), "get_binary_precedence: Unhandled tkn %", tkn.data));
+    message(todo(tkn.loc, "get_binary_precedence: Unhandled tkn %", tkn.data));
     unreachable("get_binary_precedence");
 }
 func get_binary_associativity(tkn: Token) -> Assoc {
-    (comptime assert(tag(&ASTBinary::__count) == 5, "get_binary_associativity: Added more Operands"));
-    // if let TokenData::EqualSingle = tkn.data {
-    //     return Assoc::Right;
-    // }
-    return Assoc::Left;
-}
-
-func matches_postfix_expr(context: &Parse_Context) -> bool {
-    (comptime assert(tag(&TokenData::EndOfFile) == 45, "Parser::matches_postfix_expr: Added more tokens"));
-    match (peek(&context.lexer).data) {
-        TokenData::ParenOpen       => { return true; }
-        _ => { return false; }
-    }
-    unreachable("matches_unary_expr");
-}
-
-func parse_postfix_expr(context: &Parse_Context, expr: &AST) -> (bool, &AST) {
-    let _start = expr.loc;
-    let tkn = peek(&context.lexer);
-    let loc = new_loc(_start.offset);
-    let is_generic = false;
+    (comptime assert(tag(&ASTBinary::__count) == 14, "get_binary_associativity: Added more Operands"));
     match (tkn.data) {
-        TokenData::ParenOpen => {
-            next(&context.lexer);
-            let args = new_GAF_List(type_info(&AST));
-            while (!at(&context.lexer, TokenData::ParenClose)) {
-                let (gen_expr, _expr) = parse_expr(context);
-                if (gen_expr) is_generic = gen_expr;
-                push(&args, _expr);
-                if (!at(&context.lexer, TokenData::ParenClose)) {
-                    expect(&context.lexer, TokenData::Comma);
-                }
-            }
-            let end = expect(&context.lexer, TokenData::ParenClose);
-            expr = create_expr(context.parent, loc, expr.origin, ASTExpr::Call(expr, args));
-            expr.origin.len = end.offset_in_file - _start.offset + 1;
-        }
-        TokenData::Dot       => { todo_with_msg("dot"); }
+        TokenData::EqualSingle    => { return Assoc::Right; }
+        TokenData::PlusEqual      => { return Assoc::Right; }
+        TokenData::MinusEqual     => { return Assoc::Right; }
+        TokenData::AsteriskEqual  => { return Assoc::Right; }
+        TokenData::SlashEqual     => { return Assoc::Right; }
         _ => { }
     }
-    return (is_generic, expr);
+    return Assoc::Left;
 }
 
 func __parse_expr(context: &Parse_Context, precedence: usize, associativity: Assoc) -> (bool, &AST) {
@@ -638,11 +681,6 @@ func __parse_expr(context: &Parse_Context, precedence: usize, associativity: Ass
         if (gen_sec) is_generic = true;
         expr = _expr;
     }
-    if (matches_postfix_expr(context)) {
-        let (gen_post, _expr) = parse_postfix_expr(context, expr);
-        if (gen_post) is_generic = true;
-        expr = _expr;
-    }
     expr.parent = context.parent;
     return (is_generic, expr);
 }
@@ -652,7 +690,6 @@ func parse_primary_expr(context: &Parse_Context) -> (bool, &AST) {
         return parse_unary_expr(context);
     }
     let tkn = next(&context.lexer);
-    let loc = new_loc(tkn.offset_in_file);
     match (tkn.data) {
         TokenData::Dollar => {
             let TokenData::Ident { name } = expect(&context.lexer, TokenData::Ident).data else {
@@ -661,51 +698,51 @@ func parse_primary_expr(context: &Parse_Context) -> (bool, &AST) {
             if (context.generic_type_mapping.length > 0) {
                 let hit: &&Type = getRaw(&context.generic_type_mapping, name);
                 if (hit != null) {
-                    message(dbg(loc, "Generic Type matched $% to %", name, to_string(*hit)));
-                    return (false, create_expr(context.parent, loc, name, ASTExpr::ResolvedGeneric(*hit)));
+                    return (false, create_expr(context.parent, tkn.loc, name, ASTExpr::ResolvedGeneric(*hit)));
                 }
-                message(todo(new_loc(context.lexer.offset_in_file), "Is this reachable?"));
+                message(todo(blank, "parse_primary_expr: Is this reachable?"));
             }
-            return (true, create_expr(context.parent, loc, name, ASTExpr::Generic));
+            return (true, create_expr(context.parent, tkn.loc, name, ASTExpr::Generic));
         }
         TokenData::BuiltinType { name } => {
-            let expr = create_expr(context.parent, loc, name, ASTExpr::BuiltinType { name: name });
+            let expr = create_expr(context.parent, tkn.loc, name, ASTExpr::BuiltinType { name: name });
             expr.type = get_builtin_type(name);
             return (false, expr);
         }
         TokenData::Ident { name } => {
-            return (false, create_expr(context.parent, loc, name, ASTExpr::Ident { name: name }));
+            return (false, create_expr(context.parent, tkn.loc, name, ASTExpr::Ident { name: name }));
         }
         TokenData::Number { value } => {
-            return (false, create_expr(context.parent, loc, value, ASTExpr::Number { value: value }));
+            return (false, create_expr(context.parent, tkn.loc, value, ASTExpr::Number { value: value }));
         }
         TokenData::StringLiteral { origin, value } => {
-            return (false, create_expr(context.parent, loc, origin, ASTExpr::StringLiteral { value: value }));
+            return (false, create_expr(context.parent, tkn.loc, origin, ASTExpr::StringLiteral { value: value }));
         }
         TokenData::KeywordIf => {
             expect(&context.lexer, TokenData::ParenOpen);
             let (gen_cond, cond) = parse_expr(context);
             expect(&context.lexer, TokenData::ParenClose);
             let (gen_body, body) = parse_stmt(context);
+            if (!is_block(body) && !is_if(body)) expect(&context.lexer, TokenData::SemiColon);
             let is_generic = gen_cond || gen_body;
             if (eat(&context.lexer, TokenData::KeywordElse)) {
                 let (gen_else, elze) = parse_stmt(context);
-                return (is_generic || gen_else, create_expr(context.parent, loc, blank, ASTExpr::IfElse(cond, body, elze)));
+                return (is_generic || gen_else, create_expr(context.parent, tkn.loc, blank, ASTExpr::IfElse(cond, body, elze)));
             } else {
-                return (is_generic, create_expr(context.parent, loc, blank, ASTExpr::If(cond, body)));
+                return (is_generic, create_expr(context.parent, tkn.loc, blank, ASTExpr::If(cond, body)));
             }
         }
         TokenData::KeywordBlank => {
-            return (false, create_expr(context.parent, loc, comptime newSubStrOfStrLit("blank"), ASTExpr::Blank));
+            return (false, create_expr(context.parent, tkn.loc, comptime newSubStrOfStrLit("blank"), ASTExpr::Blank));
         }
         TokenData::KeywordNull => {
-            return (false, create_expr(context.parent, loc, comptime newSubStrOfStrLit("null"), ASTExpr::Null));
+            return (false, create_expr(context.parent, tkn.loc, comptime newSubStrOfStrLit("null"), ASTExpr::Null));
         }
         TokenData::CurlyOpen => {
             return parse_block(context);
         }
         t => {
-            message(todo(new_loc(context.lexer.offset_in_file), "parse_primary_expr: %", to_cstr(t)));
+            message(error(tkn.loc, "Expected primary expression, but got %.", to_cstr(t)));
         }
     }
     todo_with_msg("primary");
@@ -727,17 +764,39 @@ func parse_directive(context: &Parse_Context) -> (bool, &AST) {
                 } else if (equals(&name, &comptime newSubStrOfStrLit("stmt"))) {
                     context.insert_context.parse_fn = parse_stmt;
                 } else {
-                    message(error(new_loc(mod.offset_in_file), "Unknown #insert modifier %.", name));
+                    message(error(mod.loc, "Unknown #insert modifier %.", name));
                 }
             }
             let (gen_expr, expr) = parse_expr(context);
-            let dir = create_directive(context.parent, expr.loc, Directive::Insert(expr, context.insert_context));
+            let dir = create_directive(context.parent, dir.loc, Directive::Insert(expr, context.insert_context));
             context.insert_context = old_ctx;
             return (gen_expr, dir);
         }),
         (comptime newSubStrOfStrLit("run"), func (context: &Parse_Context, dir: Token) -> (bool, &AST) {
             let (gen_expr, expr) = parse_expr(context);
-            return (gen_expr, create_directive(context.parent, expr.loc, Directive::Run(expr)));
+            return (gen_expr, create_directive(context.parent, dir.loc, Directive::Run(expr)));
+        }),
+        (comptime newSubStrOfStrLit("assert"), func (context: &Parse_Context, dir: Token) -> (bool, &AST) {
+            let (gen_expr, expr) = parse_expr(context);
+            let msg: String = blank;
+            if (eat(&context.lexer, TokenData::Comma)) {
+                let _msg = expect(&context.lexer, TokenData::StringLiteral);
+                let TokenData::StringLiteral { _, value } = _msg.data else {
+                    unreachable();
+                };
+                msg = value;
+            } else {
+                msg = comptime newReadonlyString("Compile time #assert failed!");
+            }
+            return (gen_expr, create_directive(context.parent, dir.loc, Directive::Assert(expr, msg)));
+        }),
+        (comptime newSubStrOfStrLit("bir"), func (context: &Parse_Context, dir: Token) -> (bool, &AST) {
+            let lexer = context.lexer;
+            skip_until_matching(&context.lexer, TokenData::CurlyOpen, TokenData::CurlyClose);
+            return (false, create_directive(context.parent, dir.loc, Directive::Bir(lexer)));
+        }),
+        (comptime newSubStrOfStrLit("debug"), func (context: &Parse_Context, dir: Token) -> (bool, &AST) {
+            return (false, create_directive(context.parent, dir.loc, Directive::Debug));
         }),
     ];
     for (let i: usize = 0; i < dirs.length; i = i + 1) {
@@ -745,17 +804,16 @@ func parse_directive(context: &Parse_Context) -> (bool, &AST) {
             return dirs[i].1(context, tkn);
         }
     }
-    message(error(new_loc(tkn.offset_in_file), "Use of unknown directive `%`.", directive));
+    message(error(tkn.loc, "Use of unknown directive `%`.", directive));
     unreachable("parse_directive"); // error terminates
 }
 
 func parse_unary_expr(context: &Parse_Context) -> (bool, &AST) {
     let tkn = next(&context.lexer);
     let un: ASTUnary = ASTUnary::LogicalNot;
-    let loc = new_loc(tkn.offset_in_file);
 
     let old_parent = context.parent;
-    let unary = context.parent = create_expr(context.parent, loc, blank, ASTExpr::Unary); // dummy node
+    let unary = context.parent = create_expr(context.parent, tkn.loc, blank, ASTExpr::Unary); // dummy node
 
     let is_generic = false;
     match (tkn.data) {
@@ -780,7 +838,7 @@ func parse_unary_expr(context: &Parse_Context) -> (bool, &AST) {
             unary.data = ASTData::Expr(ASTExpr::Unary(ASTUnary::LogicalNot(sub)));
         }
         t => {
-            message(todo(new_loc(tkn.offset_in_file), "parse_unary_expr: %", to_cstr(t)));
+            message(todo(tkn.loc, "parse_unary_expr: %", to_cstr(t)));
         }
     }
     context.parent = old_parent;
@@ -792,9 +850,33 @@ func parse_secondary_expr(context: &Parse_Context, lhs: &AST, prec: usize, assoc
     let op = next(lexer);
     if let TokenData::KeywordAs = op.data {
         let (generic, typ) = parse_type(context);
-        return (generic, create_expr(context.parent, new_loc(op.offset_in_file), blank, ASTExpr::As(lhs, typ)));
+        return (generic, create_expr(context.parent, op.loc, blank, ASTExpr::As(lhs, typ)));
     }
+    if let TokenData::Dot = op.data {
+        if (!lexer_at(&context.lexer, TokenData::Ident, TokenData::Number)) {
+            message(error(op.loc, "Expected identifier or number after the dot operator, but got %.", to_cstr(next(&context.lexer).data)));
+        }
+        let (false, member) = parse_primary_expr(context) else {
+            unreachable("Can't be generic because it's ident or number");
+        };
+        return (false, create_expr(context.parent, op.loc, blank, ASTExpr::Dot(lhs, member)));
+    }
+    if let TokenData::ParenOpen = op.data {
+        let args = new_GAF_List(type_info(&AST));
+        let is_generic = false;
+        while (!lexer_at(&context.lexer, TokenData::ParenClose)) {
+            let (gen_expr, _expr) = parse_expr(context);
+            if (gen_expr) is_generic = gen_expr;
+            push(&args, _expr);
+            if (!lexer_at(&context.lexer, TokenData::ParenClose)) {
+                expect(&context.lexer, TokenData::Comma);
+            }
+        }
+        let end = expect(&context.lexer, TokenData::ParenClose);
+        return (is_generic, create_expr(context.parent, op.loc, blank, ASTExpr::Call(lhs, args)));
+    }
+
     let (generic, rhs) = __parse_expr(context, prec, assoc);
-    return (generic, create_expr(context.parent, new_loc(op.offset_in_file), blank, binary_expr_from_op(op, lhs, rhs)));
+    return (generic, create_expr(context.parent, op.loc, blank, binary_expr_from_op(op, lhs, rhs)));
 }
 
