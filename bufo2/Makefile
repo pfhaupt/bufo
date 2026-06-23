@@ -1,4 +1,4 @@
-.PHONY: foo food
+.PHONY: debug
 
 EXTRA =
 

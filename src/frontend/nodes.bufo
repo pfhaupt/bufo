@@ -131,6 +131,8 @@ comptime _ATTR_NO_MANGLE: SubStr = BUILD_A_KEYWORD("no_mangle");
 comptime _ATTR_NODISCARD: SubStr = BUILD_A_KEYWORD("nodiscard");
 comptime _ATTR_MANGLE: SubStr = BUILD_A_KEYWORD("mangle");
 comptime _ATTR_WASM_EXPORT: SubStr = BUILD_A_KEYWORD("wasm_export");
+comptime _ATTR_TRACE: SubStr = BUILD_A_KEYWORD("trace");
+comptime _ATTR_IF_TRACING: SubStr = BUILD_A_KEYWORD("if_tracing");
 
 union ParsedAttribute {
     Invalid,
@@ -142,6 +144,8 @@ union ParsedAttribute {
     Nomangle,
     Nodiscard,
     Wasm_Export,
+    Trace,
+    IfTracing,
 }
 
 func equals(this: &ParsedAttribute, other: &ParsedAttribute) -> bool {
@@ -791,11 +795,14 @@ struct ParsedFuncDecl {
     debugInfo: DebugInfo;
 }
 
-func hasAttribute(this: &ParsedFuncDecl, attr: ParsedAttribute) -> bool {
-    for (let i: usize = 0; i < this.attrs.length; i = i + 1) {
-        if (tag(&this.attrs.elements[i]) == tag(&attr)) return true;
+func hasAttribute(this: &ParsedAttributeList, attr: ParsedAttribute) -> bool {
+    for (let i: usize = 0; i < this.length; i = i + 1) {
+        if (tag(&this.elements[i]) == tag(&attr)) return true;
     }
     return false;
+}
+func hasAttribute(this: &ParsedFuncDecl, attr: ParsedAttribute) -> bool {
+    return hasAttribute(&this.attrs, attr);
 }
 func getID(this: &ParsedFuncDecl) -> usize {
     return indexOf(&funcDecls, this);

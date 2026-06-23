@@ -5,6 +5,10 @@ import "prelude.bufo";
 import "asm.bufo";
 import "format.bufo";
 import "list.bufo";
+import "substr.bufo";
+import "string.bufo";
+
+@if_tracing import "tracy.bufo";
 
 import "common.bufo";
 
@@ -38,6 +42,7 @@ func is_active(cid: Corot_UUID) -> bool {
 }
 
 struct Context {
+    name: String;
     alive: bool;
     generation: usize;
     waiting_for: Corot_UUID;
@@ -63,7 +68,7 @@ struct Corot_Monitor {
     waiting_list: GAF_List; // List<Corot_UUID>
 }
 
-func new_monitor(addr: Any) -> Corot_Monitor {
+@trace func new_monitor(addr: Any) -> Corot_Monitor {
     let monitor = Corot_Monitor {
         address: addr,
         responsible_coroutine: corot_id(),
@@ -84,8 +89,9 @@ struct Corot_Engine {
 
 let engine: Corot_Engine = blank;
 
-func init_corot_engine() {
+@trace func init_corot_engine() {
     if (engine.contexts.length > 0) return;
+
     engine = Corot_Engine {
         contexts: new_GAF_List(type_info(Context)),
         active: new_GAF_List(type_info(Corot_UUID)),
@@ -105,7 +111,7 @@ func any_active() -> bool {
     return engine.active.length > 1;
 }
 
-func register_monitor(addr: Any) {
+@trace func register_monitor(addr: Any) {
     for (let i: usize = 0; i < engine.monitors.length; i = i + 1) {
         let monitor = get_ref_raw(&engine.monitors, i) as &Corot_Monitor;
         if (monitor.address == addr) {
@@ -119,7 +125,7 @@ func register_monitor(addr: Any) {
     push(&engine.monitors, monitor);
 }
 
-func get_monitor_for_addr(addr: Any) -> (bool, &Corot_Monitor) {
+@trace func get_monitor_for_addr(addr: Any) -> (bool, &Corot_Monitor) {
     for (let i: usize = 0; i < engine.monitors.length; i = i + 1) {
         let monitor = get_ref_raw(&engine.monitors, i) as &Corot_Monitor;
         if (monitor.address == addr) {
@@ -129,7 +135,7 @@ func get_monitor_for_addr(addr: Any) -> (bool, &Corot_Monitor) {
     return (false, null);
 }
 
-func get_or_create_monitor_for_addr(addr: Any) -> (bool, &Corot_Monitor) {
+@trace func get_or_create_monitor_for_addr(addr: Any) -> (bool, &Corot_Monitor) {
     if let (true, monitor) = get_monitor_for_addr(addr) {
         return (false, monitor);
     }
@@ -140,7 +146,7 @@ func get_or_create_monitor_for_addr(addr: Any) -> (bool, &Corot_Monitor) {
 func unregister_monitor(arg: Any) {
     unregister_monitor(arg, Corot_Result::Success);
 }
-func unregister_monitor(arg: Any, res: Corot_Result) {
+@trace func unregister_monitor(arg: Any, res: Corot_Result) {
     let found = false;
     for (let i: usize = 0; i < engine.monitors.length; i = i + 1) {
         let monitor = get_ref_raw(&engine.monitors, i) as &Corot_Monitor;
@@ -157,7 +163,7 @@ func unregister_monitor(arg: Any, res: Corot_Result) {
             found = true;
         }
     }
-    message(ass(found, blank, "unregister_monitor: % wasn't registered", arg));
+    fassert(found, "unregister_monitor: % wasn't registered", arg);
 }
 
 union Corot_Result {
@@ -180,7 +186,9 @@ union Corot_Result {
     return (id, wait(id));
 }
 
-@nodiscard func wait(dep: Corot_UUID) -> Corot_Result {
+@nodiscard @trace func wait(dep: Corot_UUID) -> Corot_Result {
+    @if_tracing tracy::fiber_leave();
+
     let current = corot_id();
     let current_context = get_context(current);
     let next_context = get_context(dep);
@@ -352,6 +360,15 @@ func resume_context(id: usize) {
     engine.current = id;
     let new_id = get_ref(&engine.active, id) as Corot_UUID;
     let new_context = get_context(new_id);
+
+    @if_tracing {
+        if (new_context.name.buffer == null) {
+            new_context.name = format1("Coroutine %", new_id.id);
+            pushChar(&new_context.name, '\0');
+        }
+        tracy::fiber_enter(new_context.name.buffer);
+    }
+
     restore_context(new_context.rsp);
 }
 
@@ -377,7 +394,6 @@ func resume_context(id: usize) {
 func switch() -> Any {
     let id = get_ref(&engine.active, engine.current) as Corot_UUID;
     let context = get_context(id);
-    message(dbg(blank, "switch() called"));
     return __switch(context);
 }
 

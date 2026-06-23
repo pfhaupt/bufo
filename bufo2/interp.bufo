@@ -147,7 +147,7 @@ func create_interpreter(fn: &AST) -> Interp {
     };
 }
 
-func evaluate_comptime_variables(fn: &AST, target: &SubStr) {
+@trace func evaluate_comptime_variables(fn: &AST, target: &SubStr) {
     let &ASTData::Function(func_state) = &fn.data else { unreachable(); };
 
     // No comptime variables since last time we ran this
@@ -194,7 +194,7 @@ func evaluate_comptime_variables(fn: &AST, target: &SubStr) {
     interp.register_stack_pointer = ptr;
 }
 
-func evaluate_call(interp: &Interp, fn: &AST) {
+@trace func evaluate_call(interp: &Interp, fn: &AST) {
     let &ASTData::Function(func_state) = &fn.data else {
         unreachable("evaluate_call: Not a function");
     };
@@ -225,7 +225,7 @@ func evaluate_call(interp: &Interp, fn: &AST) {
     interp.register_stack_pointer = ptr;
 }
 
-func evaluate_block(interp: &Interp, fn: &AST, block: &Block, bid: &BID, is_evaluate_comptime: bool) -> bool {
+@trace func evaluate_block(interp: &Interp, fn: &AST, block: &Block, bid: &BID, is_evaluate_comptime: bool) -> bool {
     let &ASTData::Function(func_state) = &fn.data else { unreachable(); };
 
     for (let ip: usize = 0; ip < block.ir.length; ip = ip + 1) {
@@ -261,8 +261,7 @@ func evaluate_block(interp: &Interp, fn: &AST, block: &Block, bid: &BID, is_eval
     return false;
 }
 
-func evaluate_single(interp: &Interp, fn: &AST, instr: &Instr) -> Value {
-    // message(note(instr.loc, "evaluate_single %", instr.op));
+@trace func evaluate_single(interp: &Interp, fn: &AST, instr: &Instr) -> Value {
     if let Op::Noop = instr.op {
         return Value::Noop;
     }
@@ -552,7 +551,9 @@ func evaluate_single(interp: &Interp, fn: &AST, instr: &Instr) -> Value {
             let (dst, dst_size) = get_register_pointer_and_size(interp, expr);
             assert(dst_size == 1, "evaluate_single: Assert expr is not 1 byte");
             let succ = *dst == 1;
-            message(ass(succ, instr.loc, "%", msg));
+            if (!succ) {
+                message(fatal(instr.loc, "%", msg));
+            }
             return Value::Noop;
         }
         &Op::LoadComptimeValue(_dst, Value::Var { ptr, size }) => {

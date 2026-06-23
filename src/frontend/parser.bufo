@@ -212,7 +212,7 @@ func parseAttributes(this: &Parser, attrs: &ParsedAttributeList, inModule: bool)
                 C::fprintf(stderr, "%s\n", toString(&os.content).buffer);
                 todo_with_msg("Unknown os");
             }
-            skip = !equals(&os.content, &asSubStr(flags.target));
+            skip = skip || !equals(&os.content, &asSubStr(flags.target));
         } else if (equals(&name.content, &_ATTR_NORETURN)) {
             push(attrs, ParsedAttribute::Noreturn);
         } else if (equals(&name.content, &_ATTR_NAKED)) {
@@ -223,6 +223,10 @@ func parseAttributes(this: &Parser, attrs: &ParsedAttributeList, inModule: bool)
             push(attrs, ParsedAttribute::Nodiscard);
         } else if (equals(&name.content, &_ATTR_WASM_EXPORT)) {
             push(attrs, ParsedAttribute::Wasm_Export);
+        } else if (equals(&name.content, &_ATTR_TRACE)) {
+            push(attrs, ParsedAttribute::Trace);
+        } else if (equals(&name.content, &_ATTR_IF_TRACING)) {
+            skip = skip || !*flags.trace;
         } else {
             let loc = toString(&name.span);
             let n = toString(&name.content);

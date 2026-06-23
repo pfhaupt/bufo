@@ -1776,6 +1776,7 @@ func generateFunctionHeader(this: &IRGen, function: &IRFunc, retType: &Type, par
 func generateFunctionBody(this: &IRGen, function: &IRFunc, body: &ParsedBlock, retTypeNode: &ParsedTypeNode) {
     let retType: &Type = getType(&retTypeNode.typeState);
     let isNakedFn = hasAttribute(at(&funcDecls, function.originalID), ParsedAttribute::Naked);
+    let wantTrace = hasAttribute(at(&funcDecls, function.originalID), ParsedAttribute::Trace);
     if (function.returnBlockID.i == 0) {
         let curr = getCurrentBlock(function);
         function.returnBlockID = appendBlock(function);
@@ -1817,44 +1818,92 @@ func generateFunctionBody(this: &IRGen, function: &IRFunc, body: &ParsedBlock, r
             setCurrentBlock(function, curr);
         }
     }
-    if (*flags.trace) {
+    if (*flags.trace && wantTrace) {
         let fn = getFuncNode(function);
         let isEnter = equals(&fn.name.content, &newSubStrOfStrLit("traceEnter"));
         let isLeave = equals(&fn.name.content, &newSubStrOfStrLit("traceLeave"));
-        let init = func (function: &IRFunc, fn: &ParsedFuncDecl) -> (RegIndexList, TypeList) {
+        let init = func (function: &IRFunc, fn: &ParsedFuncDecl, ctxReg: RegIndex, isLeave: bool) -> (RegIndexList, TypeList) {
+            // func (file: &char, fileLen: usize, line: usize, fn: &char, fnLen: usize, _ctx: usize) -> usize;
             let args = RegIndexList { };
             let pchar = wrap(Type::Ptr(wrap(Type::Prim(PrimType::Char))));
+            let usz = wrap(Type::Prim(PrimType::Usize));
             let t_args: TypeList = blank;
-            push(&t_args, pchar);
-            // Function name
-            let reg = allocateRegister(function, pchar);
-            let name = toString(&fn.name.content);
-            buildLoadString(function, function.span, reg, asSubStr(&name));
-            push(&args, reg);
+            let file = getParentFile(fn);
+            {
+                // File Name
+                let reg = allocateRegister(function, pchar);
+                buildLoadString(function, function.span, reg, file.origin);
+                push(&t_args, pchar);
+                push(&args, reg);
+            }
+            {
+                // File Name Len
+                let reg = allocateRegister(function, usz);
+                buildLoadInteger(function, function.span, reg, usz, file.origin.len);
+                push(&t_args, usz);
+                push(&args, reg);
+            }
+            {
+                // Line Number
+                let line: usize = 0;
+                let col: usize = 0;
+                getLineAndColumnFromSpan(file, &fn.name.span, &line, &col);
+                let reg = allocateRegister(function, usz);
+                buildLoadInteger(function, function.span, reg, usz, line);
+                push(&t_args, usz);
+                push(&args, reg);
+            }
+            {
+                // Function Name
+                let reg = allocateRegister(function, pchar);
+                buildLoadString(function, function.span, reg, fn.name.content);
+                push(&t_args, pchar);
+                push(&args, reg);
+            }
+            {
+                // Function Name Len
+                let reg = allocateRegister(function, usz);
+                buildLoadInteger(function, function.span, reg, usz, fn.name.content.len);
+                push(&t_args, usz);
+                push(&args, reg);
+            }
+            if (isLeave) {
+                // Tracy Context
+                push(&t_args, usz);
+                push(&args, ctxReg);
+            } else {
+                // Color
+                let reg = allocateRegister(function, usz);
+                let name_hash = hash(&fn.name.content);
+                buildLoadInteger(function, function.span, reg, usz, name_hash);
+                push(&t_args, usz);
+                push(&args, reg);
+            }
             return (args, t_args);
         };
         if (!isEnter && !isLeave) {
             let funcID: usize = 0;
             // traceEnter
-            funcID = getFunctionByMangledName(this, "traceEnterPcrN", "trace.bufo");
+            funcID = getFunctionByMangledName(this, "traceEnterPcuszuszPcuszuszrusz", "trace.bufo");
+            let ctxReg: RegIndex = blank;
             {
-                let (args, t_args) = init(function, fn);
-                generateImplicitCall(this, function, function.span, funcID, t_args, wrap(Type::Prim(PrimType::None)), args);
+                let (args, t_args) = init(function, fn, blank, false);
+                ctxReg = generateImplicitCall(this, function, function.span, funcID, t_args, wrap(Type::Prim(PrimType::Usize)), args);
             }
             // function body
             generateBytecodeBlock(this, function, body);
             // traceLeave
-            funcID = getFunctionByMangledName(this, "traceLeavePcrN", "trace.bufo");
+            funcID = getFunctionByMangledName(this, "traceLeavePcuszuszPcuszuszrN", "trace.bufo");
             let curr = getCurrentBlock(function);
             setCurrentBlock(function, function.returnBlockID);
             let block = getCurrentBlockAsRef(function);
             if (isTerminated(block)) {
                 let term = *pop(&block.instructions);
-                let (args, t_args) = init(function, fn);
+                let (args, t_args) = init(function, fn, ctxReg, true);
                 generateImplicitCall(this, function, function.span, funcID, t_args, wrap(Type::Prim(PrimType::None)), args);
                 push(&block.instructions, term);
             } else {
-                let (args, t_args) = init(function, fn);
+                let (args, t_args) = init(function, fn, ctxReg, true);
                 generateImplicitCall(this, function, function.span, funcID, t_args, wrap(Type::Prim(PrimType::None)), args);
             }
             setCurrentBlock(function, curr);

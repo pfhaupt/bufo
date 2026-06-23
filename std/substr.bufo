@@ -176,6 +176,9 @@ func toF64(this: &SubStr) -> f64 {
     return toU64(this) as f64;
 }
 
+func newSubStr(orig: &char) -> SubStr {
+    return newSubStrOfStrLit(orig);
+}
 func newSubStrOfStrLit(orig: &char) -> SubStr {
     return newSubStr(orig, 0, comptimeStrlen(orig));
 }

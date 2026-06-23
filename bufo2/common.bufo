@@ -7,6 +7,8 @@ import "string.bufo";
 import "hashmap.bufo";
 import "format.bufo";
 
+@if_tracing import "tracy.bufo";
+
 import "corot.bufo";
 
 func wrap(d: Data) -> Any {
@@ -31,7 +33,6 @@ func new_loc(file: SubStr, offset: usize) -> Loc {
 
 union Message {
     FinalizeError,
-    Assert(Loc, String),
     Fatal(Loc, String),
     Todo(Loc, String),
     Error(Loc, String),
@@ -39,17 +40,11 @@ union Message {
     Note(Loc, String),
     Help(Loc, String),
     Debug(Loc, String),
-    IgnoredAssert,
+    Info(Loc, String),
 }
 
 func finalize_error() -> Message {
     return Message::FinalizeError;
-}
-
-func ass(cond: bool, loc: Loc, fmt: &char, args: ...Data) -> Message {
-    if (cond) return Message::IgnoredAssert;
-    comptime ASSERT_STR: &char = "\x1b[95mAssertion failed!\x1b[0m";
-    return Message::Assert(loc, format1("% %", ASSERT_STR, format1(fmt, args)));
 }
 
 func fatal(loc: Loc, fmt: &char, args: ...Data) -> Message {
@@ -83,6 +78,10 @@ func dbg(loc: Loc, fmt: &char, args: ...Data) -> Message {
     return Message::Debug(loc, format1("%: %", DEBUG_STR, format1(fmt, args)));
 }
 
+func info(loc: Loc, fmt: &char, args: ...Data) -> Message {
+    comptime INFO_STR: &char = "\x1b[94minfo\x1b[0m";
+    return Message::Info(loc, format1("%: %", INFO_STR, format1(fmt, args)));
+}
 func handle_corot_result(s: Corot_Result, cycle: Message, error: Message) {
     match (s) {
         Corot_Result::Cycle_Detected => { message(cycle); _finish_current(s); }
@@ -105,6 +104,11 @@ func suppress_exit_on_error() {
     error_ignored = true;
 }
 func message(errors: ...Message) {
+    @if_tracing let ctx = tracy::begin_zone(
+        comptime newSubStr("common.bufo"),
+        comptime newSubStr("message"),
+        comptime newSubStr("Message Handler"));
+
     let corot = corot_str();
     let had_error = false;
     let fatal_error = false;
@@ -117,16 +121,21 @@ func message(errors: ...Message) {
                 had_error = true;
                 break;
             }
-            Message::Assert (_loc, _msg) => { loc = _loc; msg = _msg; fatal_error = true; }
-            Message::IgnoredAssert       => { continue; }
             Message::Fatal  (_loc, _msg) => { loc = _loc; msg = _msg; fatal_error = true; }
             Message::Todo   (_loc, _msg) => { loc = _loc; msg = _msg; fatal_error = true; }
             Message::Error  (_loc, _msg) => { loc = _loc; msg = _msg; had_error = true; }
             Message::Warning(_loc, _msg) => { loc = _loc; msg = _msg; }
             Message::Note   (_loc, _msg) => { loc = _loc; msg = _msg; }
             Message::Help   (_loc, _msg) => { loc = _loc; msg = _msg; }
+            Message::Info   (_loc, _msg) => { loc = _loc; msg = _msg; }
             Message::Debug  (_loc, _msg) => {
-                if (!PRINT_DEBUG) { return; }
+                if (!PRINT_DEBUG) {
+                    @if_tracing {
+                        tracy::emit_zone_text(ctx, asSubStr(&msg));
+                        tracy::end_zone(ctx);
+                    }
+                    return;
+                }
                 loc = _loc; msg = _msg;
             }
             _ => { unreachable("message"); }
@@ -136,9 +145,13 @@ func message(errors: ...Message) {
         } else {
             fprint("% %:%: %\n", corot, loc.file, loc.offset, msg);
         }
+        @if_tracing tracy::emit_zone_text(ctx, asSubStr(&msg));
         drop(&msg);
     }
     drop(&corot);
+
+    @if_tracing tracy::end_zone(ctx);
+
     if (fatal_error) {
          had_error = true;
          C::exit(2);

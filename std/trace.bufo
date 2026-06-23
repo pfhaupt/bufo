@@ -1,28 +1,18 @@
 
 import "prelude.bufo";
 import "libc.bufo";
+import "tracy.bufo";
+import "substr.bufo";
 
-let traceDepth: usize = 0;
-let traceCount: usize = 0;
-
-let traceBuffer: [char; 1024] = blank;
-
-func traceEnter(fn: &char) {
-    comptime TRACE_RATE: usize = 50;
-    traceDepth = traceDepth + 1;
-    traceCount = traceCount + 1;
-    if (traceCount % TRACE_RATE == 0) {
-        for (let i: usize = 0; i < traceDepth; i = i + 1) traceBuffer[i] = '-';
-        traceBuffer[traceDepth] = '\0';
-        C::printf("[TRACE] %sEntering %s\n", &traceBuffer, fn);
-    }
+// NOTE(2026-06-23): Technically -> usize is UB, but as TracyCZoneCtx is 8 bytes anyway it spares
+//                   us the struct ABI :^)
+func traceEnter(file: &char, fileLen: usize, line: usize, fn: &char, fnLen: usize, color: usize) -> usize {
+    let source = newSubStr(file, 0, fileLen);
+    let function = newSubStr(fn, 0, fnLen);
+    let ctx = tracy::begin_zone(source, function, color as u32);
+    return *(&ctx as &usize);
 }
-func traceLeave(fn: &char) {
-    comptime TRACE_RATE: usize = 50;
-    if (traceCount % TRACE_RATE == 0) {
-        for (let i: usize = 0; i < traceDepth; i = i + 1) traceBuffer[i] = '-';
-        traceBuffer[traceDepth] = '\0';
-        C::printf("[TRACE] %sLeaving %s\n", &traceBuffer, fn);
-    }
-    traceDepth = traceDepth - 1;
+func traceLeave(file: &char, fileLen: usize, line: usize, fn: &char, fnLen: usize, _ctx: usize) {
+    let ctx = *(&_ctx as &tracy::TracyCZoneCtx);
+    tracy::end_zone(ctx);
 }

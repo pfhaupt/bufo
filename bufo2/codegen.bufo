@@ -64,7 +64,6 @@ func get_current_block(code: &Code) -> &Block {
 func set_current_block(code: &Code, id: BID) {
     let cc = get_context(code);
     let _b: &Block = get_ref_raw(&cc.blocks, id._i);
-    message(dbg(code.owner.loc, "set_current_block: %", _b.name));
     set_current_block(cc, id);
 }
 func allocate_register(code: &Code, type: &Type) -> Reg {
@@ -74,7 +73,6 @@ func create_instr(code: &Code, loc: Loc, type: &Type, op: Op) -> Instr {
     return create_instr(get_context(code), loc, type, op);
 }
 func create_block(code: &Code, name: String) -> Block {
-    message(dbg(code.owner.loc, "create_block: Generated %", name));
     return create_block(get_context(code), name);
 }
 
@@ -263,8 +261,8 @@ func _t(fn: &AST, lexer: &Lexer, checked_type: &Type) -> &Type {
 
     let type: &Type = null;
     if let (var, true) = get_variable_by_name(&func_info.scopes, typ_name) {
-        message(ass(var.type != null, typ_loc, "variable type is now known here"));
-        message(ass(var.type.meta_level > 0, typ_loc, "variable type is not a meta type"));
+        assert(var.type != null, "variable type is now known here");
+        assert(var.type.meta_level > 0, "variable type is not a meta type");
         type = unwrap_meta_type(var.type, 1);
     } else {
         if (is_builtin_type(typ_name)) {
@@ -451,7 +449,7 @@ func codegen_function_entry(fn: &AST) {
     }
 }
 
-func codegen_stmt(fn: &ASTFunction, stmt: &AST) {
+@trace func codegen_stmt(fn: &ASTFunction, stmt: &AST) {
     let &ASTData::Stmt(actual_stmt) = &stmt.data else {
         unreachable("codegen_stmt: Node is not a statement");
     };
@@ -531,14 +529,14 @@ func codegen_stmt(fn: &ASTFunction, stmt: &AST) {
     }
 }
 
-func codegen_expr(fn: &ASTFunction, expr: &AST, wants_ptr: bool) -> (Reg, Instr) {
+@trace func codegen_expr(fn: &ASTFunction, expr: &AST, wants_ptr: bool) -> (Reg, Instr) {
     let &ASTData::Expr(actual_expr) = &expr.data else {
         funreachable("% codegen_expr: Node is not an expression, got %", expr.loc, expr.data);
     };
     match (&actual_expr) {
         &ASTExpr::Ident { name } => {
             let _var = get(&get_context(&fn.code).variable_map, name);
-            message(ass(_var.ptr != null, expr.loc, "codegen_expr: Variable % doesn't exist!", name));
+            assert(_var.ptr != null, "codegen_expr: Variable doesn't exist!");
             let var = _var as Var;
             if (wants_ptr) return (var.alloca_reg, Instr {});
             let dst = allocate_register(&fn.code, expr.type);
@@ -566,7 +564,7 @@ func codegen_expr(fn: &ASTFunction, expr: &AST, wants_ptr: bool) -> (Reg, Instr)
         }
         &ASTExpr::Dot(lhs, member) => {
             let (lhs_reg, lhs_instr) = codegen_expr(fn, lhs, !is_pointer(lhs.type));
-            message(ass(lhs_reg.size == 8, lhs.loc, "Expected pointer sized register as LHS of dot, got %", lhs_reg.size));
+            assert(lhs_reg.size == 8, "Expected pointer sized register as LHS of dot");
             let lhs_type = get_underlying_type(lhs.type);
             if let BaseType::Struct(struct_node) = lhs_type.base {
                 let struct_info = get_struct_info(struct_node);

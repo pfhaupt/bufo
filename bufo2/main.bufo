@@ -12,6 +12,8 @@ import "lexer.bufo";
 import "parser.bufo";
 import "lookup.bufo";
 
+@if_tracing import "tracy.bufo";
+
 /*
  * spawn(parse_file)
  * parse_file
@@ -36,16 +38,27 @@ import "lookup.bufo";
  * ...
  */
 
-func main(argc: i32, argv: &&char) -> i32 {
+func sleep(us: i64) {
+    let start = get_high_resolution_timestamp();
+    let now = get_high_resolution_timestamp();
+    while (get_duration_between_high_resolution_timestamps_in_microseconds(start, now) < us) {
+        now = get_high_resolution_timestamp();
+    }
+}
+
+@trace func main(argc: i32, argv: &&char) -> i32 {
     if (argc < 2) {
         C::fprintf(stderr, "error: Expected file input\n");
         return 1;
     }
 
+    @if_tracing tracy::emit_frame_mark_start("Program Execution");
+
     let start = get_high_resolution_timestamp();
 
     init_corot_engine();
     init_global_lookup();
+    @if_tracing tracy::fiber_enter("main_fiber");
 
     let file_name = newSubStrOfStrLit(argv[1]);
     let file = spawn(load_file, wrap(Load_Context {
@@ -54,21 +67,40 @@ func main(argc: i32, argv: &&char) -> i32 {
     }));
 
     // The main function only switches between scheduled coroutines
-    while (any_active()) switch();
+    let last = start;
+    while (any_active()) {
+        @if_tracing tracy::fiber_leave();
+
+        let now = get_high_resolution_timestamp();
+        let dt = get_duration_between_high_resolution_timestamps_in_microseconds(last, now);
+        if (dt > 100 * 1000) {
+            message(info(blank, "There are % active coroutine(s).", get_corot_count()));
+            last = now;
+        }
+        switch();
+    }
+    @if_tracing tracy::fiber_leave();
 
     let end = get_high_resolution_timestamp();
 
     let dt = get_duration_between_high_resolution_timestamps_in_microseconds(start, end);
     let ms = dt / 1000;
 
-    fprint("In total, we spawned % coroutine(s).\n", get_corot_count());
-    fprint("In total, we took %.%ms.\n", ms, (dt / 10) % 100);
+    message(info(blank, "In total, we spawned % coroutine(s).", get_corot_count()));
+    message(info(blank, "In total, we took %.%ms.", ms, (dt / 10) % 100));
 
     if (error_happened) {
         C::fprintf(stderr, "error: Could not compile program due to the above errors.\n");
         return 1;
     }
     message(note(blank, "done"));
+
+    @if_tracing {
+        // REVIEW(2026-06-23): We quit before tracy can submit all samples, so we sleep a bit.
+        //                     This shouldn't happen, yet it does.
+        sleep(1000 * 1000);
+        tracy::emit_frame_mark_end("Program Execution");
+    }
 
     return 0;
 }

@@ -18,7 +18,7 @@ import "parser.bufo";
 import "codegen.bufo";
 import "interp.bufo";
 
-func check_struct(node: &AST) {
+@trace func check_struct(node: &AST) {
     let &ASTData::Struct(struct_info) = &node.data else {
         unreachable("check_struct: Node is not a struct");
     };
@@ -61,7 +61,7 @@ func check_struct(node: &AST) {
     unregister_monitor(&struct_info.align_in_bytes);
 }
 
-func check_function_return_type(func_state: &ASTFunction) {
+@trace func check_function_return_type(func_state: &ASTFunction) {
     let ret_type = check_expr(&func_state.scopes, func_state.return_type);
     let fn = get_parent_function(func_state.return_type);
     let none = create_meta_type(1, PrimType::None);
@@ -70,14 +70,14 @@ func check_function_return_type(func_state: &ASTFunction) {
     }
 }
 
-func check_function_parameters(func_state: &ASTFunction) {
+@trace func check_function_parameters(func_state: &ASTFunction) {
     for (let i: usize = 0; i < func_state.params.length; i = i + 1) {
         let param = get_ref(&func_state.params, i) as &AST;
         check_param(&func_state.scopes, param);
     }
 }
 
-func check_param(scopes: &GAF_List, param: &AST) {
+@trace func check_param(scopes: &GAF_List, param: &AST) {
     let &ASTData::Param(p_type) = &param.data else {
         unreachable("check_param: Node is not a parameter");
     };
@@ -94,7 +94,7 @@ func check_param(scopes: &GAF_List, param: &AST) {
     }
 }
 
-func check_block(block: &AST) -> &Type {
+@trace func check_block(block: &AST) -> &Type {
     // TODO(2026-04-13): Once we have stuff like #value_of() we can condense BlockExpr and
     //                   BlockVoid into one block in the parser, so we don't have to pass
     //                   null as value here. BlockVoid would simply have an implicit
@@ -140,7 +140,7 @@ func check_block(block: &AST) -> &Type {
     return type;
 }
 
-func check_stmt(scopes: &GAF_List, stmt: &AST) -> &Type {
+@trace func check_stmt(scopes: &GAF_List, stmt: &AST) -> &Type {
     let &ASTData::Stmt(actual_stmt) = &stmt.data else {
         message(fatal(stmt.loc, "check_stmt: Node is not a statement"));
         unreachable();
@@ -251,7 +251,7 @@ func check_stmt(scopes: &GAF_List, stmt: &AST) -> &Type {
     return type;
 }
 
-func infer_type_onto_call(scopes: &GAF_List, ret_type: &Type, _expr: &AST) -> &Type {
+@trace func infer_type_onto_call(scopes: &GAF_List, ret_type: &Type, _expr: &AST) -> &Type {
     let &ASTData::Expr(ASTExpr::Call(_base, _args)) = &_expr.data else {
         unreachable("infer_type_onto_call: Node is not a call");
     };
@@ -287,7 +287,7 @@ func infer_type_onto_call(scopes: &GAF_List, ret_type: &Type, _expr: &AST) -> &T
     return ret_type;
 }
 
-func infer_type_onto_expr(scopes: &GAF_List, type: &Type, _expr: &AST) -> &Type {
+@trace func infer_type_onto_expr(scopes: &GAF_List, type: &Type, _expr: &AST) -> &Type {
     let expr_type = check_expr(scopes, _expr);
     if (expr_type != null) {
         if (!is_equal_to(type, expr_type)) {
@@ -339,7 +339,7 @@ func infer_type_onto_expr(scopes: &GAF_List, type: &Type, _expr: &AST) -> &Type 
     return type;
 }
 
-func check_and_bind_pattern(scopes: &GAF_List, _pat: &AST, _expr: &AST) -> (bool, bool) {
+@trace func check_and_bind_pattern(scopes: &GAF_List, _pat: &AST, _expr: &AST) -> (bool, bool) {
     let &ASTData::Pat(pat) = &_pat.data else {
         unreachable("check_and_bind_pattern: Node is not a pattern");
     };
@@ -381,7 +381,7 @@ func check_and_bind_pattern(scopes: &GAF_List, _pat: &AST, _expr: &AST) -> (bool
     return result;
 }
 
-func infer_type_onto_ident(scopes: &GAF_List, infer_type: &Type, ast: &AST, ident: SubStr) -> &Type {
+@trace func infer_type_onto_ident(scopes: &GAF_List, infer_type: &Type, ast: &AST, ident: SubStr) -> &Type {
     let type: &Type = null;
     if let (var, true) = get_variable_by_name(scopes, ident) {
         if (var.type == null) {
@@ -527,7 +527,7 @@ func infer_type_onto_ident(scopes: &GAF_List, infer_type: &Type, ast: &AST, iden
 }
 
 
-func convert_to_comptime_value_if_possible(scopes: &GAF_List, expr: &AST) -> (Value, bool) {
+@trace func convert_to_comptime_value_if_possible(scopes: &GAF_List, expr: &AST) -> (Value, bool) {
     let &ASTData::Expr(sub) = &expr.data else {
         return (Value::Invalid, false);
     };
@@ -537,7 +537,7 @@ func convert_to_comptime_value_if_possible(scopes: &GAF_List, expr: &AST) -> (Va
         _ => { return (Value::Invalid, false); }
     }
 
-    let new = create_directive(expr.parent, expr.loc, Directive::Run(expr));
+    let new = create_directive(expr.parent, expr.loc, expr.origin, Directive::Run(expr));
     let (_type, renewed) = check_directive(scopes, expr, new);
     let &ASTData::Expr(ASTExpr::ComptimeValue(ct_value)) = &expr.data else {
         unreachable("#run failed to convert expr to ComptimeValue");
@@ -545,7 +545,7 @@ func convert_to_comptime_value_if_possible(scopes: &GAF_List, expr: &AST) -> (Va
     return (ct_value, true);
 }
 
-func check_directive(scopes: &GAF_List, parent: &AST, dir: &AST) -> (&Type, bool) {
+@trace func check_directive(scopes: &GAF_List, parent: &AST, dir: &AST) -> (&Type, bool) {
     let &ASTData::Directive(directive) = &dir.data else {
         unreachable("check_directive: Node is not a directive");
     };
@@ -676,7 +676,7 @@ func check_directive(scopes: &GAF_List, parent: &AST, dir: &AST) -> (&Type, bool
     unreachable("check_directive");
 }
 
-func check_struct_type(scopes: &GAF_List, ast: &AST, base: &Type, args: GAF_List, node: &AST) -> &Type {
+@trace func check_struct_type(scopes: &GAF_List, ast: &AST, base: &Type, args: GAF_List, node: &AST) -> &Type {
     let &ASTData::Struct(struct_info) = &node.data else {
         unreachable("check_struct_type: Node is not a struct");
     };
@@ -879,8 +879,9 @@ func expand_function_if_necessary(expr: &AST, base: &AST, args: &GAF_List) -> bo
     return true;
 }
 
-func check_expr(scopes: &GAF_List, _expr: &AST) -> &Type {
+@trace func check_expr(scopes: &GAF_List, _expr: &AST) -> &Type {
     if (_expr.type != null) return _expr.type;
+
     let &ASTData::Expr(expr) = &_expr.data else {
         message(fatal(_expr.loc, "check_expr: Node is not an expression: %", _expr.data));
         unreachable();
@@ -1015,7 +1016,7 @@ func check_expr(scopes: &GAF_List, _expr: &AST) -> &Type {
     return type;
 }
 
-func check_member_expr(scopes: &GAF_List, dot: &AST, lhs: &AST, member: &AST) -> &Type {
+@trace func check_member_expr(scopes: &GAF_List, dot: &AST, lhs: &AST, member: &AST) -> &Type {
     let lhs_type = check_expr(scopes, lhs);
     if (lhs_type == null) return null;
     if (is_pointer(lhs_type)) lhs_type = get_underlying_type(lhs_type);
@@ -1041,7 +1042,7 @@ func check_member_expr(scopes: &GAF_List, dot: &AST, lhs: &AST, member: &AST) ->
     unreachable();
 }
 
-func check_unary_expr(scopes: &GAF_List, expr: &AST) -> &Type {
+@trace func check_unary_expr(scopes: &GAF_List, expr: &AST) -> &Type {
     let &ASTData::Expr(ASTExpr::Unary(unary)) = &expr.data else {
         unreachable("check_unary_expr: Node is not a unary");
     };
@@ -1077,7 +1078,7 @@ func check_unary_expr(scopes: &GAF_List, expr: &AST) -> &Type {
     }
     return type;
 }
-func check_binary_expr(scopes: &GAF_List, expr: &AST) -> &Type {
+@trace func check_binary_expr(scopes: &GAF_List, expr: &AST) -> &Type {
     let &ASTData::Expr(ASTExpr::Binary(bin)) = &expr.data else {
         unreachable("check_binary_expr: Node is not a binary");
     };

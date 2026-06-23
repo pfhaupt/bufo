@@ -470,7 +470,7 @@ let ast_buffer_ptr: &AST = null;
 let ast_buffer_base: &AST = null;
 
 let node_counter: usize = 0;
-func create_node(parent: &AST, loc: Loc, origin: SubStr) -> &AST {
+@trace func create_node(parent: &AST, loc: Loc, origin: SubStr) -> &AST {
     if (ast_buffer_ptr == null) {
         ast_buffer_ptr = C::calloc(AST_BUFFER_SIZE, sizeof(AST));
         ast_buffer_base = ast_buffer_ptr;
@@ -491,7 +491,7 @@ func create_node(parent: &AST, loc: Loc, origin: SubStr) -> &AST {
     return ptr;
 }
 
-func create_struct(parent: &AST, loc: Loc, origin: SubStr, name: SubStr) -> &AST {
+@trace func create_struct(parent: &AST, loc: Loc, origin: SubStr, name: SubStr) -> &AST {
     let ptr = create_node(parent, loc, origin);
     ptr.data = ASTData::Struct(ASTStruct {
         state: blank,
@@ -521,9 +521,6 @@ func monomorphize_function_node(ast: &AST, mapping: GAF_HashMap) -> &AST {
     // We've already monomorphized this mapping, we don't need to do any further work
     let child = get(&parent.monomorphized_instances, key);
     if (child.ptr != null) {
-        message(
-            dbg(ast.loc, "Already monomorphized function `%` with key %", parent.name, key),
-            note(child as &AST.loc, "Function defined here"));
         drop(&key);
         return child as &AST;
     }
@@ -558,10 +555,6 @@ func monomorphize_struct_node(ast: &AST, mapping: GAF_HashMap) -> &AST {
     // We've already monomorphized this mapping, we don't need to do any further work
     let child = get(&parent.monomorphized_instances, key);
     if (child.ptr != null) {
-        message(
-            dbg(ast.loc, "Already monomorphized struct `%` with key %", parent.name, key),
-            note(child as &AST.loc, "Struct defined here"));
-        drop(&key);
         return child as &AST;
     }
 
@@ -627,7 +620,7 @@ func __collect_generic_type_mapping(ast: &AST, type: &Type, mapping: &GAF_HashMa
                 (ASTExpr::BuiltinType { name }, ty) => {
                     if (is_unknown(ty)) return true;
                     let bt = ast.type;
-                    message(ass(bt.meta_level != 0, ast.loc, "__collect_generic_type_mapping: Type has no meta level"));
+                    assert(bt.meta_level != 0, "__collect_generic_type_mapping: Type has no meta level");
                     bt = unwrap_meta_type(bt, 1);
                     return is_equal_to(bt, ty);
                 }
@@ -707,7 +700,7 @@ func collect_generic_type_mapping(fn: &AST, type: &Type) -> (GAF_HashMap, bool, 
     return (mapping, success, false);
 }
 
-func create_function(parent: &AST, loc: Loc, origin: SubStr, name: SubStr) -> &AST {
+@trace func create_function(parent: &AST, loc: Loc, origin: SubStr, name: SubStr) -> &AST {
     let ptr = create_node(parent, loc, origin);
     let scopes = new_GAF_List(type_info(Scope_Info));
     reserve_capacity(&scopes, 16);
@@ -729,26 +722,26 @@ func create_function(parent: &AST, loc: Loc, origin: SubStr, name: SubStr) -> &A
     return ptr;
 }
 
-func create_stmt(parent: &AST, loc: Loc, origin: SubStr, stmt: ASTStmt) -> &AST {
+@trace func create_stmt(parent: &AST, loc: Loc, origin: SubStr, stmt: ASTStmt) -> &AST {
     let ptr = create_node(parent, loc, origin);
     ptr.data = ASTData::Stmt(stmt);
     return ptr;
 }
 
-func create_pattern(parent: &AST, loc: Loc, origin: SubStr, pat: ASTPat) -> &AST {
+@trace func create_pattern(parent: &AST, loc: Loc, origin: SubStr, pat: ASTPat) -> &AST {
     let ptr = create_node(parent, loc, origin);
     ptr.data = ASTData::Pat(pat);
     return ptr;
 }
 
-func create_expr(parent: &AST, loc: Loc, origin: SubStr, expr: ASTExpr) -> &AST {
+@trace func create_expr(parent: &AST, loc: Loc, origin: SubStr, expr: ASTExpr) -> &AST {
     let ptr = create_node(parent, loc, origin);
     ptr.data = ASTData::Expr(expr);
     return ptr;
 }
 
-func create_directive(parent: &AST, loc: Loc, dir: Directive) -> &AST {
-    let ptr = create_node(parent, loc, blank);
+@trace func create_directive(parent: &AST, loc: Loc, origin: SubStr, dir: Directive) -> &AST {
+    let ptr = create_node(parent, loc, origin);
     ptr.data = ASTData::Directive(dir);
     return ptr;
 }

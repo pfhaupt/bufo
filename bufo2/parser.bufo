@@ -62,7 +62,7 @@ func load_file(context: &Load_Context) {
     let file = spawn(parse_file, wrap((source, file_name)));
 }
 
-func parse_file(arg: &(String, SubStr)) {
+@trace func parse_file(arg: &(String, SubStr)) {
     let src = arg.0;
     let file_name = arg.1;
     let slice = asSubStr(&src);
@@ -183,7 +183,7 @@ func parse_struct_with_mapping(ast: &AST, mapping: GAF_HashMap) -> &AST {
     return ast;
 }
 
-func parse_struct(_context: &Parse_Context) {
+@trace func parse_struct(_context: &Parse_Context) {
     let context = *_context;
     let lexer = &context.lexer;
     let struct_node = context.parent;
@@ -225,7 +225,7 @@ func parse_struct(_context: &Parse_Context) {
     }
 }
 
-func parse_struct_body(context: &Parse_Context) {
+@trace func parse_struct_body(context: &Parse_Context) {
     let lexer = &context.lexer;
     let struct_node = context.parent;
     let &ASTData::Struct(struct_state) = &struct_node.data else {
@@ -295,7 +295,7 @@ func parse_function_attributes(context: &Parse_Context) {
     func_node.attributes = attributes;
 }
 
-func parse_function_with_mapping(ast: &AST, mapping: GAF_HashMap) -> &AST {
+@trace func parse_function_with_mapping(ast: &AST, mapping: GAF_HashMap) -> &AST {
     let _lexer = Lexer {
         offset_in_file: ast.loc.offset,
         file_name: ast.loc.file,
@@ -317,7 +317,7 @@ func parse_function_with_mapping(ast: &AST, mapping: GAF_HashMap) -> &AST {
     return ast;
 }
 
-func parse_function_signature(_context: &Parse_Context) {
+@trace func parse_function_signature(_context: &Parse_Context) {
     let context = *_context;
     let lexer = &context.lexer;
     let func_node = context.parent;
@@ -373,7 +373,7 @@ func parse_parameter(context: &Parse_Context, func_node: &ASTData) {
     push(&func_state.params, param);
 }
 
-func parse_function_body(context: &Parse_Context) {
+@trace func parse_function_body(context: &Parse_Context) {
     let func_state = get_func_info(context.parent);
     register_monitor(&context.parent.type);
     register_monitor(&func_state.block);
@@ -417,7 +417,7 @@ func parse_function_body(context: &Parse_Context) {
     message(dbg(context.parent.loc, "Parsed, type checked and generated function %", func_state.name));
 }
 
-func parse_block(context: &Parse_Context) -> (bool, &AST) {
+@trace func parse_block(context: &Parse_Context) -> (bool, &AST) {
     let old_parent = context.parent;
     let loc = new_loc(context.lexer.file_name, context.lexer.offset_in_file);
 
@@ -466,7 +466,7 @@ func parse_block(context: &Parse_Context) -> (bool, &AST) {
     return (is_generic, block_expr);
 }
 
-func parse_stmt(context: &Parse_Context) -> (bool, &AST) {
+@trace func parse_stmt(context: &Parse_Context) -> (bool, &AST) {
     let old_parent = context.parent;
     let old = context.insert_context;
     context.insert_context = Insert_Context {
@@ -571,13 +571,13 @@ func parse_pattern(context: &Parse_Context) -> &AST {
     return ret_pat;
 }
 
-func parse_type(context: &Parse_Context) -> (bool, &AST) {
+@trace func parse_type(context: &Parse_Context) -> (bool, &AST) {
     let (gen_expr, type) = parse_primary_expr(context);
     // REVIEW(2026-06-05): Limit what we accept here?
     return (gen_expr, type);
 }
 
-func parse_expr(context: &Parse_Context) -> (bool, &AST) {
+@trace func parse_expr(context: &Parse_Context) -> (bool, &AST) {
     let old = context.insert_context;
     context.insert_context = Insert_Context {
         parse_fn: parse_expr,
@@ -748,13 +748,13 @@ func parse_primary_expr(context: &Parse_Context) -> (bool, &AST) {
     todo_with_msg("primary");
 }
 
-func parse_directive(context: &Parse_Context) -> (bool, &AST) {
+@trace func parse_directive(context: &Parse_Context) -> (bool, &AST) {
     let tkn = expect(&context.lexer, TokenData::Ident);
     let TokenData::Ident { directive } = tkn.data else {
         unreachable("expected ident");
     };
     let dirs = [
-        (comptime newSubStrOfStrLit("insert"), func (context: &Parse_Context, dir: Token) -> (bool, &AST) {
+        (comptime newSubStrOfStrLit("insert"), func (context: &Parse_Context, dir: Token, name: SubStr) -> (bool, &AST) {
             let old_ctx = context.insert_context;
             if (eat(&context.lexer, TokenData::Comma)) {
                 let mod = expect(&context.lexer, TokenData::Ident);
@@ -768,15 +768,15 @@ func parse_directive(context: &Parse_Context) -> (bool, &AST) {
                 }
             }
             let (gen_expr, expr) = parse_expr(context);
-            let dir = create_directive(context.parent, dir.loc, Directive::Insert(expr, context.insert_context));
+            let dir = create_directive(context.parent, dir.loc, name, Directive::Insert(expr, context.insert_context));
             context.insert_context = old_ctx;
             return (gen_expr, dir);
         }),
-        (comptime newSubStrOfStrLit("run"), func (context: &Parse_Context, dir: Token) -> (bool, &AST) {
+        (comptime newSubStrOfStrLit("run"), func (context: &Parse_Context, dir: Token, name: SubStr) -> (bool, &AST) {
             let (gen_expr, expr) = parse_expr(context);
-            return (gen_expr, create_directive(context.parent, dir.loc, Directive::Run(expr)));
+            return (gen_expr, create_directive(context.parent, dir.loc, name, Directive::Run(expr)));
         }),
-        (comptime newSubStrOfStrLit("assert"), func (context: &Parse_Context, dir: Token) -> (bool, &AST) {
+        (comptime newSubStrOfStrLit("assert"), func (context: &Parse_Context, dir: Token, name: SubStr) -> (bool, &AST) {
             let (gen_expr, expr) = parse_expr(context);
             let msg: String = blank;
             if (eat(&context.lexer, TokenData::Comma)) {
@@ -788,20 +788,20 @@ func parse_directive(context: &Parse_Context) -> (bool, &AST) {
             } else {
                 msg = comptime newReadonlyString("Compile time #assert failed!");
             }
-            return (gen_expr, create_directive(context.parent, dir.loc, Directive::Assert(expr, msg)));
+            return (gen_expr, create_directive(context.parent, dir.loc, name, Directive::Assert(expr, msg)));
         }),
-        (comptime newSubStrOfStrLit("bir"), func (context: &Parse_Context, dir: Token) -> (bool, &AST) {
+        (comptime newSubStrOfStrLit("bir"), func (context: &Parse_Context, dir: Token, name: SubStr) -> (bool, &AST) {
             let lexer = context.lexer;
             skip_until_matching(&context.lexer, TokenData::CurlyOpen, TokenData::CurlyClose);
-            return (false, create_directive(context.parent, dir.loc, Directive::Bir(lexer)));
+            return (false, create_directive(context.parent, dir.loc, name, Directive::Bir(lexer)));
         }),
-        (comptime newSubStrOfStrLit("debug"), func (context: &Parse_Context, dir: Token) -> (bool, &AST) {
-            return (false, create_directive(context.parent, dir.loc, Directive::Debug));
+        (comptime newSubStrOfStrLit("debug"), func (context: &Parse_Context, dir: Token, name: SubStr) -> (bool, &AST) {
+            return (false, create_directive(context.parent, dir.loc, name, Directive::Debug));
         }),
     ];
     for (let i: usize = 0; i < dirs.length; i = i + 1) {
         if (equals(&directive, &dirs[i].0)) {
-            return dirs[i].1(context, tkn);
+            return dirs[i].1(context, tkn, directive);
         }
     }
     message(error(tkn.loc, "Use of unknown directive `%`.", directive));

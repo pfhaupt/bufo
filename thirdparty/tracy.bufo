@@ -1,0 +1,54 @@
+
+import "substr.bufo";
+
+module tracy {
+    @os(WINDOWS) config {
+        static: "TracyClient.lib",
+        dynamic: "TracyClient.dll",
+        libpath: "./thirdparty/tracy/build/Release/",
+        libpath: ".",
+    }
+    struct Src_Loc { _i: u64; }
+    struct TracyCZoneCtx {
+        id: u32;
+        active: i32;
+    }
+    @extern @mangle("___tracy_alloc_srcloc") func _alloc_srcloc(line: u32, source: &char, sourceSz: usize, function: &char, functionSz: usize, color: u32) -> Src_Loc;
+    func alloc_srcloc(line: u32, source: SubStr, function: SubStr, color: u32) -> Src_Loc {
+        return _alloc_srcloc(line, source.start, source.len, function.start, function.len, color);
+    }
+    @extern @mangle("___tracy_alloc_srcloc_name") func _alloc_srcloc_name(line: u32, source: &char, sourceSz: usize, function: &char, functionSz: usize, name: &char, nameSz: usize, color: u32) -> Src_Loc;
+    func alloc_srcloc_name(line: u32, source: SubStr, function: SubStr, name: SubStr, color: u32) -> Src_Loc {
+        return _alloc_srcloc_name(line, source.start, source.len, function.start, function.len, name.start, name.len, color);
+    }
+
+    @extern @mangle("___tracy_emit_zone_begin_alloc") func _emit_zone_begin_alloc(srcloc: Src_Loc, active: i32) -> TracyCZoneCtx;
+    func begin_zone(source: SubStr, function: SubStr, name: SubStr, color: u32) -> TracyCZoneCtx {
+        let loc = alloc_srcloc_name(0, source, function, name, color);
+        return _emit_zone_begin_alloc(loc, 1);
+    }
+    func begin_zone(source: SubStr, function: SubStr, name: SubStr) -> TracyCZoneCtx {
+        return begin_zone(source, function, name, 0);
+    }
+    func begin_zone(source: SubStr, function: SubStr, color: u32) -> TracyCZoneCtx {
+        return begin_zone(source, function, function, color);
+    }
+    func begin_zone(source: SubStr, function: SubStr) -> TracyCZoneCtx {
+        return begin_zone(source, function, 0 as u32);
+    }
+    @extern @mangle("___tracy_emit_zone_end") func _emit_zone_end(ctx: TracyCZoneCtx);
+    func end_zone(ctx: TracyCZoneCtx) {
+        _emit_zone_end(ctx);
+    }
+    @extern @mangle("___tracy_emit_zone_text") func _emit_zone_text(ctx: TracyCZoneCtx, txt: &char, size: usize);
+    func emit_zone_text(ctx: TracyCZoneCtx, txt: SubStr) {
+        _emit_zone_text(ctx, txt.start, txt.len);
+    }
+
+    @extern @mangle("___tracy_emit_frame_mark") func emit_frame_mark(name: &char);
+    @extern @mangle("___tracy_emit_frame_mark_start") func emit_frame_mark_start(name: &char);
+    @extern @mangle("___tracy_emit_frame_mark_end") func emit_frame_mark_end(name: &char);
+
+    @extern @mangle("___tracy_fiber_enter") func fiber_enter(fiber: &char);
+    @extern @mangle("___tracy_fiber_leave") func fiber_leave();
+}

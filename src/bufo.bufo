@@ -3,6 +3,8 @@ import "libc.bufo";
 import "substr.bufo";
 import "string.bufo";
 import "cmd.bufo";
+import "format.bufo";
+
 import "./util/span.bufo";
 import "./util/flags.bufo";
 import "./util/arena.bufo";
@@ -86,7 +88,7 @@ func main(argc: i32, argv: &&char) -> i32 {
     flags.noEntry = addBoolFlag(&flagParser, "--no-entry", "Don't include an entrypoint in the final output");
     flags.linkDynamic = addBoolFlag(&flagParser, "--link-dynamic", "Use the specified dynamic libraries to link instead of static libraries");
     flags.debug = addBoolFlag(&flagParser, "d", "debug", "Compile with debug info");
-    flags.trace = addBoolFlag(&flagParser, "--trace", "Trace function calls");
+    flags.trace = addBoolFlag(&flagParser, "--trace", "Trace function calls with Tracy (https://github.com/wolfpld/tracy)");
     flags.opt = addBoolFlag(&flagParser, "--opt", "Enable aggressive optimizations");
     flags.disableExternalComptime = addBoolFlag(&flagParser, "--no-extern-comptime", "Don't allow any compile time calls to functions marked `@extern`.");
     flags.disableInlineAssembly = addBoolFlag(&flagParser, "--no-inline-assembly", "Don't allow any `asm()` blocks.");
@@ -139,8 +141,8 @@ func main(argc: i32, argv: &&char) -> i32 {
     let string: String = readFileToString(flags.file.buffer);
     let sub: SubStr = newSubStrOfString(&string, 0, string.length);
     let parser: Parser = newParserFromSource(0, sub);
-    if (!findStdAndAddToImports(&parser)) return 1;
-    addImportRoot(&parser, newSubStrOfStrLit("./std/"));
+    if (!findDirRelativeToCompilerAndAddToImports(&parser, "std")) return 1;
+    if (!findDirRelativeToCompilerAndAddToImports(&parser, "thirdparty")) return 1;
     let project: ParsedFile = parseProject(&parser, fileSubStr);
     let checker: TypeChecker = newTypeChecker();
     if (!typeCheckProject(&checker, &project)) return 1;
@@ -170,13 +172,18 @@ func main(argc: i32, argv: &&char) -> i32 {
     return 0;
 }
 
-func findStdAndAddToImports(parser: &Parser) -> bool {
+func findDirRelativeToCompilerAndAddToImports(parser: &Parser, dir: &char) -> bool {
     let _my_path = getBufoPath();
     let my_path = newStringFromStrLit(_my_path);
     C::free(_my_path);
     let root = getRoot(&my_path);
-    @os(WINDOWS) pushStr(&root, "\\std\\");
-    @os(LINUX) pushStr(&root, "/std/");
+    @os(WINDOWS) {
+        // Thanks Windows for using \ :grrr: (actually that just means our format is buggy)
+        pushChar(&root, '\\');
+        pushStr(&root, dir);
+        pushChar(&root, '\\');
+    }
+    @os(LINUX) format(&root, "/%/", dir);
     addImportRoot(parser, asSubStr(&root));
     return true;
 }
