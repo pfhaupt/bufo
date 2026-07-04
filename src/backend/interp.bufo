@@ -30,7 +30,7 @@ struct CallStack {
     length: usize;
     capacity: usize;
 }
-func push(this: &CallStack, element: CallStackInfo) {
+@trace func push(this: &CallStack, element: CallStackInfo) {
     if (this.length >= this.capacity) {
         let newCap: usize = this.capacity * 2;
         if (newCap == 0) newCap = 32;
@@ -41,17 +41,17 @@ func push(this: &CallStack, element: CallStackInfo) {
     this.elements[this.length] = element;
     this.length = this.length + 1;
 }
-func at(this: &CallStack, index: usize) -> &CallStackInfo {
+@trace func at(this: &CallStack, index: usize) -> &CallStackInfo {
     assert(index < this.length, "Out of bounds access in CallStack.at");
     assert(this.elements != null, "Element pointer is NULL in CallStack.at");
     return &this.elements[index];
 }
-func pop(this: &CallStack) -> &CallStackInfo {
+@trace func pop(this: &CallStack) -> &CallStackInfo {
     let l: &CallStackInfo = last(this);
     this.length = this.length - 1;
     return l;
 }
-func last(this: &CallStack) -> &CallStackInfo {
+@trace func last(this: &CallStack) -> &CallStackInfo {
     assert(this.length != 0, "Called last() on empty CallStack");
     return at(this, this.length - 1);
 }
@@ -73,7 +73,7 @@ struct IRInterp {
     argStackCapacity: usize;
     callStack: CallStack;
 }
-func dumpRegisterStack(this: &IRInterp, bytes: usize) {
+@trace func dumpRegisterStack(this: &IRInterp, bytes: usize) {
     let cols: usize = 4;
     for (let i: usize = 0; i < bytes; i = i + 1) {
         if (i > 0 && i % (8 * cols) == 0) C::printf("\n");
@@ -81,16 +81,16 @@ func dumpRegisterStack(this: &IRInterp, bytes: usize) {
     }
     C::printf("\n");
 }
-func getGlobalPointer(this: &IRInterp, reg: &InterpReg) -> &u8 {
+@trace func getGlobalPointer(this: &IRInterp, reg: &InterpReg) -> &u8 {
     return this.globalRegBase - reg.offset - reg.size;
 }
-func getRegStackPointer(this: &IRInterp, reg: &InterpReg) -> &u8 {
+@trace func getRegStackPointer(this: &IRInterp, reg: &InterpReg) -> &u8 {
     let ptr: &u8 = this.regStackBase - reg.offset - reg.size;
     assert(ptr < this.regStackStart + REG_STACK_SIZE, "Stack Overflow in IRInterp.getRegStackPointer");
     assert(ptr >= this.regStackStart, "Stack Underflow in IRInterp.getRegStackPointer");
     return ptr;
 }
-func advanceRealStack(this: &IRInterp, span: Span, size: usize) -> &u8 {
+@trace func advanceRealStack(this: &IRInterp, span: Span, size: usize) -> &u8 {
     let _p: &u8 = this.realStackPointer;
     let new: &u8 = this.realStackPointer + size;
     if (new >= this.realStackStart + STACK_SIZE) {
@@ -103,7 +103,7 @@ func advanceRealStack(this: &IRInterp, span: Span, size: usize) -> &u8 {
     this.realStackPointer = new;
     return _p;
 }
-func pushArgument(this: &IRInterp, span: Span, start: &u8, size: usize) {
+@trace func pushArgument(this: &IRInterp, span: Span, start: &u8, size: usize) {
     let new = this.argStackLength + size;
     if (new >= this.argStackCapacity) {
         let loc = toString(&span);
@@ -115,7 +115,7 @@ func pushArgument(this: &IRInterp, span: Span, start: &u8, size: usize) {
     C::memcpy(this.argStack + this.argStackLength, start, size);
     this.argStackLength = new;
 }
-func popArgument(this: &IRInterp, span: Span, start: &u8, size: usize) {
+@trace func popArgument(this: &IRInterp, span: Span, start: &u8, size: usize) {
     let new = this.argStackLength - size;
     if (this.argStackLength < size) {
         let loc = toString(&span);
@@ -211,7 +211,7 @@ let instrFns = [
     evaluateDebugInfo,          // INSTR_DEBUG_INFO_ALLOCA
     evaluateDebugInfo,          // INSTR_DEBUG_INFO_PARAM
 ];
-func evaluateNotImplemented(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateNotImplemented(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     dumpInstructions(irFunc);
     let loc = toString(&instr.span);
     C::printf("%s: ", loc.buffer);
@@ -219,7 +219,7 @@ func evaluateNotImplemented(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, r
     dumpCallStack(this, &loc);
     unreachable("Not implemented");
 }
-func evaluateAlloca(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateAlloca(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let fReg: &IRReg = getRegister(irFunc, instr.dst);
     assert(isPointer(fReg.typ), "Alloca got non-pointer");
     let reg: InterpReg = InterpReg {
@@ -229,7 +229,7 @@ func evaluateAlloca(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
     *(getRegStackPointer(this, &reg) as &usize) = advanceRealStack(this, instr.span, instr.src.i) as usize;
     return reg;
 }
-func evaluateGetParam(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateGetParam(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let size: usize = instr.op1.i;
     assert(size <= 8, "Interp: Expected small size for GetParam");
     let dst: InterpReg = InterpReg {
@@ -239,7 +239,7 @@ func evaluateGetParam(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &
     popArgument(this, instr.span, getRegStackPointer(this, &dst), size);
     return dst;
 }
-func evaluateStore(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateStore(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let dst: &IRReg = getRegister(irFunc, instr.dst);
     let src: &RegValue = at(regs, instr.src.i);
     assert(isPointer(dst.typ), "Store expected Ptr Dst");
@@ -254,7 +254,7 @@ func evaluateStore(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Reg
     C::memcpy(dstLoc, srcLoc, srcReg.size);
     return dstReg;
 }
-func evaluateFetchGlobalPtr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateFetchGlobalPtr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let fReg = getRegister(irFunc, instr.dst);
     let ptr = getGlobalPointer(this, &asInterp(at(this.globalRegisters, instr.src.i), "Interp FetchGlobalPtr"));
     let t = fReg.typ;
@@ -266,7 +266,7 @@ func evaluateFetchGlobalPtr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, r
     C::memcpy(getRegStackPointer(this, &reg), ptr, size);
     return reg;
 }
-func evaluateFetchGlobalValue(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateFetchGlobalValue(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let fReg = getRegister(irFunc, instr.dst);
     let ptr = getGlobalPointer(this, &asInterp(at(this.globalRegisters, instr.src.i), "Interp FetchGlobalValue"));
     let size = getSizeInBytes(fReg.typ);
@@ -277,7 +277,7 @@ func evaluateFetchGlobalValue(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr,
     C::memcpy(getRegStackPointer(this, &reg), *(ptr as &usize) as Any, size);
     return reg;
 }
-func evaluateFetchComptimeValue(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateFetchComptimeValue(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     if (instr.op1.i == 1) {
         // Global fetch
         let fReg = getRegister(irFunc, instr.dst);
@@ -295,7 +295,7 @@ func evaluateFetchComptimeValue(this: &IRInterp, irFunc: &IRFunc, instr: &IRInst
         return asInterp(at(regs, instr.src.i), "Interp FetchComptimeValue");
     }
 }
-func evaluateLoadFunctionPtr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateLoadFunctionPtr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let fReg: &IRReg = getRegister(irFunc, instr.dst);
     assert(isFunction(fReg.typ), "LoadFunctionPtr got non-function");
     let reg: InterpReg = InterpReg {
@@ -306,7 +306,7 @@ func evaluateLoadFunctionPtr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, 
     *(regStackLoc as &usize) = instr.src.i;
     return reg;
 }
-func evaluateLoad(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateLoad(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let dst: &IRReg = getRegister(irFunc, instr.dst);
     let src: &RegValue = at(regs, instr.src.i);
     let srcReg: InterpReg =  asInterp(src, "Load src");
@@ -320,7 +320,7 @@ func evaluateLoad(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegV
     C::memcpy(dstLoc, srcLoc, dstReg.size);
     return dstReg;
 }
-func evaluateMove(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateMove(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let dst: &IRReg = getRegister(irFunc, instr.dst);
     let src: &RegValue = at(regs, instr.src.i);
     let srcReg: InterpReg =  asInterp(src, "Interp Move src");
@@ -333,7 +333,7 @@ func evaluateMove(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegV
     C::memcpy(dstLoc, srcLoc, dstReg.size);
     return dstReg;
 }
-func evaluateInstrCall(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateInstrCall(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let dstReg: &IRReg = getRegister(irFunc, instr.dst);
     let id = *(getRegStackPointer(this, &asInterp(at(regs, instr.src.i), "Call")) as &usize);
     let calledFunc: &IRFunc = at(&this.irGen.functions, id);
@@ -457,18 +457,18 @@ func evaluateInstrCall(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: 
         return dst;
     }
 }
-func evaluateReturnExpr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateReturnExpr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let expr: &RegValue = at(regs, instr.src.i);
     let rExpr: InterpReg =  asInterp(expr, "ReturnExpr");
     pushArgument(this, instr.span, getRegStackPointer(this, &rExpr), rExpr.size);
     return blank;
 }
 
-func evaluateReturnVoid(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateReturnVoid(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     return blank;
 }
 
-func evaluateLoadString(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateLoadString(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let fReg: &IRReg = getRegister(irFunc, instr.dst);
     assert(isPointer(fReg.typ), "LoadString expected Ptr");
     assert(isChar(getUnderlyingType(fReg.typ, false)), "LoadString expected Ptr to Char");
@@ -480,7 +480,7 @@ func evaluateLoadString(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs:
     *(regStackLoc as &usize) = instr.src.i;
     return reg;
 }
-func evaluateLoadBool(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateLoadBool(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let isTrue: u8 = instr.src.i as u8;
     assert(isTrue == 0 || isTrue == 1, "LoadBool expected 0 or 1");
     let fReg: &IRReg = getRegister(irFunc, instr.dst);
@@ -493,7 +493,7 @@ func evaluateLoadBool(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &
     return reg;
 }
 
-func evaluateLoadI8(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateLoadI8(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let fReg: &IRReg = getRegister(irFunc, instr.dst);
     assert(isInteger(fReg.typ), "LoadI8 got non-int");
     let reg: InterpReg = InterpReg {
@@ -504,7 +504,7 @@ func evaluateLoadI8(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
     *(regStackLoc as &i8) = instr.src.i as i8;
     return reg;
 }
-func evaluateLoadU8(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateLoadU8(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let fReg: &IRReg = getRegister(irFunc, instr.dst);
     assert(isInteger(fReg.typ) || isChar(fReg.typ), "LoadU8 got non-int non-char");
     let reg: InterpReg = InterpReg {
@@ -515,7 +515,7 @@ func evaluateLoadU8(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
     *(regStackLoc as &u8) = instr.src.i as u8;
     return reg;
 }
-func evaluateLoadI16(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateLoadI16(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let fReg: &IRReg = getRegister(irFunc, instr.dst);
     assert(isInteger(fReg.typ), "LoadI16 got non-int");
     let reg: InterpReg = InterpReg {
@@ -527,7 +527,7 @@ func evaluateLoadI16(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &R
     return reg;
 }
 
-func evaluateLoadU16(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateLoadU16(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let fReg: &IRReg = getRegister(irFunc, instr.dst);
     assert(isInteger(fReg.typ), "LoadU16 got non-int");
     let reg: InterpReg = InterpReg {
@@ -538,7 +538,7 @@ func evaluateLoadU16(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &R
     *(regStackLoc as &u16) = instr.src.i as u16;
     return reg;
 }
-func evaluateLoadI32(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateLoadI32(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let fReg: &IRReg = getRegister(irFunc, instr.dst);
     assert(isInteger(fReg.typ), "LoadI32 got non-int");
     let reg: InterpReg = InterpReg {
@@ -549,7 +549,7 @@ func evaluateLoadI32(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &R
     *(regStackLoc as &i32) = instr.src.i as i32;
     return reg;
 }
-func evaluateLoadU32(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateLoadU32(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let fReg: &IRReg = getRegister(irFunc, instr.dst);
     assert(isInteger(fReg.typ), "LoadU32 got non-int");
     let reg: InterpReg = InterpReg {
@@ -560,7 +560,7 @@ func evaluateLoadU32(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &R
     *(regStackLoc as &u32) = instr.src.i as u32;
     return reg;
 }
-func evaluateLoadI64(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateLoadI64(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let fReg: &IRReg = getRegister(irFunc, instr.dst);
     assert(isInteger(fReg.typ), "LoadI64 got non-int");
     let reg: InterpReg = InterpReg {
@@ -571,7 +571,7 @@ func evaluateLoadI64(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &R
     *(regStackLoc as &i64) = instr.src.i as i64;
     return reg;
 }
-func evaluateLoadU64(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateLoadU64(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let fReg: &IRReg = getRegister(irFunc, instr.dst);
     assert(isInteger(fReg.typ), "LoadU64 got non-int");
     let reg: InterpReg = InterpReg {
@@ -583,7 +583,7 @@ func evaluateLoadU64(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &R
     return reg;
 }
 
-func evaluateLoadNull(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateLoadNull(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let fReg: &IRReg = getRegister(irFunc, instr.dst);
     assert(isPointer(fReg.typ), "LoadNull got non-ptr");
     let reg: InterpReg = InterpReg {
@@ -594,7 +594,7 @@ func evaluateLoadNull(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &
     *(regStackLoc as &usize) = 0;
     return reg;
 }
-func evaluateLoadF32(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateLoadF32(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let fReg: &IRReg = getRegister(irFunc, instr.dst);
     assert(isFloat(fReg.typ), "LoadF32 got non-float");
     let reg: InterpReg = InterpReg {
@@ -606,7 +606,7 @@ func evaluateLoadF32(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &R
     return reg;
 }
 
-func evaluateLoadF64(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateLoadF64(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let fReg: &IRReg = getRegister(irFunc, instr.dst);
     assert(isFloat(fReg.typ), "LoadF64 got non-float");
     let reg: InterpReg = InterpReg {
@@ -618,7 +618,7 @@ func evaluateLoadF64(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &R
     return reg;
 }
 
-func evaluateLoadBlank(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateLoadBlank(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let dstReg: &IRReg = getRegister(irFunc, instr.dst);
     let dst: InterpReg = InterpReg {
         offset: dstReg.offset,
@@ -627,7 +627,7 @@ func evaluateLoadBlank(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: 
     C::memset(getRegStackPointer(this, &dst), 0, dst.size);
     return dst;
 }
-func evaluateCondBr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateCondBr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let cond: &RegValue = at(regs, instr.src.i);
     let rCond: InterpReg = asInterp(cond, "CondBr");
     assert(rCond.size == 1, "comptime CondBr expected single byte Cond");
@@ -642,10 +642,10 @@ func evaluateCondBr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
     }
     return InterpReg { offset: id, size: 1 };
 }
-func evaluateBr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateBr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     return InterpReg { offset: instr.dst.i, size: 1 };
 }
-func evaluateIntAdd(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateIntAdd(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     // OPT: Specialized 8bit, 16bit, etc. variations
     let lhs: &RegValue = at(regs, instr.src.i);
     let rhs: &RegValue = at(regs, instr.op1.i);
@@ -681,7 +681,7 @@ func evaluateIntAdd(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
     }
     return dst;
 }
-func evaluateIntSub(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateIntSub(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     // OPT: Specialized 8bit, 16bit, etc. variations
     let lhs: &RegValue = at(regs, instr.src.i);
     let rhs: &RegValue = at(regs, instr.op1.i);
@@ -718,7 +718,7 @@ func evaluateIntSub(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
     return dst;
 }
 
-func evaluateIntMul(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateIntMul(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     // OPT: Specialized 8bit, 16bit, etc. variations
     let lhs: &RegValue = at(regs, instr.src.i);
     let rhs: &RegValue = at(regs, instr.op1.i);
@@ -754,7 +754,7 @@ func evaluateIntMul(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
     }
     return dst;
 }
-func evaluateIntDiv(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateIntDiv(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     // OPT: Specialized 8bit, 16bit, etc. variations
     let lhs: &RegValue = at(regs, instr.src.i);
     let rhs: &RegValue = at(regs, instr.op1.i);
@@ -790,7 +790,7 @@ func evaluateIntDiv(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
     }
     return dst;
 }
-func evaluateIntMod(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateIntMod(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     // OPT: Specialized 8bit, 16bit, etc. variations
     let lhs: &RegValue = at(regs, instr.src.i);
     let rhs: &RegValue = at(regs, instr.op1.i);
@@ -826,7 +826,7 @@ func evaluateIntMod(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
     }
     return dst;
 }
-func evaluateIntCmpEqAndNeq(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateIntCmpEqAndNeq(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let lhs: &RegValue = at(regs, instr.src.i);
     let rhs: &RegValue = at(regs, instr.op1.i);
     let rLhs: InterpReg =  asInterp(lhs, "ICmpNeq/ICmpEq LHS");
@@ -871,7 +871,7 @@ func evaluateIntCmpEqAndNeq(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, r
     *start = r;
     return dst;
 }
-func evaluateIntCmpGtAndLte(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateIntCmpGtAndLte(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let lhs: &RegValue = at(regs, instr.src.i);
     let rhs: &RegValue = at(regs, instr.op1.i);
     let rLhs: InterpReg =  asInterp(lhs, "ICmpGt/ICmpLte LHS");
@@ -916,7 +916,7 @@ func evaluateIntCmpGtAndLte(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, r
     *start = r;
     return dst;
 }
-func evaluateIntCmpLtAndGte(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateIntCmpLtAndGte(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let lhs: &RegValue = at(regs, instr.src.i);
     let rhs: &RegValue = at(regs, instr.op1.i);
     let rLhs: InterpReg =  asInterp(lhs, "ICmpLt/ICmpGte LHS");
@@ -962,7 +962,7 @@ func evaluateIntCmpLtAndGte(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, r
     return dst;
 }
 
-func evaluateFloatAdd(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateFloatAdd(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     // OPT: Specialized 8bit, 16bit, etc. variations
     let lhs: &RegValue = at(regs, instr.src.i);
     let rhs: &RegValue = at(regs, instr.op1.i);
@@ -989,7 +989,7 @@ func evaluateFloatAdd(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &
     }
     return dst;
 }
-func evaluateFloatSub(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateFloatSub(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     // OPT: Specialized 8bit, 16bit, etc. variations
     let lhs: &RegValue = at(regs, instr.src.i);
     let rhs: &RegValue = at(regs, instr.op1.i);
@@ -1016,7 +1016,7 @@ func evaluateFloatSub(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &
     }
     return dst;
 }
-func evaluateFloatMul(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateFloatMul(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     // OPT: Specialized 8bit, 16bit, etc. variations
     let lhs: &RegValue = at(regs, instr.src.i);
     let rhs: &RegValue = at(regs, instr.op1.i);
@@ -1043,7 +1043,7 @@ func evaluateFloatMul(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &
     }
     return dst;
 }
-func evaluateFloatDiv(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateFloatDiv(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     // OPT: Specialized 8bit, 16bit, etc. variations
     let lhs: &RegValue = at(regs, instr.src.i);
     let rhs: &RegValue = at(regs, instr.op1.i);
@@ -1070,7 +1070,7 @@ func evaluateFloatDiv(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &
     }
     return dst;
 }
-func evaluateFloatMod(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateFloatMod(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     // OPT: Specialized 8bit, 16bit, etc. variations
     let lhs: &RegValue = at(regs, instr.src.i);
     let rhs: &RegValue = at(regs, instr.op1.i);
@@ -1097,7 +1097,7 @@ func evaluateFloatMod(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &
     }
     return dst;
 }
-func evaluateFloatCmpEqAndNeq(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateFloatCmpEqAndNeq(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let lhs: &RegValue = at(regs, instr.src.i);
     let rhs: &RegValue = at(regs, instr.op1.i);
     let rLhs: InterpReg =  asInterp(lhs, "FCmpNeq/FCmpEq LHS");
@@ -1133,7 +1133,7 @@ func evaluateFloatCmpEqAndNeq(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr,
     *start = r;
     return dst;
 }
-func evaluateFloatCmpGtAndLte(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateFloatCmpGtAndLte(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let lhs: &RegValue = at(regs, instr.src.i);
     let rhs: &RegValue = at(regs, instr.op1.i);
     let rLhs: InterpReg =  asInterp(lhs, "FCmpLte/FCmpGt LHS");
@@ -1169,7 +1169,7 @@ func evaluateFloatCmpGtAndLte(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr,
     *start = r;
     return dst;
 }
-func evaluateFloatCmpLtAndGte(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateFloatCmpLtAndGte(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let lhs: &RegValue = at(regs, instr.src.i);
     let rhs: &RegValue = at(regs, instr.op1.i);
     let rLhs: InterpReg =  asInterp(lhs, "FCmpGte/FCmpLt LHS");
@@ -1205,7 +1205,7 @@ func evaluateFloatCmpLtAndGte(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr,
     *start = r;
     return dst;
 }
-func evaluateLogicalNot(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateLogicalNot(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let src: &RegValue = at(regs, instr.src.i);
     let rSrc: InterpReg = asInterp(src, "LNot SRC");
     let dstReg: &IRReg = getRegister(irFunc, instr.dst);
@@ -1223,7 +1223,7 @@ func evaluateLogicalNot(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs:
     *dstStart = 1 - val;
     return dst;
 }
-func evaluateLogicalAnd(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateLogicalAnd(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let lhs: &RegValue = at(regs, instr.src.i);
     let rhs: &RegValue = at(regs, instr.op1.i);
     let rLhs: InterpReg =  asInterp(lhs, "LAnd LHS");
@@ -1250,7 +1250,7 @@ func evaluateLogicalAnd(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs:
     }
     return dst;
 }
-func evaluateLogicalOr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateLogicalOr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let lhs: &RegValue = at(regs, instr.src.i);
     let rhs: &RegValue = at(regs, instr.op1.i);
     let rLhs: InterpReg =  asInterp(lhs, "LOr LHS");
@@ -1277,7 +1277,7 @@ func evaluateLogicalOr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: 
     }
     return dst;
 }
-func evaluateBitwiseAnd(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateBitwiseAnd(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let lhs: &RegValue = at(regs, instr.src.i);
     let rhs: &RegValue = at(regs, instr.op1.i);
     let rLhs: InterpReg =  asInterp(lhs, "BAnd LHS");
@@ -1306,7 +1306,7 @@ func evaluateBitwiseAnd(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs:
     } else unreachable("Exhaustive handling of types in BAnd");
     return dst;
 }
-func evaluateBitwiseOr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateBitwiseOr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let lhs: &RegValue = at(regs, instr.src.i);
     let rhs: &RegValue = at(regs, instr.op1.i);
     let rLhs: InterpReg =  asInterp(lhs, "BOr LHS");
@@ -1335,7 +1335,7 @@ func evaluateBitwiseOr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: 
     } else unreachable("Exhaustive handling of types in BOr");
     return dst;
 }
-func evaluateBitwiseXor(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateBitwiseXor(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let lhs: &RegValue = at(regs, instr.src.i);
     let rhs: &RegValue = at(regs, instr.op1.i);
     let rLhs: InterpReg =  asInterp(lhs, "BXor LHS");
@@ -1364,7 +1364,7 @@ func evaluateBitwiseXor(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs:
     } else unreachable("Exhaustive handling of types in BXOr");
     return dst;
 }
-func evaluateInsertValue(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateInsertValue(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let dstReg: &IRReg = getRegister(irFunc, instr.dst);
     let dst: InterpReg = InterpReg {
         offset: dstReg.offset,
@@ -1391,7 +1391,7 @@ func evaluateInsertValue(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs
     }
     return dst;
 }
-func evaluateIntSignExtend(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateIntSignExtend(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let src: &RegValue = at(regs, instr.src.i);
     let rSrc: InterpReg = asInterp(src, "SExt src");
     let t: &Type = getRegister(irFunc, instr.src).typ;
@@ -1405,7 +1405,7 @@ func evaluateIntSignExtend(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, re
     let dstStart: &u8 = getRegStackPointer(this, &dst);
     todo_with_msg("sext");
 }
-func evaluateIntZeroExtend(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateIntZeroExtend(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let src: &RegValue = at(regs, instr.src.i);
     let rSrc: InterpReg = asInterp(src, "ZExt src");
     let dstReg: &IRReg = getRegister(irFunc, instr.dst);
@@ -1427,7 +1427,7 @@ func evaluateIntZeroExtend(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, re
     else unreachable("ZExt 8 byte to what?");
     return dst;
 }
-func evaluateIntTruncate(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateIntTruncate(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let src: &RegValue = at(regs, instr.src.i);
     let rSrc: InterpReg = asInterp(src, "Trunc src");
     let dstReg: &IRReg = getRegister(irFunc, instr.dst);
@@ -1449,7 +1449,7 @@ func evaluateIntTruncate(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs
     else unreachable("Truncate 1 byte to what?");
     return dst;
 }
-func evaluateF32ToF64(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateF32ToF64(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let dstReg: &IRReg = getRegister(irFunc, instr.dst);
     let src: InterpReg = asInterp(at(regs, instr.src.i), "Interp F32ToF64");
     let dst: InterpReg = InterpReg {
@@ -1462,7 +1462,7 @@ func evaluateF32ToF64(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &
     *(dstStart as &f64) = v as f64;
     return dst;
 }
-func evaluateF64ToF32(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateF64ToF32(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let dstReg: &IRReg = getRegister(irFunc, instr.dst);
     let src: InterpReg = asInterp(at(regs, instr.src.i), "Interp F64ToF32");
     let dst: InterpReg = InterpReg {
@@ -1475,7 +1475,7 @@ func evaluateF64ToF32(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &
     *(dstStart as &f32) = v as f32;
     return dst;
 }
-func evaluateCreateArray(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateCreateArray(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let dstReg: &IRReg = getRegister(irFunc, instr.dst);
     let dst: InterpReg = InterpReg {
         offset: dstReg.offset,
@@ -1484,7 +1484,7 @@ func evaluateCreateArray(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs
     C::memset(getRegStackPointer(this, &dst), 0, dst.size);
     return dst;
 }
-func evaluateCreateStruct(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateCreateStruct(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let dstReg: &IRReg = getRegister(irFunc, instr.dst);
     let dst: InterpReg = InterpReg {
         offset: dstReg.offset,
@@ -1493,7 +1493,7 @@ func evaluateCreateStruct(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, reg
     C::memset(getRegStackPointer(this, &dst), 0, dst.size);
     return dst;
 }
-func evaluateCreateUnion(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateCreateUnion(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let dstReg: &IRReg = getRegister(irFunc, instr.dst);
     let dst: InterpReg = InterpReg {
         offset: dstReg.offset,
@@ -1502,7 +1502,7 @@ func evaluateCreateUnion(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs
     C::memset(getRegStackPointer(this, &dst), 0, dst.size);
     return dst;
 }
-func evaluateIntToF32(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateIntToF32(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let dstReg: &IRReg = getRegister(irFunc, instr.dst);
     let src: InterpReg = asInterp(at(regs, instr.src.i), "Interp IntToF32");
     let dst: InterpReg = InterpReg {
@@ -1533,7 +1533,7 @@ func evaluateIntToF32(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &
     *(dstStart as &f32) = v;
     return dst;
 }
-func evaluateF32ToInt(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateF32ToInt(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let dstReg: &IRReg = getRegister(irFunc, instr.dst);
     let src: InterpReg = asInterp(at(regs, instr.src.i), "Interp F32ToInt");
     let size: usize = getSizeInBytes(dstReg.typ);
@@ -1562,7 +1562,7 @@ func evaluateF32ToInt(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &
     }
     return dst;
 }
-func evaluateF64ToInt(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateF64ToInt(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let dstReg: &IRReg = getRegister(irFunc, instr.dst);
     let src: InterpReg = asInterp(at(regs, instr.src.i), "Interp F64ToInt");
     let size: usize = getSizeInBytes(dstReg.typ);
@@ -1591,15 +1591,15 @@ func evaluateF64ToInt(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &
     }
     return dst;
 }
-func evaluatePtrToInt(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluatePtrToInt(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     // noop in interpreter
     return asInterp(at(regs, instr.src.i), "Interp PtrToInt");
 }
-func evaluateIntToPtr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateIntToPtr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     // noop in interpreter
     return asInterp(at(regs, instr.src.i), "Interp IntToPtr");
 }
-func evaluateGetFieldPtr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateGetFieldPtr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let fReg: &IRReg = getRegister(irFunc, instr.dst);
     let fAggr: InterpReg = asInterp(at(regs, instr.src.i), "IRInterp: GetFieldPtr");
     let t: &Type = getRegister(irFunc, instr.src).typ;
@@ -1622,7 +1622,7 @@ func evaluateGetFieldPtr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs
     *(regStackLoc as &usize) = *(ptr as &usize) + offset;
     return reg;
 }
-func evaluateGetElementPtr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateGetElementPtr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let elemReg: &IRReg = getRegister(irFunc, instr.dst);
     let aggr: InterpReg = asInterp(at(regs, instr.src.i), "IRInterp: GetElementPtr");
     let ptr: &u8 = getRegStackPointer(this, &aggr);
@@ -1659,13 +1659,13 @@ func evaluateGetElementPtr(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, re
     *(regStackLoc as &usize) = *(ptr as &usize) + offset;
     return dstReg;
 }
-func evaluateUnreachable(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateUnreachable(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     unreachable("IRInterp: Hit INSTR_UNREACHABLE");
 }
-func evaluateUnterminated(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateUnterminated(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     unreachable("IRInterp: Hit INSTR_UNTERMINATED");
 }
-func evaluateMemcpy(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateMemcpy(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let src  = at(regs, instr.src.i);
     let dst  = at(regs, instr.dst.i);
     let size = at(regs, instr.op1.i);
@@ -1679,14 +1679,14 @@ func evaluateMemcpy(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
     C::memcpy(dstLoc, srcLoc, sizeValue);
     return rDst;
 }
-func evaluateEmitAssembly(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateEmitAssembly(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let loc = toString(&instr.span);
     C::fprintf(stderr, "%s: %s: Inline Assembly can't be used in a comptime context.\n", loc.buffer, ERR_STR);
     dumpCallStack(this, &loc);
     drop(&loc);
     C::exit(1);
 }
-func evaluateIntoIRValue(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateIntoIRValue(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     let src = at(regs, instr.src.i);
     let dstReg = getRegister(irFunc, instr.dst);
     let size = getSizeInBytes(dstReg.typ);
@@ -1699,7 +1699,7 @@ func evaluateIntoIRValue(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs
     *(getRegStackPointer(this, &dst) as &RegValue) = *src;
     return dst;
 }
-func evaluateDebugInfo(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateDebugInfo(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     // noop in interpreter
     let dstReg = getRegister(irFunc, instr.dst);
     let size = getSizeInBytes(dstReg.typ);
@@ -1709,7 +1709,7 @@ func evaluateDebugInfo(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: 
     };
 }
 
-func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
+@trace func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &RegValueList, forcedComptime: bool) -> InterpReg {
     if (!forcedComptime) {
         assert(instr.isComptime, "Expected comptime instr in IRInterp.evaluateSingle");
     }
@@ -1717,7 +1717,7 @@ func evaluateSingle(this: &IRInterp, irFunc: &IRFunc, instr: &IRInstr, regs: &Re
     if (*flags.debug && *flags.verbose) dump(instr);
     return instrFns[instr.kind](this, irFunc, instr, regs, forcedComptime);
 }
-func evaluateBlock(this: &IRInterp, blockID: &IRBlockID, irFunc: &IRFunc, regs: &RegValueList, forcedComptime: bool) -> bool {
+@trace func evaluateBlock(this: &IRInterp, blockID: &IRBlockID, irFunc: &IRFunc, regs: &RegValueList, forcedComptime: bool) -> bool {
     let block: &IRBlock = getBlockByID(irFunc, *blockID);
     assert(block.instructions.length > 0, "Interp: Encountered empty block");
     for (let ip: usize = 0; ip < block.instructions.length; ip = ip + 1) {
@@ -1738,7 +1738,7 @@ func evaluateBlock(this: &IRInterp, blockID: &IRBlockID, irFunc: &IRFunc, regs: 
     return false;
 }
 
-@os(WINDOWS) func compileFunctionCall(this: &IRInterp, currFunc: &IRFunc, calledFunc: &IRFunc, instr: &IRInstr, fn: usize, regs: &RegValueList) -> Function {
+@os(WINDOWS) @trace func compileFunctionCall(this: &IRInterp, currFunc: &IRFunc, calledFunc: &IRFunc, instr: &IRInstr, fn: usize, regs: &RegValueList) -> Function {
     let f = at(&funcDecls, calledFunc.originalID);
     let isVariadic = false;
     let retType: &Type = null;
@@ -1843,10 +1843,10 @@ func evaluateBlock(this: &IRInterp, blockID: &IRBlockID, irFunc: &IRFunc, regs: 
     C::free(buf.elements);
     return Function { run: code as func () -> u64, size: buf.length };
 }
-@os(LINUX) func compileFunctionCall(this: &IRInterp, currFunc: &IRFunc, calledFunc: &IRFunc, instr: &IRInstr, fn: usize, regs: &RegValueList) -> Function {
+@os(LINUX) @trace func compileFunctionCall(this: &IRInterp, currFunc: &IRFunc, calledFunc: &IRFunc, instr: &IRInstr, fn: usize, regs: &RegValueList) -> Function {
     todo_with_msg("comptime extern call");
 }
-func evaluateCall(this: &IRInterp, span: Span, irFunc: &IRFunc, regs: &RegValueList) {
+@trace func evaluateCall(this: &IRInterp, span: Span, irFunc: &IRFunc, regs: &RegValueList) {
     let funcSize: usize = getRegisterSizeInBytes(irFunc);
     let fn = at(&funcDecls, irFunc.originalID);
     pushCallStack(this, span, toString(&fn.name.content));
@@ -1858,7 +1858,7 @@ func evaluateCall(this: &IRInterp, span: Span, irFunc: &IRFunc, regs: &RegValueL
     popCallStack(this);
     return;
 }
-func pushRegisterStack(this: &IRInterp, span: Span, size: usize) {
+@trace func pushRegisterStack(this: &IRInterp, span: Span, size: usize) {
     let new: &u8 = this.regStackBase + size;
     if (new > this.regStackStart + REG_STACK_SIZE) {
         let loc = toString(&span);
@@ -1869,7 +1869,7 @@ func pushRegisterStack(this: &IRInterp, span: Span, size: usize) {
     }
     this.regStackBase = new;
 }
-func popRegisterStack(this: &IRInterp, span: Span, size: usize) {
+@trace func popRegisterStack(this: &IRInterp, span: Span, size: usize) {
     let new: &u8 = this.regStackBase - size;
     if (new < this.regStackStart) {
         let loc = toString(&span);
@@ -1880,17 +1880,17 @@ func popRegisterStack(this: &IRInterp, span: Span, size: usize) {
     this.regStackBase = new;
     assert(this.regStackBase >= this.globalRegBase, "Register Stack overwrote global stack");
 }
-func pushCallStack(this: &IRInterp, span: Span, name: String) {
+@trace func pushCallStack(this: &IRInterp, span: Span, name: String) {
     push(&this.callStack, CallStackInfo {
         span: span,
         name: name,
     });
 }
-func popCallStack(this: &IRInterp) {
+@trace func popCallStack(this: &IRInterp) {
     assert(this.callStack.length > 0, "IRInterp.popCallStack() called on empty stack!");
     pop(&this.callStack);
 }
-func dumpCallStack(this: &IRInterp, loc: &String) {
+@trace func dumpCallStack(this: &IRInterp, loc: &String) {
     C::fprintf(stderr, "%s: %s: The current call stack:\n", loc.buffer, NOTE_STR);
     for (let _i: usize = 0; _i < this.callStack.length; _i = _i + 1) {
         let i = this.callStack.length - _i - 1;
@@ -1901,7 +1901,7 @@ func dumpCallStack(this: &IRInterp, loc: &String) {
     }
 }
 
-func newIRInterpreter(irGen: &IRGen) -> IRInterp {
+@trace func newIRInterpreter(irGen: &IRGen) -> IRInterp {
     let regStack: &u8 = C::malloc(REG_STACK_SIZE);
     assert(regStack != null, "Could not prepare IRInterp.regStack");
     let realStack: &u8 = C::malloc(STACK_SIZE);

@@ -4,7 +4,6 @@ import "substr.bufo";
 module tracy {
     @os(WINDOWS) config {
         static: "TracyClient.lib",
-        dynamic: "TracyClient.dll",
         libpath: "./thirdparty/tracy/build/Release/",
         libpath: ".",
     }

@@ -1,9 +1,25 @@
 import "substr.bufo";
 
+import "time.bufo";
+
+@trace func sleep(us: i64) {
+    let start = get_high_resolution_timestamp();
+    let now = get_high_resolution_timestamp();
+    while (get_duration_between_high_resolution_timestamps_in_microseconds(start, now) < us) {
+        now = get_high_resolution_timestamp();
+    }
+}
+
 func next_multiple_of(a: usize, b: usize) -> usize {
     assert(b != 0, "next_multiple_of: b is 0!");
     if (a % b == 0) return a;
     return a + (b - (a % b));
+}
+
+func nextPowerOfTwo(a: usize) -> usize {
+    let n: usize = 1;
+    while (n < a) n = n * 2;
+    return n;
 }
 
 func tag(union: Any) -> u8 {

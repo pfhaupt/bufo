@@ -38,7 +38,7 @@ let needsPrelude = false;
 let needsAssembly = false;
 let needsTypeInfo = false;
 
-func addImportRoot(this: &Parser, filePath: SubStr) {
+@trace func addImportRoot(this: &Parser, filePath: SubStr) {
     let root: String = getPathParent(&filePath);
     if (this.importRootLength >= this.importRootCapacity) {
         let newCap: usize = this.importRootCapacity * 2;
@@ -51,11 +51,11 @@ func addImportRoot(this: &Parser, filePath: SubStr) {
     this.importRootLength = this.importRootLength + 1;
 }
 
-func getImportRootAtIndex(this: &Parser, index: usize) -> String {
+@trace func getImportRootAtIndex(this: &Parser, index: usize) -> String {
     return copy(&this.importRoots[index]);
 }
 
-func inheritImportRoots(this: &Parser, parent: &Parser) {
+@trace func inheritImportRoots(this: &Parser, parent: &Parser) {
     for (let i: usize = 0; i < parent.importRootLength; i = i + 1) {
         let root: String = getImportRootAtIndex(parent, i);
         addImportRoot(this, asSubStr(&root));
@@ -63,7 +63,7 @@ func inheritImportRoots(this: &Parser, parent: &Parser) {
     }
 }
 
-func expectSoftIdentifier(this: &Parser) -> Token {
+@trace func expectSoftIdentifier(this: &Parser) -> Token {
     let tkn: Token = next(&this.lexer);
     if (tkn.kind != TOKEN_KEYWORD && tkn.kind != TOKEN_IDENT) {
         let loc: String = getLocation(&tkn);
@@ -96,7 +96,7 @@ func expectSoftIdentifier(this: &Parser) -> Token {
     return tkn;
 }
 
-func expect(this: &Parser, tknKind: usize) -> Token {
+@trace func expect(this: &Parser, tknKind: usize) -> Token {
     let tkn: Token = next(&this.lexer);
     if (tkn.kind != tknKind) {
         let loc: String = getLocation(&tkn);
@@ -110,25 +110,25 @@ func expect(this: &Parser, tknKind: usize) -> Token {
     return tkn;
 }
 
-func eat(this: &Parser, tknKind: usize) -> bool {
+@trace func eat(this: &Parser, tknKind: usize) -> bool {
     if (at(this, tknKind)) {
         next(&this.lexer);
         return true;
     }
     return false;
 }
-func at(this: &Parser, tknKind: usize) -> bool {
+@trace func at(this: &Parser, tknKind: usize) -> bool {
     if (peek(&this.lexer).kind == tknKind) {
         return true;
     }
     return false;
 }
 
-func parsedEOF(this: &Parser) -> bool {
+@trace func parsedEOF(this: &Parser) -> bool {
     return peek(&this.lexer).kind == TOKEN_EOF;
 }
 
-func parseProject(this: &Parser, root: SubStr) -> ParsedFile {
+@trace func parseProject(this: &Parser, root: SubStr) -> ParsedFile {
     assert(this.lexer.fileID == 0, "Expected Parser.parseProject to be the root");
     let rootFile: &ParsedFile = newParsedFile(root, this.lexer.content);
     assert(getID(rootFile) == 0, "Expected Parser.parseProject result to be the root");
@@ -171,7 +171,7 @@ func parseProject(this: &Parser, root: SubStr) -> ParsedFile {
     return *rootFile;
 }
 
-func parseFile(this: &Parser, root: SubStr, file: &ParsedFile) {
+@trace func parseFile(this: &Parser, root: SubStr, file: &ParsedFile) {
     file.mod = newParsedModule(blank, blank, blank, blank);
     addImportRoot(this, root);
     while (!parsedEOF(this)) {
@@ -188,7 +188,7 @@ func parseFile(this: &Parser, root: SubStr, file: &ParsedFile) {
     }
 }
 
-func parseAttributes(this: &Parser, attrs: &ParsedAttributeList, inModule: bool) -> bool {
+@trace func parseAttributes(this: &Parser, attrs: &ParsedAttributeList, inModule: bool) -> bool {
     let skip: bool = false;
     while (eat(this, TOKEN_AT)) {
         let name = expectSoftIdentifier(this);
@@ -239,11 +239,11 @@ func parseAttributes(this: &Parser, attrs: &ParsedAttributeList, inModule: bool)
     return skip;
 }
 
-func parseTopLevelItem(this: &Parser, attributes: ParsedAttributeList, skip: bool) -> &ParsedTopLevelItem {
+@trace func parseTopLevelItem(this: &Parser, attributes: ParsedAttributeList, skip: bool) -> &ParsedTopLevelItem {
     return parseTopLevelItem(this, TLIParent { isFile: true, id: this.lexer.fileID as u32 }, attributes, skip);
 }
 
-func parseTopLevelItem(this: &Parser, parent: TLIParent, attributes: ParsedAttributeList, skip: bool) -> &ParsedTopLevelItem {
+@trace func parseTopLevelItem(this: &Parser, parent: TLIParent, attributes: ParsedAttributeList, skip: bool) -> &ParsedTopLevelItem {
     let tkn: Token = peek(&this.lexer);
     if (equals(&tkn.content, &KEYWORD_IMPORT)) {
         return parseImport(this, skip);
@@ -287,7 +287,7 @@ func parseTopLevelItem(this: &Parser, parent: TLIParent, attributes: ParsedAttri
     }
 }
 
-func parseModule(this: &Parser, _parent: TLIParent, modAttr: ParsedAttributeList) -> &ParsedModule {
+@trace func parseModule(this: &Parser, _parent: TLIParent, modAttr: ParsedAttributeList) -> &ParsedModule {
     let modTkn: Token = expect(this, TOKEN_KEYWORD);
     assert(equals(&modTkn.content, &KEYWORD_MODULE));
     let name = expectSoftIdentifier(this);
@@ -413,7 +413,7 @@ func parseModule(this: &Parser, _parent: TLIParent, modAttr: ParsedAttributeList
     return mod;
 }
 
-func parseConfig(this: &Parser, parent: TLIParent, attributes: ParsedAttributeList) -> &ParsedConfig {
+@trace func parseConfig(this: &Parser, parent: TLIParent, attributes: ParsedAttributeList) -> &ParsedConfig {
     let cfgTkn: Token = expect(this, TOKEN_KEYWORD);
     assert(equals(&cfgTkn.content, &KEYWORD_CONFIG));
     expect(this, TOKEN_CURLY_OPEN);
@@ -447,7 +447,7 @@ func parseConfig(this: &Parser, parent: TLIParent, attributes: ParsedAttributeLi
     return newParsedConfig(newSpanBetween(&cfgTkn.span, &end.span), flags);
 }
 
-func parseImport(this: &Parser, skip: bool) -> &ParsedTopLevelItem {
+@trace func parseImport(this: &Parser, skip: bool) -> &ParsedTopLevelItem {
     let impTkn: Token = expect(this, TOKEN_KEYWORD);
     assert(equals(&impTkn.content, &KEYWORD_IMPORT));
     let tkn: Token = expect(this, TOKEN_STRING_LITERAL);
@@ -455,7 +455,7 @@ func parseImport(this: &Parser, skip: bool) -> &ParsedTopLevelItem {
     let end: Token = expect(this, TOKEN_SEMI_COLON);
     return parseImportByName(this, newSpanBetween(&impTkn.span, &end.span), file, skip);
 }
-func parseImportByName(this: &Parser, loc: Span, file: String, skip: bool) -> &ParsedTopLevelItem {
+@trace func parseImportByName(this: &Parser, loc: Span, file: String, skip: bool) -> &ParsedTopLevelItem {
     let src: String = blank;
     for (let i: usize = 0; i < this.importRootLength; i = i + 1) {
         let path: String = getImportRootAtIndex(this, i);
@@ -489,7 +489,7 @@ func parseImportByName(this: &Parser, loc: Span, file: String, skip: bool) -> &P
     C::exit(1);
 }
 
-func parseUnionDecl(this: &Parser, parent: TLIParent) -> &ParsedUnionDecl {
+@trace func parseUnionDecl(this: &Parser, parent: TLIParent) -> &ParsedUnionDecl {
     let kw: Token = expect(this, TOKEN_KEYWORD);
     let nameTkn: Token = expectSoftIdentifier(this);
     expect(this, TOKEN_CURLY_OPEN);
@@ -507,7 +507,7 @@ func parseUnionDecl(this: &Parser, parent: TLIParent) -> &ParsedUnionDecl {
     return decl;
 }
 
-func parseUnionVariant(this: &Parser, parent: TLIParent) -> &ParsedUnionVariant {
+@trace func parseUnionVariant(this: &Parser, parent: TLIParent) -> &ParsedUnionVariant {
     let name = expectSoftIdentifier(this);
     if (eat(this, TOKEN_CURLY_OPEN)) {
         let variant = newParsedUnionVariant(parent, name.span, name, ParsedUnionVariantData::Struct {});
@@ -540,7 +540,7 @@ func parseUnionVariant(this: &Parser, parent: TLIParent) -> &ParsedUnionVariant 
     }
 }
 
-func parseStructDecl(this: &Parser, parent: TLIParent) -> &ParsedStructDecl {
+@trace func parseStructDecl(this: &Parser, parent: TLIParent) -> &ParsedStructDecl {
     let kw: Token = expect(this, TOKEN_KEYWORD);
     let nameTkn: Token = expectSoftIdentifier(this);
     expect(this, TOKEN_CURLY_OPEN);
@@ -567,7 +567,7 @@ func parseStructDecl(this: &Parser, parent: TLIParent) -> &ParsedStructDecl {
     return decl;
 }
 
-func parseFuncDecl(this: &Parser, parent: TLIParent, isExtern: bool) -> &ParsedFuncDecl {
+@trace func parseFuncDecl(this: &Parser, parent: TLIParent, isExtern: bool) -> &ParsedFuncDecl {
     let tkn: Token = expect(this, TOKEN_KEYWORD);
     if (!isExtern) assert(equals(&tkn.content, &KEYWORD_FUNC));
     let name: Token = expectSoftIdentifier(this);
@@ -584,7 +584,7 @@ func parseFuncDecl(this: &Parser, parent: TLIParent, isExtern: bool) -> &ParsedF
     }
 }
 
-func parseReturnType(this: &Parser) -> &ParsedTypeNode {
+@trace func parseReturnType(this: &Parser) -> &ParsedTypeNode {
     if (eat(this, TOKEN_ARROW_THIN)) {
         return parseTypeNode(this);
     } else {
@@ -592,7 +592,7 @@ func parseReturnType(this: &Parser) -> &ParsedTypeNode {
     }
 }
 
-func parseParameters(this: &Parser) -> ParamContext {
+@trace func parseParameters(this: &Parser) -> ParamContext {
     expect(this, TOKEN_PAREN_OPEN);
     let context: ParamContext = blank;
     let isVariadic = false;
@@ -620,7 +620,7 @@ func parseParameters(this: &Parser) -> ParamContext {
     return context;
 }
 
-func parseBlock(this: &Parser) -> &ParsedBlock {
+@trace func parseBlock(this: &Parser) -> &ParsedBlock {
     let block: &ParsedBlock = newParsedBlock();
     let start: Token = expect(this, TOKEN_CURLY_OPEN);
     while (!parsedEOF(this) && !at(this, TOKEN_CURLY_CLOSE)) {
@@ -640,7 +640,7 @@ func parseBlock(this: &Parser) -> &ParsedBlock {
     return block;
 }
 
-func parseStmt(this: &Parser) -> &ParsedStmt {
+@trace func parseStmt(this: &Parser) -> &ParsedStmt {
     let tkn: Token = peek(&this.lexer);
     if (tkn.kind == TOKEN_KEYWORD) {
         if (equals(&tkn.content, &KEYWORD_LET)
@@ -706,7 +706,7 @@ func parseStmt(this: &Parser) -> &ParsedStmt {
     return newParsedStmt(span, StmtData::Expr(value));
 }
 
-func parseMatchStmt(this: &Parser, kw: Token) -> &ParsedStmt {
+@trace func parseMatchStmt(this: &Parser, kw: Token) -> &ParsedStmt {
     assert(kw.kind == TOKEN_KEYWORD);
     expect(this, TOKEN_PAREN_OPEN);
     let expr = parseExpr(this);
@@ -734,7 +734,7 @@ func parseMatchStmt(this: &Parser, kw: Token) -> &ParsedStmt {
     return newParsedStmt(span, StmtData::Match(expr, patterns, stmts));
 }
 
-func parsePattern(this: &Parser) -> &ParsedPattern {
+@trace func parsePattern(this: &Parser) -> &ParsedPattern {
     // REVIEW: next or peek?
     let tkn = next(&this.lexer);
     let retPat: &ParsedPattern = null;
@@ -843,7 +843,7 @@ func parsePattern(this: &Parser) -> &ParsedPattern {
     }
 }
 
-func parseForStmt(this: &Parser, kw: Token) -> &ParsedStmt {
+@trace func parseForStmt(this: &Parser, kw: Token) -> &ParsedStmt {
     assert(kw.kind == TOKEN_KEYWORD);
     if (!eat(this, TOKEN_PAREN_OPEN)) {
         todo_with_msg("for in loop");
@@ -866,7 +866,7 @@ func parseForStmt(this: &Parser, kw: Token) -> &ParsedStmt {
     }
 }
 
-func parseWhileStmt(this: &Parser, kw: Token) -> &ParsedStmt {
+@trace func parseWhileStmt(this: &Parser, kw: Token) -> &ParsedStmt {
     assert(kw.kind == TOKEN_KEYWORD);
     if (eat(this, TOKEN_PAREN_OPEN)) {
         // while ( <expr> ) <stmt>
@@ -899,7 +899,7 @@ func parseWhileStmt(this: &Parser, kw: Token) -> &ParsedStmt {
     }
 }
 
-func parseReturnStmt(this: &Parser, kw: Token) -> &ParsedStmt {
+@trace func parseReturnStmt(this: &Parser, kw: Token) -> &ParsedStmt {
     assert(kw.kind == TOKEN_KEYWORD);
     let value: &ParsedExpr = null;
     if (!at(this, TOKEN_SEMI_COLON))
@@ -913,7 +913,7 @@ func parseReturnStmt(this: &Parser, kw: Token) -> &ParsedStmt {
     }
 }
 
-func parseIfStmt(this: &Parser, kw: Token) -> &ParsedStmt {
+@trace func parseIfStmt(this: &Parser, kw: Token) -> &ParsedStmt {
     assert(kw.kind == TOKEN_KEYWORD);
     if (eat(this, TOKEN_PAREN_OPEN)) {
         // if ( <expr> ) <stmt> [else <stmt>]
@@ -974,7 +974,7 @@ func parseIfStmt(this: &Parser, kw: Token) -> &ParsedStmt {
     }
 }
 
-func parseVarDeclStmt(this: &Parser, kw: Token, isGlobal: bool) -> &ParsedStmt {
+@trace func parseVarDeclStmt(this: &Parser, kw: Token, isGlobal: bool) -> &ParsedStmt {
     let isComptime: bool = equals(&kw.content, &KEYWORD_COMPTIME);
     let pat = parsePattern(this);
     expect(this, TOKEN_EQUAL_SINGLE);
@@ -1002,10 +1002,10 @@ func parseVarDeclStmt(this: &Parser, kw: Token, isGlobal: bool) -> &ParsedStmt {
     return newParsedStmt(span, StmtData::VarDecl(decl));
 }
 
-func parseTypeNode(this: &Parser) -> &ParsedTypeNode {
+@trace func parseTypeNode(this: &Parser) -> &ParsedTypeNode {
     return parseTypeNode(this, false);
 }
-func parseTypeNode(this: &Parser, allowedVariadic: bool) -> &ParsedTypeNode {
+@trace func parseTypeNode(this: &Parser, allowedVariadic: bool) -> &ParsedTypeNode {
     let curr: Token = peek(&this.lexer);
     let parse_tuple = func (this: &Parser, allowedVariadic: bool) -> ParsedTypeNodeList {
         let tuple: ParsedTypeNodeList = blank;
@@ -1117,17 +1117,17 @@ func parseTypeNode(this: &Parser, allowedVariadic: bool) -> &ParsedTypeNode {
     }
 }
 
-func parseExpr(this: &Parser) -> &ParsedExpr {
+@trace func parseExpr(this: &Parser) -> &ParsedExpr {
     return parseExpr(this, true);
 }
 
-func parseExpr(this: &Parser, struct_init_allowed: bool) -> &ParsedExpr {
+@trace func parseExpr(this: &Parser, struct_init_allowed: bool) -> &ParsedExpr {
     return __parseExpr(this, 0, Assoc::Left, struct_init_allowed);
 }
-func __parseExpr(this: &Parser, precedence: usize, associativity: Assoc) -> &ParsedExpr {
+@trace func __parseExpr(this: &Parser, precedence: usize, associativity: Assoc) -> &ParsedExpr {
     return __parseExpr(this, precedence, associativity, true);
 }
-func __parseExpr(this: &Parser, precedence: usize, associativity: Assoc, struct_init_allowed: bool) -> &ParsedExpr {
+@trace func __parseExpr(this: &Parser, precedence: usize, associativity: Assoc, struct_init_allowed: bool) -> &ParsedExpr {
     let expr: &ParsedExpr = parsePrimaryExpr(this, struct_init_allowed);
     while (matchesBinaryExpr(this)) {
         let tkn: Token = peek(&this.lexer);
@@ -1141,7 +1141,7 @@ func __parseExpr(this: &Parser, precedence: usize, associativity: Assoc, struct_
     }
     return expr;
 }
-func parsePrimaryExpr(this: &Parser, struct_init_allowed: bool) -> &ParsedExpr {
+@trace func parsePrimaryExpr(this: &Parser, struct_init_allowed: bool) -> &ParsedExpr {
     if (matchesUnaryExpr(this))
         return parseUnaryExpr(this, struct_init_allowed);
     let tknKind: usize = peek(&this.lexer).kind;
@@ -1276,7 +1276,7 @@ func parsePrimaryExpr(this: &Parser, struct_init_allowed: bool) -> &ParsedExpr {
     drop(&loc);
     C::exit(1);
 }
-func parseSecondaryExpr(this: &Parser, lhs: &ParsedExpr, precedence: usize, associativity: Assoc, struct_init_allowed: bool) -> &ParsedExpr {
+@trace func parseSecondaryExpr(this: &Parser, lhs: &ParsedExpr, precedence: usize, associativity: Assoc, struct_init_allowed: bool) -> &ParsedExpr {
     assert(matchesBinaryExpr(this));
     let opTkn: Token = next(&this.lexer);
     if (equals(&opTkn.content, &KEYWORD_AS)) {
@@ -1331,7 +1331,7 @@ func parseSecondaryExpr(this: &Parser, lhs: &ParsedExpr, precedence: usize, asso
     let span: Span = newSpanBetween(&lhs.span, &rhs.span);
     return newParsedExpr(span, ExprData::Binary(fromTkn(opTkn.kind, lhs, rhs)));
 }
-func parseUnaryExpr(this: &Parser, struct_init_allowed: bool) -> &ParsedExpr {
+@trace func parseUnaryExpr(this: &Parser, struct_init_allowed: bool) -> &ParsedExpr {
     let tkn: Token = peek(&this.lexer);
     if (tkn.kind == TOKEN_KEYWORD) {
         next(&this.lexer);
@@ -1362,7 +1362,7 @@ func parseUnaryExpr(this: &Parser, struct_init_allowed: bool) -> &ParsedExpr {
         unreachable("Exhaustive handling of unary operations in parseUnaryExpr");
     }
 }
-func matchesBinaryExpr(this: &Parser) -> bool {
+@trace func matchesBinaryExpr(this: &Parser) -> bool {
     let tknKind: usize = peek(&this.lexer).kind;
     if (tknKind == TOKEN_KEYWORD)
         return equals(&peek(&this.lexer).content, &KEYWORD_AS);
@@ -1389,7 +1389,7 @@ func matchesBinaryExpr(this: &Parser) -> bool {
         || tknKind == TOKEN_SQUARE_OPEN
         || tknKind == TOKEN_PERCENT;
 }
-func matchesUnaryExpr(this: &Parser) -> bool {
+@trace func matchesUnaryExpr(this: &Parser) -> bool {
     let tknKind: usize = peek(&this.lexer).kind;
     if (tknKind == TOKEN_KEYWORD) {
         let tkn = peek(&this.lexer);
@@ -1402,7 +1402,7 @@ func matchesUnaryExpr(this: &Parser) -> bool {
         || tknKind == TOKEN_ASTERISK_SINGLE
         || tknKind == TOKEN_BANG;
 }
-func getBinaryPrecedence(this: &Parser, tkn: &Token) -> usize {
+@trace func getBinaryPrecedence(this: &Parser, tkn: &Token) -> usize {
     let tknKind: usize = tkn.kind;
     if (tknKind == TOKEN_COLON_DOUBLE) return 18;
     else if (tknKind == TOKEN_DOT) return 17;
@@ -1430,12 +1430,12 @@ func getBinaryPrecedence(this: &Parser, tkn: &Token) -> usize {
     else if (tknKind == TOKEN_EQUAL_SINGLE) return 2;
     unreachable("Exhaustive handling of binary operators in Parser.getBinaryPrecedence");
 }
-func getBinaryAssociativity(this: &Parser, tkn: &Token) -> Assoc {
+@trace func getBinaryAssociativity(this: &Parser, tkn: &Token) -> Assoc {
     let tknKind: usize = tkn.kind;
     if (tknKind == TOKEN_EQUAL_SINGLE) return Assoc::Right;
     return Assoc::Left;
 }
-func getUnaryPrecedence(this: &Parser, tknKind: usize) -> usize {
+@trace func getUnaryPrecedence(this: &Parser, tknKind: usize) -> usize {
     if (tknKind == TOKEN_MINUS_SINGLE) return 14;
     else if (tknKind == TOKEN_ASTERISK_SINGLE) return 14;
     else if (tknKind == TOKEN_AMPERSAND_SINGLE) return 14;
@@ -1443,7 +1443,7 @@ func getUnaryPrecedence(this: &Parser, tknKind: usize) -> usize {
     unreachable("Exhaustive handling of unary operators in Parser.getUnaryPrecedence");
 }
 
-func newParserFromSource(fileID: usize, src: SubStr) -> Parser {
+@trace func newParserFromSource(fileID: usize, src: SubStr) -> Parser {
     return Parser {
         lexer: newLexer(fileID, src),
         anonFnCount: 0,

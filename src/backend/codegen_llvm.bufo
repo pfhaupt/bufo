@@ -35,10 +35,10 @@ union RegValue {
     Interp(InterpReg),
     Both(LLVMValue, InterpReg),
 }
-func equals(this: &RegValue, other: &RegValue) -> bool {
+@trace func equals(this: &RegValue, other: &RegValue) -> bool {
     todo_with_msg("RegValue.equals");
 }
-func addInterpValue(this: &RegValue, val: InterpReg) {
+@trace func addInterpValue(this: &RegValue, val: InterpReg) {
     match (this) {
         &RegValue::LLVM(llvm) => { *this = RegValue::Both(llvm, val); }
         &RegValue::Interp(_) => { *this = RegValue::Interp(val); }
@@ -47,7 +47,7 @@ func addInterpValue(this: &RegValue, val: InterpReg) {
         _ => { unreachable(); }
     }
 }
-func addLLVMValue(this: &RegValue, val: LLVMValue) {
+@trace func addLLVMValue(this: &RegValue, val: LLVMValue) {
     match (this) {
         &RegValue::LLVM(_) => { *this = RegValue::LLVM(val); }
         &RegValue::Interp(interp) => { *this = RegValue::Both(val, interp); }
@@ -56,7 +56,7 @@ func addLLVMValue(this: &RegValue, val: LLVMValue) {
         _ => { unreachable(); }
     }
 }
-func asInterp(this: &RegValue, err: &char) -> InterpReg {
+@trace func asInterp(this: &RegValue, err: &char) -> InterpReg {
     match (this) {
         &RegValue::Interp(interp) => { return interp; }
         &RegValue::Both(_, interp) => { return interp; }
@@ -64,7 +64,7 @@ func asInterp(this: &RegValue, err: &char) -> InterpReg {
     }
     unreachable(err);
 }
-func asLLVM(this: &RegValue, err: &char) -> LLVMValue {
+@trace func asLLVM(this: &RegValue, err: &char) -> LLVMValue {
     match (this) {
         &RegValue::LLVM(llvm) => { return llvm; }
         &RegValue::Both(llvm, _) => { return llvm; }
@@ -72,7 +72,7 @@ func asLLVM(this: &RegValue, err: &char) -> LLVMValue {
     }
     unreachable(err);
 }
-func isLLVM(this: &RegValue) -> bool {
+@trace func isLLVM(this: &RegValue) -> bool {
     match (this) {
         &RegValue::LLVM(_) => { return true; }
         &RegValue::Both(_, _) => { return true; }
@@ -80,7 +80,7 @@ func isLLVM(this: &RegValue) -> bool {
     }
     return false;
 }
-func isInterp(this: &RegValue) -> bool {
+@trace func isInterp(this: &RegValue) -> bool {
     match (this) {
         &RegValue::Interp(_) => { return true; }
         &RegValue::Both(_, _) => { return true; }
@@ -100,7 +100,7 @@ struct LLVMCodegen {
     global: RegValueList;
 }
 
-func generateDebugInfo(this: &LLVMCodegen, argc: i32, argv: &&char) -> bool {
+@trace func generateDebugInfo(this: &LLVMCodegen, argc: i32, argv: &&char) -> bool {
     assert(!LLVM::isNull(this.llvmDIBuilder.ref), "Can't generate debug info because DIBuilder is null!");
     assert(types.length == debugTypes.length, "Expected to have as many debug types as normal types");
     let producer = newSubStrOfStrLit("Bufo Programming Language");
@@ -176,7 +176,7 @@ func generateDebugInfo(this: &LLVMCodegen, argc: i32, argv: &&char) -> bool {
     drop(&cli);
     return true;
 }
-func generateExecutable(this: &LLVMCodegen, outPath: SubStr, argc: i32, argv: &&char) -> bool {
+@trace func generateExecutable(this: &LLVMCodegen, outPath: SubStr, argc: i32, argv: &&char) -> bool {
     let fns: IRFuncList = asList(&this.irGen.functions);
     if (*flags.debug) {
         if (!generateDebugInfo(this, argc, argv)) return false;
@@ -268,7 +268,7 @@ func generateExecutable(this: &LLVMCodegen, outPath: SubStr, argc: i32, argv: &&
     }
     return true;
 }
-func generateRuntimeInitialization(this: &LLVMCodegen, initRuntime: &IRFunc) -> bool {
+@trace func generateRuntimeInitialization(this: &LLVMCodegen, initRuntime: &IRFunc) -> bool {
     let rt_type = wrap(Type::Func(blank, wrap(Type::Prim(PrimType::None)), blank));
     let llvmFuncType = generateLLVMFunctionType(this, rt_type);
     let llvmFuncValue = addFunction(&this.llvmModule, asSubStr(&initRuntime.name), llvmFuncType);
@@ -298,7 +298,7 @@ func generateRuntimeInitialization(this: &LLVMCodegen, initRuntime: &IRFunc) -> 
     initRuntime.llvmFunc = llvmFuncValue;
     return true;
 }
-func generateEntryPoint(this: &LLVMCodegen) -> bool {
+@trace func generateEntryPoint(this: &LLVMCodegen) -> bool {
     if (*flags.noEntry) return true;
     let realMainName: SubStr = newSubStrOfStrLit("__real_main");
     if (!hasFunction(&this.llvmModule, realMainName)) {
@@ -353,7 +353,7 @@ func generateEntryPoint(this: &LLVMCodegen) -> bool {
     buildReturn(&this.llvmBuilder, v);
     return true;
 }
-func generateGlobal(this: &LLVMCodegen, global: &IRFunc) -> bool {
+@trace func generateGlobal(this: &LLVMCodegen, global: &IRFunc) -> bool {
     this.global = blank;
     initBlank(&this.global, global.registers.length);
     let funcSize: usize = getRegisterSizeInBytes(global);
@@ -367,7 +367,7 @@ func generateGlobal(this: &LLVMCodegen, global: &IRFunc) -> bool {
     return true;
 }
 
-func generateLLVMFunctionHeader(this: &LLVMCodegen, irFunc: &IRFunc) {
+@trace func generateLLVMFunctionHeader(this: &LLVMCodegen, irFunc: &IRFunc) {
     let llvmFunc: LLVMValue = blank;
     let function: &ParsedFuncDecl = getFuncNode(irFunc);
     let llvmFuncType = generateLLVMFunctionType(this, getType(&function.typeState));
@@ -408,7 +408,7 @@ func generateLLVMFunctionHeader(this: &LLVMCodegen, irFunc: &IRFunc) {
     origFunc.llvmFunc = llvmFuncValue;
 }
 
-func prepareReturnType(this: &LLVMCodegen, typ: &Type) -> LLVMType {
+@trace func prepareReturnType(this: &LLVMCodegen, typ: &Type) -> LLVMType {
     // FIXME: Kinda sucks that we have to do this both in the IRGen and here
     if (isStruct(typ)) {
         let size: usize = getSizeInBytes(typ);
@@ -430,7 +430,7 @@ func prepareReturnType(this: &LLVMCodegen, typ: &Type) -> LLVMType {
     }
 }
 
-func prepareParameter(this: &LLVMCodegen, typ: &Type) -> LLVMType {
+@trace func prepareParameter(this: &LLVMCodegen, typ: &Type) -> LLVMType {
     // FIXME: Kinda sucks that we have to do this both in the IRGen and here
     if (isStruct(typ)) {
         let size: usize = getSizeInBytes(typ);
@@ -454,7 +454,7 @@ func prepareParameter(this: &LLVMCodegen, typ: &Type) -> LLVMType {
     }
 }
 
-func getLLVMTypeSize(this: &LLVMCodegen, typ: &LLVMType) -> usize {
+@trace func getLLVMTypeSize(this: &LLVMCodegen, typ: &LLVMType) -> usize {
     let data: LLVMTargetData = getTargetData(&this.llvmTargetMachine);
     let s1: usize = getStoreSize(&data, typ);
     let s2: usize = getABISize(&data, typ);
@@ -463,7 +463,7 @@ func getLLVMTypeSize(this: &LLVMCodegen, typ: &LLVMType) -> usize {
     return s1;
 }
 
-func _generateFunction(this: &LLVMCodegen, irFunc: &IRFunc) -> bool {
+@trace func _generateFunction(this: &LLVMCodegen, irFunc: &IRFunc) -> bool {
     let llvmFuncValue: LLVMValue = irFunc.llvmFunc;
     assert(!LLVM::isNull(llvmFuncValue.ref));
     let blocks: LLVMBasicBlockList = blank;
@@ -487,11 +487,11 @@ func _generateFunction(this: &LLVMCodegen, irFunc: &IRFunc) -> bool {
     return true;
 }
 
-func generateFunction(this: &LLVMCodegen, irFunc: &IRFunc) -> bool {
+@trace func generateFunction(this: &LLVMCodegen, irFunc: &IRFunc) -> bool {
     if (isExtern(irFunc)) return true;
     return _generateFunction(this, irFunc);
 }
-func generateBlock(
+@trace func generateBlock(
     this: &LLVMCodegen,
     llvmFunc: &LLVMValue,
     irFunc: &IRFunc,
@@ -524,7 +524,7 @@ func generateBlock(
     }
 }
 
-func generateLLVMInstr(
+@trace func generateLLVMInstr(
     this: &LLVMCodegen,
     llvmFunc: &LLVMValue,
     irFunc: &IRFunc,
@@ -975,14 +975,14 @@ func generateLLVMInstr(
         todo_with_msg("unknown llvm kind");
     }
 }
-func collectValuesFromASM(this: &LLVMCodegen, context: &ASMContext) -> LLVMValueList {
+@trace func collectValuesFromASM(this: &LLVMCodegen, context: &ASMContext) -> LLVMValueList {
     let list: LLVMValueList = blank;
     for (let i: usize = 0; i < context.args.length; i = i + 1) {
         push(&list, newLLVMValueFromRef(getArg(context, i)));
     }
     return list;
 }
-func generateTypeFromASM(this: &LLVMCodegen, context: &ASMContext) -> LLVMType {
+@trace func generateTypeFromASM(this: &LLVMCodegen, context: &ASMContext) -> LLVMType {
     if (context.out.length == 0) return createVoidType(&this.llvmContext);
     if (context.out.length == 1) {
         let arg = newLLVMValueFromRef(getArg(context, 0));
@@ -999,14 +999,14 @@ func generateTypeFromASM(this: &LLVMCodegen, context: &ASMContext) -> LLVMType {
     return t;
 }
 
-func getComptimePointer(this: &LLVMCodegen, reg: &InterpReg) -> &u8 {
+@trace func getComptimePointer(this: &LLVMCodegen, reg: &InterpReg) -> &u8 {
     let start: &u8 = getRegStackPointer(this.interp, reg);
     assert(start >= this.interp.regStackStart, "Expected comptime value to be allocated on Interp Reg Stack");
     assert(start < this.interp.regStackStart + REG_STACK_SIZE, "Expected comptime value to be allocated on Interp Reg Stack");
     return start;
 }
 
-func generateLLVMValueFromComptimePtr(this: &LLVMCodegen, typ: &Type, reg: InterpReg) -> LLVMValue {
+@trace func generateLLVMValueFromComptimePtr(this: &LLVMCodegen, typ: &Type, reg: InterpReg) -> LLVMValue {
     assert(isPointer(typ), "generateLLVMValueFromComptimePtr expected Pointer");
     assert(reg.size == 8, "generateLLVMValueFromComptimePtr expected Pointer sized register");
     let underlying: &Type = getUnderlyingType(typ, false);
@@ -1020,7 +1020,7 @@ func generateLLVMValueFromComptimePtr(this: &LLVMCodegen, typ: &Type, reg: Inter
     // return pointer to that
     return alloc;
 }
-func generateLLVMValueFromComptimeValue(this: &LLVMCodegen, typ: &Type, start: &u8) -> LLVMValue {
+@trace func generateLLVMValueFromComptimeValue(this: &LLVMCodegen, typ: &Type, start: &u8) -> LLVMValue {
     assert(start != null, "generateLLVMValueFromComptimeValue got nullptr");
     let size: usize = getSizeInBytes(typ);
     match (typ) {
@@ -1144,7 +1144,7 @@ func generateLLVMValueFromComptimeValue(this: &LLVMCodegen, typ: &Type, start: &
     unreachable("Exhaustive handling in generateLLVMValueFromComptime");
 }
 
-func generateLLVMFunctionType(this: &LLVMCodegen, typ: &Type) -> LLVMType {
+@trace func generateLLVMFunctionType(this: &LLVMCodegen, typ: &Type) -> LLVMType {
     let fnParams: TypeList = blank;
     let retType: &Type = null;
     let isVarArg = false;
@@ -1170,7 +1170,7 @@ func generateLLVMFunctionType(this: &LLVMCodegen, typ: &Type) -> LLVMType {
     return llvmFuncType;
 }
 
-func generateLLVMType(this: &LLVMCodegen, type: &Type) -> LLVMType {
+@trace func generateLLVMType(this: &LLVMCodegen, type: &Type) -> LLVMType {
     let typ: LLVMType = blank;
     match (type) {
         &Type::Prim(_) => {
@@ -1252,7 +1252,7 @@ func generateLLVMType(this: &LLVMCodegen, type: &Type) -> LLVMType {
     return typ;
 }
 
-func newLLVMCodegen(name: SubStr, irGen: &IRGen, interp: &IRInterp) -> LLVMCodegen {
+@trace func newLLVMCodegen(name: SubStr, irGen: &IRGen, interp: &IRInterp) -> LLVMCodegen {
     let llvmContext: LLVMContext = newLLVMContext();
     let llvmModule: LLVMModule = createModuleWithName(&llvmContext, name);
     let llvmBuilder: LLVMBuilder = createBuilder(&llvmContext);

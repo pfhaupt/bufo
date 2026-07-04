@@ -21,11 +21,11 @@ import "../backend/LLVM/debug_info.bufo";
 comptime NODE_ID_OFFSET: usize = 10000000000;
 
 let ignoringNodes = false;
-func toggleIgnoringNodes() {
+@trace func toggleIgnoringNodes() {
     ignoringNodes = !ignoringNodes;
 }
 
-func mangleVariableName(
+@trace func mangleVariableName(
     global: bool,
     fileID: usize,
     name: &Token,
@@ -40,7 +40,7 @@ func mangleVariableName(
     }
 }
 
-func mangleFunctionName(
+@trace func mangleFunctionName(
     parent: TLIParent,
     name: &Token,
     params: &ParamContext,
@@ -102,7 +102,7 @@ let configs: ParsedConfigArena = blank;
 let dlls: DLLArena = blank;
 let patterns: ParsedPatternArena = blank;
 
-func getFileByFileName(name: SubStr) -> &ParsedFile {
+@trace func getFileByFileName(name: SubStr) -> &ParsedFile {
     for (let i: usize = 0; i < files.length; i = i + 1) {
         let file: &ParsedFile = at(&files, i);
         if (endsWith(&file.origin, &name)) {
@@ -112,7 +112,7 @@ func getFileByFileName(name: SubStr) -> &ParsedFile {
     return null;
 }
 
-func getFileByFilePath(path: SubStr, fileID: &usize) -> bool {
+@trace func getFileByFilePath(path: SubStr, fileID: &usize) -> bool {
     for (let i: usize = 0; i < files.length; i = i + 1) {
         let file: &ParsedFile = at(&files, i);
         if (equals(&file.origin, &path)) {
@@ -148,7 +148,7 @@ union ParsedAttribute {
     IfTracing,
 }
 
-func equals(this: &ParsedAttribute, other: &ParsedAttribute) -> bool {
+@trace func equals(this: &ParsedAttribute, other: &ParsedAttribute) -> bool {
     unreachable("ParsedAttribute.equals is not implemented yet");
 }
 
@@ -160,7 +160,7 @@ union Config {
     Linker(Token),
 }
 
-func newConfig(t: Token, value: Token) -> Config {
+@trace func newConfig(t: Token, value: Token) -> Config {
     if (equals(&t.content, &comptime BUILD_A_KEYWORD("static"))) {
         return Config::Static(value);
     } else if (equals(&t.content, &comptime BUILD_A_KEYWORD("dynamic"))) {
@@ -180,7 +180,7 @@ struct ParsedConfig {
     configs: ConfigList;
 }
 
-func newParsedConfig(span: Span, cfgs: ConfigList) -> &ParsedConfig {
+@trace func newParsedConfig(span: Span, cfgs: ConfigList) -> &ParsedConfig {
     push(&configs, ParsedConfig {
         ignored: ignoringNodes,
         span: span,
@@ -189,11 +189,11 @@ func newParsedConfig(span: Span, cfgs: ConfigList) -> &ParsedConfig {
     return last(&configs);
 }
 
-func getID(this: &ParsedConfig) -> usize {
+@trace func getID(this: &ParsedConfig) -> usize {
     return indexOf(&configs, this);
 }
 
-func asTLI(this: &ParsedConfig) -> &ParsedTopLevelItem {
+@trace func asTLI(this: &ParsedConfig) -> &ParsedTopLevelItem {
     return newParsedTopLevelItem(this.span, TLI_CONFIG, getID(this));
 }
 
@@ -205,11 +205,11 @@ struct ParsedFile {
     debugInfo: DebugInfo;
 }
 
-func getID(this: &ParsedFile) -> usize {
+@trace func getID(this: &ParsedFile) -> usize {
     return indexOf(&files, this);
 }
 
-func getLineAndColumnFromSpan(this: &ParsedFile, span: &Span, line: &usize, column: &usize) {
+@trace func getLineAndColumnFromSpan(this: &ParsedFile, span: &Span, line: &usize, column: &usize) {
     let l: usize = 1;
     let c: usize = 1;
     let p: usize = 0;
@@ -227,7 +227,7 @@ func getLineAndColumnFromSpan(this: &ParsedFile, span: &Span, line: &usize, colu
     *column = c;
 }
 
-func newParsedFile(origin: SubStr, src: SubStr) -> &ParsedFile {
+@trace func newParsedFile(origin: SubStr, src: SubStr) -> &ParsedFile {
     push(&files, ParsedFile {
         ignored: ignoringNodes,
         origin: origin,
@@ -252,7 +252,7 @@ struct TLIParent {
     id: u32;
 }
 
-func equals(this: &TLIParent, other: &TLIParent) -> bool {
+@trace func equals(this: &TLIParent, other: &TLIParent) -> bool {
     return this.isFile == other.isFile && this.id == other.id;
 }
 
@@ -266,20 +266,20 @@ struct ParsedTopLevelItem {
     typeState: TCState;
 }
 
-func asStruct(this: &ParsedTopLevelItem) -> &ParsedStructDecl {
+@trace func asStruct(this: &ParsedTopLevelItem) -> &ParsedStructDecl {
     assert(this.kind == TLI_STRUCT_DECL, "ParsedTopLevelItem.asStruct() called on non-struct TLI");
     return at(&structDecls, this.nodeID);
 }
-func asUnion(this: &ParsedTopLevelItem) -> &ParsedUnionDecl {
+@trace func asUnion(this: &ParsedTopLevelItem) -> &ParsedUnionDecl {
     assert(this.kind == TLI_UNION_DECL, "ParsedTopLevelItem.asUnion() called on non-union TLI");
     return at(&unionDecls, this.nodeID);
 }
 
-func getID(this: &ParsedTopLevelItem) -> usize {
+@trace func getID(this: &ParsedTopLevelItem) -> usize {
     return indexOf(&topLevelItems, this);
 }
 
-func newParsedTopLevelItem(span: Span, kind: usize, nodeID: usize) -> &ParsedTopLevelItem {
+@trace func newParsedTopLevelItem(span: Span, kind: usize, nodeID: usize) -> &ParsedTopLevelItem {
     push(&topLevelItems, ParsedTopLevelItem {
         ignored: ignoringNodes,
         kind: kind,
@@ -299,7 +299,7 @@ func newParsedTopLevelItem(span: Span, kind: usize, nodeID: usize) -> &ParsedTop
     handle: Handle;
 }
 
-func newDLL(path: String, handle: Handle) -> &DLL {
+@trace func newDLL(path: String, handle: Handle) -> &DLL {
     push(&dlls, DLL {
         path: path,
         handle: handle,
@@ -309,20 +309,20 @@ func newDLL(path: String, handle: Handle) -> &DLL {
 
 comptime DLL_NOT_FOUND: usize = 1;
 comptime DLL_NO_SUCH_FUNCTION: usize = 2;
-func dllNotFound() -> &DLL {
+@trace func dllNotFound() -> &DLL {
     return DLL_NOT_FOUND as &DLL;
 }
-func dllNoSuchFunction() -> &DLL {
+@trace func dllNoSuchFunction() -> &DLL {
     return DLL_NO_SUCH_FUNCTION as &DLL;
 }
-func isNull(dll: &DLL) -> bool {
+@trace func isNull(dll: &DLL) -> bool {
     if (dll == null) return true;
     if (dll == dllNotFound()) return true;
     if (dll == dllNoSuchFunction()) return true;
     return isNull(dll.handle);
 }
 
-func getID(this: &DLL) -> usize {
+@trace func getID(this: &DLL) -> usize {
     return indexOf(&dlls, this);
 }
 
@@ -334,13 +334,13 @@ struct ParsedModule {
     tlis: UsizeList;
     dlls: UsizeList;
 }
-func equals(this: &ParsedModule, other: &ParsedModule) -> bool {
+@trace func equals(this: &ParsedModule, other: &ParsedModule) -> bool {
     if (equals(&this.span, &other.span)) return true;
     if (!equals(&this.name.content, &other.name.content)) return false;
     return equals(&this.parent, &other.parent);
 }
 
-func getConfigs(this: &ParsedModule) -> UsizeList {
+@trace func getConfigs(this: &ParsedModule) -> UsizeList {
     let list = UsizeList {};
     for (let i: usize = 0; i < this.tlis.length; i = i + 1) {
         if (at(&topLevelItems, *at(&this.tlis, i)).kind == TLI_CONFIG) {
@@ -349,16 +349,16 @@ func getConfigs(this: &ParsedModule) -> UsizeList {
     }
     return list;
 }
-func getID(this: &ParsedModule) -> usize {
+@trace func getID(this: &ParsedModule) -> usize {
     return indexOf(&modules, this);
 }
-func asTLI(this: &ParsedModule) -> &ParsedTopLevelItem {
+@trace func asTLI(this: &ParsedModule) -> &ParsedTopLevelItem {
     return newParsedTopLevelItem(this.span, TLI_MOD_DECL, getID(this));
 }
-func getParentFile(this: &ParsedModule) -> &ParsedFile {
+@trace func getParentFile(this: &ParsedModule) -> &ParsedFile {
     return at(&files, this.span.file);
 }
-func getFullName(this: &ParsedModule) -> String {
+@trace func getFullName(this: &ParsedModule) -> String {
     let s: String = blank;
     let parent = this.parent;
     while (!parent.isFile) {
@@ -381,7 +381,7 @@ func getFullName(this: &ParsedModule) -> String {
     pushSubStr(&s, &this.name.content);
     return s;
 }
-func newParsedModule(parent: TLIParent, span: Span, name: Token, tlis: UsizeList) -> &ParsedModule {
+@trace func newParsedModule(parent: TLIParent, span: Span, name: Token, tlis: UsizeList) -> &ParsedModule {
     push(&modules, ParsedModule {
         ignored: ignoringNodes,
         parent: parent,
@@ -401,24 +401,28 @@ struct ParsedStructDecl {
     typeState: TCState;
     debugInfo: DebugInfo;
     isDataDefinition: bool;
+    isSizeCalculated: bool;
+    isAlignCalculated: bool;
+    sizeInBytes: usize;
+    alignInBytes: usize;
 }
-func getID(this: &ParsedStructDecl) -> usize {
+@trace func getID(this: &ParsedStructDecl) -> usize {
     return indexOf(&structDecls, this);
 }
-func asTLI(this: &ParsedStructDecl) -> &ParsedTopLevelItem {
+@trace func asTLI(this: &ParsedStructDecl) -> &ParsedTopLevelItem {
     return newParsedTopLevelItem(this.span, TLI_STRUCT_DECL, getID(this));
 }
 
-func getFieldIndex(this: &ParsedStructDecl, name: &SubStr) -> usize {
+@trace func getFieldIndex(this: &ParsedStructDecl, name: &SubStr) -> usize {
     return getFieldIndex(&this.context, name);
 }
-func getFieldOffset(this: &ParsedStructDecl, name: &SubStr, inBits: bool) -> usize {
+@trace func getFieldOffset(this: &ParsedStructDecl, name: &SubStr, inBits: bool) -> usize {
     let offset: usize = 0;
     let _idc: usize = 0;
     getFieldOffsetAndSize(this, getFieldIndex(this, name), &offset, &_idc, inBits);
     return offset;
 }
-func getFieldOffsetAndSize(this: &ParsedStructDecl, index: usize, offset: &usize, size: &usize, inBits: bool) {
+@trace func getFieldOffsetAndSize(this: &ParsedStructDecl, index: usize, offset: &usize, size: &usize, inBits: bool) {
     let o: usize = 0;
     let sizeFn: func (&Type) -> usize = getSizeInBytes;
     let alignFn: func (&Type) -> usize = getAlignmentInBytes;
@@ -443,14 +447,14 @@ func getFieldOffsetAndSize(this: &ParsedStructDecl, index: usize, offset: &usize
     }
     unreachable("Expected to find field offset and size");
 }
-func getParentFile(this: &ParsedStructDecl) -> &ParsedFile {
+@trace func getParentFile(this: &ParsedStructDecl) -> &ParsedFile {
     return at(&files, this.span.file);
 }
-func getParentModule(this: &ParsedStructDecl) -> &ParsedModule {
+@trace func getParentModule(this: &ParsedStructDecl) -> &ParsedModule {
     assert(!this.parent.isFile, "getParentModule called on struct in a file scope");
     return at(&modules, this.parent.id as usize);
 }
-func getFullName(this: &ParsedStructDecl, split: &char) -> String {
+@trace func getFullName(this: &ParsedStructDecl, split: &char) -> String {
     let s: String = blank;
     let parent = this.parent;
     while (!parent.isFile) {
@@ -471,11 +475,47 @@ func getFullName(this: &ParsedStructDecl, split: &char) -> String {
     pushSubStr(&s, &this.name.content);
     return s;
 }
-func getFullName(this: &ParsedStructDecl) -> String {
+@trace func getFullName(this: &ParsedStructDecl) -> String {
     return getFullName(this, "::");
 }
 
-func newParsedStructDecl(parent: TLIParent, span: Span, name: Token) -> &ParsedStructDecl {
+@trace func getSizeInBytes(this: &ParsedStructDecl) -> usize {
+    if (this.isSizeCalculated) return this.sizeInBytes;
+    assert(isSuccess(&this.typeState), "Can only get size of valid structs");
+    let size: usize = 0;
+    let maxAlign: usize = 1;
+    for (let i: usize = 0; i < this.context.fieldLength; i = i + 1) {
+        let td: &ParsedTypeNode = getFieldTypeAtIndex(&this.context, i);
+        assert(isSuccess(&td.typeState), "Expected valid field type");
+        let tt: &Type = getType(&td.typeState);
+        size = size + getSizeInBytes(tt);
+        let _a: usize = getAlignmentInBytes(tt);
+        if (_a > maxAlign) maxAlign = _a;
+        if (i != this.context.fieldLength - 1) {
+            let next: &ParsedTypeNode = getFieldTypeAtIndex(&this.context, i + 1);
+            let nextType: &Type = getType(&next.typeState);
+            size = nextMultipleOf(size, getAlignmentInBytes(nextType));
+        }
+    }
+    this.isSizeCalculated = true;
+    return this.sizeInBytes = nextMultipleOf(size, maxAlign);
+}
+
+@trace func getAlignmentInBytes(this: &ParsedStructDecl) -> usize {
+    assert(isSuccess(&this.typeState), "Can only get alignment of valid structs");
+    let maxAlign: usize = 1;
+    for (let i: usize = 0; i < this.context.fieldLength; i = i + 1) {
+        let td: &ParsedTypeNode = getFieldTypeAtIndex(&this.context, i);
+        assert(isSuccess(&td.typeState), "Expected valid field type");
+        let tt: &Type = getType(&td.typeState);
+        let _a: usize = getAlignmentInBytes(tt);
+        if (_a > maxAlign) maxAlign = _a;
+    }
+    this.isAlignCalculated = true;
+    return this.alignInBytes = nextPowerOfTwo(maxAlign);
+}
+
+@trace func newParsedStructDecl(parent: TLIParent, span: Span, name: Token) -> &ParsedStructDecl {
     push(&structDecls, ParsedStructDecl {
         ignored: ignoringNodes,
         parent: parent,
@@ -495,10 +535,15 @@ struct ParsedUnionDecl {
     variants: ParsedUnionVariantList;
     typeState: TCState;
     debugInfo: DebugInfo;
+    isSizeCalculated: bool;
+    isAlignCalculated: bool;
+    sizeInBytes: usize;
+    alignInBytes: usize;
 }
 
-func getAlignmentInBytes(this: &ParsedUnionDecl) -> usize {
+@trace func getAlignmentInBytes(this: &ParsedUnionDecl) -> usize {
     assert(isSuccess(&this.typeState), "Can only get alignment of valid unions");
+    if (this.isAlignCalculated) return this.alignInBytes;
     let maxAlign: usize = 1;
     if (this.variants.length >= 256) maxAlign = 2;
     for (let i: usize = 0; i < this.variants.length; i = i + 1) {
@@ -514,9 +559,11 @@ func getAlignmentInBytes(this: &ParsedUnionDecl) -> usize {
             if (_a > maxAlign) maxAlign = _a;
         }
     }
-    return maxAlign;
+    this.isAlignCalculated = true;
+    return this.alignInBytes = nextPowerOfTwo(maxAlign);
 }
-func getSizeInBytes(this: &ParsedUnionDecl) -> usize {
+@trace func getSizeInBytes(this: &ParsedUnionDecl) -> usize {
+    if (this.isSizeCalculated) return this.sizeInBytes;
     assert(isSuccess(&this.typeState), "Can only get size of valid unions");
     assert(this.variants.length < 65536, "getSize expects the Union tag to fit into at most two bytes");
     let tagSize: usize = 1;
@@ -559,17 +606,17 @@ func getSizeInBytes(this: &ParsedUnionDecl) -> usize {
         unionSize = nextMultipleOf(unionSize, payloadAlign);
         unionSize = unionSize + payloadSize;
     }
-    unionSize = nextMultipleOf(unionSize, unionAlign);
-    return unionSize;
+    this.isSizeCalculated = true;
+    return this.sizeInBytes = nextMultipleOf(unionSize, unionAlign);
 }
 
-func getID(this: &ParsedUnionDecl) -> usize {
+@trace func getID(this: &ParsedUnionDecl) -> usize {
     return indexOf(&unionDecls, this);
 }
-func asTLI(this: &ParsedUnionDecl) -> &ParsedTopLevelItem {
+@trace func asTLI(this: &ParsedUnionDecl) -> &ParsedTopLevelItem {
     return newParsedTopLevelItem(this.span, TLI_UNION_DECL, getID(this));
 }
-func resolveVariantByName(this: &ParsedUnionDecl, name: &Token, out: &&ParsedUnionVariant) -> bool {
+@trace func resolveVariantByName(this: &ParsedUnionDecl, name: &Token, out: &&ParsedUnionVariant) -> bool {
     for (let i: usize = 0; i < this.variants.length; i = i + 1) {
         let variant = *at(&this.variants, i);
         if (equals(&variant.name.content, &name.content)) {
@@ -579,7 +626,7 @@ func resolveVariantByName(this: &ParsedUnionDecl, name: &Token, out: &&ParsedUni
     }
     return false;
 }
-func getVariantTag(this: &ParsedUnionDecl, variant: &ParsedUnionVariant) -> usize {
+@trace func getVariantTag(this: &ParsedUnionDecl, variant: &ParsedUnionVariant) -> usize {
     for (let i: usize = 0; i < this.variants.length; i = i + 1) {
         if (*at(&this.variants, i) == variant) {
             return i;
@@ -588,10 +635,10 @@ func getVariantTag(this: &ParsedUnionDecl, variant: &ParsedUnionVariant) -> usiz
     unreachable("getVariantTag() expected to find variant");
 }
 
-func getParentFile(this: &ParsedUnionDecl) -> &ParsedFile {
+@trace func getParentFile(this: &ParsedUnionDecl) -> &ParsedFile {
     return at(&files, this.span.file);
 }
-func getFullName(this: &ParsedUnionDecl, split: &char) -> String {
+@trace func getFullName(this: &ParsedUnionDecl, split: &char) -> String {
     let s: String = blank;
     let parent = this.parent;
     while (!parent.isFile) {
@@ -612,10 +659,10 @@ func getFullName(this: &ParsedUnionDecl, split: &char) -> String {
     pushSubStr(&s, &this.name.content);
     return s;
 }
-func getFullName(this: &ParsedUnionDecl) -> String {
+@trace func getFullName(this: &ParsedUnionDecl) -> String {
     return getFullName(this, "::");
 }
-func newParsedUnionDecl(parent: TLIParent, span: Span, name: Token) -> &ParsedUnionDecl {
+@trace func newParsedUnionDecl(parent: TLIParent, span: Span, name: Token) -> &ParsedUnionDecl {
     push(&unionDecls, ParsedUnionDecl {
         ignored: ignoringNodes,
         parent: parent,
@@ -637,11 +684,11 @@ union ParsedUnionVariantData {
     Tuple { fields: ParsedTypeNodeList },
     Struct { fields: ParsedTypeNodeList, names: TokenList },
 }
-func getID(this: &ParsedUnionVariant) -> usize {
+@trace func getID(this: &ParsedUnionVariant) -> usize {
     return indexOf(&unionVariants, this);
 }
 
-func get_fields(this: &ParsedUnionVariant) -> (bool, &ParsedTypeNodeList) {
+@trace func get_fields(this: &ParsedUnionVariant) -> (bool, &ParsedTypeNodeList) {
     match (&this.data) {
         &ParsedUnionVariantData::Tuple { fields } => { return (true, &fields); }
         &ParsedUnionVariantData::Struct { fields, names } => { return (true, &fields); }
@@ -650,7 +697,7 @@ func get_fields(this: &ParsedUnionVariant) -> (bool, &ParsedTypeNodeList) {
     return (false, null);
 }
 
-func toType(this: &ParsedUnionVariant) -> &Type {
+@trace func toType(this: &ParsedUnionVariant) -> &Type {
     let decl: &ParsedStructDecl = newParsedStructDecl(this.parent, this.span, this.name);
     match (this.data) {
         ParsedUnionVariantData::Empty => { }
@@ -675,7 +722,7 @@ func toType(this: &ParsedUnionVariant) -> &Type {
     return typ;
 }
 
-func getFieldIndex(this: &ParsedUnionVariant, name: &SubStr) -> usize {
+@trace func getFieldIndex(this: &ParsedUnionVariant, name: &SubStr) -> usize {
     if let &ParsedUnionVariantData::Struct { _, names } = &this.data {
         for (let i: usize = 0; i < names.length; i = i + 1) {
             if (equals(&names.elements[i].content, name)) return i;
@@ -683,7 +730,7 @@ func getFieldIndex(this: &ParsedUnionVariant, name: &SubStr) -> usize {
     }
     unreachable("ParsedUnionVariant.getFieldIndex: Expected to find field with name");
 }
-func getFieldOffsetAndSize(this: &ParsedUnionVariant, index: usize, offset: &usize, size: &usize, inBits: bool) {
+@trace func getFieldOffsetAndSize(this: &ParsedUnionVariant, index: usize, offset: &usize, size: &usize, inBits: bool) {
     let fields: ParsedTypeNodeList = blank;
     match (this.data) {
         ParsedUnionVariantData::Empty => {
@@ -719,14 +766,14 @@ func getFieldOffsetAndSize(this: &ParsedUnionVariant, index: usize, offset: &usi
     unreachable("Expected to find field offset and size");
 }
 
-func addField(this: &ParsedUnionVariant, field: &ParsedTypeNode) {
+@trace func addField(this: &ParsedUnionVariant, field: &ParsedTypeNode) {
     let &ParsedUnionVariantData::Tuple { fields } = &this.data else {
         unreachable("ParsedUnionVariant.addField called on non-tuple");
     };
     push(&fields, field);
 }
 
-func getTypeAtIndex(this: &ParsedUnionVariant, index: usize) -> &Type {
+@trace func getTypeAtIndex(this: &ParsedUnionVariant, index: usize) -> &Type {
     let node: &ParsedTypeNode = null;
     match (&this.data) {
         &ParsedUnionVariantData::Tuple { fields } => {
@@ -743,7 +790,7 @@ func getTypeAtIndex(this: &ParsedUnionVariant, index: usize) -> &Type {
     return getType(&node.typeState);
 }
 
-func addNamedField(this: &ParsedUnionVariant, name: Token, typ: &ParsedTypeNode) {
+@trace func addNamedField(this: &ParsedUnionVariant, name: Token, typ: &ParsedTypeNode) {
     let &ParsedUnionVariantData::Struct { fields, names } = &this.data else {
         unreachable("ParsedUnionVariant.addNamedField called on non-struct");
     };
@@ -752,7 +799,7 @@ func addNamedField(this: &ParsedUnionVariant, name: Token, typ: &ParsedTypeNode)
     push(&names, name);
 }
 
-func checkForDuplicateName(this: &ParsedUnionVariant, name: &Token, dupl: &&Token) -> bool {
+@trace func checkForDuplicateName(this: &ParsedUnionVariant, name: &Token, dupl: &&Token) -> bool {
     let &ParsedUnionVariantData::Struct { _, names } = &this.data else {
         unreachable("ParsedUnionVariant.checkForDuplicateName called on non-struct");
     };
@@ -770,7 +817,7 @@ func checkForDuplicateName(this: &ParsedUnionVariant, name: &Token, dupl: &&Toke
     return false;
 }
 
-func newParsedUnionVariant(parent: TLIParent, span: Span, name: Token, data: ParsedUnionVariantData) -> &ParsedUnionVariant {
+@trace func newParsedUnionVariant(parent: TLIParent, span: Span, name: Token, data: ParsedUnionVariantData) -> &ParsedUnionVariant {
     push(&unionVariants, ParsedUnionVariant {
         ignored: ignoringNodes,
         parent: parent,
@@ -795,35 +842,35 @@ struct ParsedFuncDecl {
     debugInfo: DebugInfo;
 }
 
-func hasAttribute(this: &ParsedAttributeList, attr: ParsedAttribute) -> bool {
+@trace func hasAttribute(this: &ParsedAttributeList, attr: ParsedAttribute) -> bool {
     for (let i: usize = 0; i < this.length; i = i + 1) {
         if (tag(&this.elements[i]) == tag(&attr)) return true;
     }
     return false;
 }
-func hasAttribute(this: &ParsedFuncDecl, attr: ParsedAttribute) -> bool {
+@trace func hasAttribute(this: &ParsedFuncDecl, attr: ParsedAttribute) -> bool {
     return hasAttribute(&this.attrs, attr);
 }
-func getID(this: &ParsedFuncDecl) -> usize {
+@trace func getID(this: &ParsedFuncDecl) -> usize {
     return indexOf(&funcDecls, this);
 }
 
-func isExtern(this: &ParsedFuncDecl) -> bool {
+@trace func isExtern(this: &ParsedFuncDecl) -> bool {
     for (let i: usize = 0; i < this.attrs.length; i = i + 1) {
         if (tag(&this.attrs.elements[i]) == comptime tag(&ParsedAttribute::Extern)) return true;
     }
     return false;
 }
 
-func getParentFile(this: &ParsedFuncDecl) -> &ParsedFile {
+@trace func getParentFile(this: &ParsedFuncDecl) -> &ParsedFile {
     return at(&files, this.span.file);
 }
-func getParentModule(this: &ParsedFuncDecl) -> &ParsedModule {
+@trace func getParentModule(this: &ParsedFuncDecl) -> &ParsedModule {
     assert(!this.parent.isFile, "getParentModule called on function in a file scope");
     return at(&modules, this.parent.id as usize);
 }
 
-func getMangledName(this: &ParsedFuncDecl) -> String {
+@trace func getMangledName(this: &ParsedFuncDecl) -> String {
     if (this.ignored) return toString(&this.name.content);
     assert(isSuccess(&this.typeState), "Mangling can only be done after type checks");
     return mangleFunctionName(
@@ -836,11 +883,11 @@ func getMangledName(this: &ParsedFuncDecl) -> String {
     );
 }
 
-func asTLI(this: &ParsedFuncDecl) -> &ParsedTopLevelItem {
+@trace func asTLI(this: &ParsedFuncDecl) -> &ParsedTopLevelItem {
     return newParsedTopLevelItem(this.span, TLI_FUNC_DECL, getID(this));
 }
 
-func newParsedFuncDecl(parent: TLIParent, span: Span, name: Token, params: ParamContext, retType: &ParsedTypeNode, body: &ParsedBlock) -> &ParsedFuncDecl {
+@trace func newParsedFuncDecl(parent: TLIParent, span: Span, name: Token, params: ParamContext, retType: &ParsedTypeNode, body: &ParsedBlock) -> &ParsedFuncDecl {
     push(&funcDecls, ParsedFuncDecl {
         ignored: ignoringNodes,
         parent: parent,
@@ -864,10 +911,10 @@ struct ParsedBlock {
     typeState: TCState;
 }
 
-func getID(this: &ParsedBlock) -> usize {
+@trace func getID(this: &ParsedBlock) -> usize {
     return indexOf(&blocks, this);
 }
-func addStmt(this: &ParsedBlock, stmt: &ParsedStmt) {
+@trace func addStmt(this: &ParsedBlock, stmt: &ParsedStmt) {
     if (this.stmtLength >= this.stmtCapacity) {
         let newCap: usize = this.stmtCapacity * 2;
         if (newCap == 0) newCap = 1;
@@ -879,14 +926,14 @@ func addStmt(this: &ParsedBlock, stmt: &ParsedStmt) {
     this.stmtLength = this.stmtLength + 1;
 }
 
-func getStmtAtIndex(this: &ParsedBlock, index: usize) -> &ParsedStmt {
+@trace func getStmtAtIndex(this: &ParsedBlock, index: usize) -> &ParsedStmt {
     assert(index < this.stmtLength, "Out of bounds access in ParsedBlock.getStmtAtIndex");
     return this.stmtList[index];
 }
-func into_stmt(this: &ParsedBlock) -> &ParsedStmt {
+@trace func into_stmt(this: &ParsedBlock) -> &ParsedStmt {
     return newParsedStmt(this.span, StmtData::Block(this));
 }
-func newParsedBlock() -> &ParsedBlock {
+@trace func newParsedBlock() -> &ParsedBlock {
     push(&blocks, ParsedBlock {
         ignored: ignoringNodes,
     });
@@ -928,11 +975,11 @@ struct ParsedStmt {
     typeState: TCState;
 }
 
-func getID(this: &ParsedStmt) -> usize {
+@trace func getID(this: &ParsedStmt) -> usize {
     return indexOf(&stmts, this);
 }
 
-func asTLI(this: &ParsedStmt) -> &ParsedTopLevelItem {
+@trace func asTLI(this: &ParsedStmt) -> &ParsedTopLevelItem {
     match (&this.data) {
         &StmtData::VarDecl(..) => {
             return newParsedTopLevelItem(this.span, TLI_VAR_DECL, getID(this));
@@ -942,13 +989,13 @@ func asTLI(this: &ParsedStmt) -> &ParsedTopLevelItem {
     unreachable("Exhaustive handling of STMT to TLI conversions");
 }
 
-func into_block(this: &ParsedStmt) -> &ParsedBlock {
+@trace func into_block(this: &ParsedStmt) -> &ParsedBlock {
     let block: &ParsedBlock = newParsedBlock();
     addStmt(block, this);
     return block;
 }
 
-func newParsedStmt(span: Span, data: StmtData) -> &ParsedStmt {
+@trace func newParsedStmt(span: Span, data: StmtData) -> &ParsedStmt {
     push(&stmts, ParsedStmt {
         ignored: ignoringNodes,
         span: span,
@@ -1006,7 +1053,7 @@ comptime F32: SubStr = BUILD_A_TYPE("f32");
 comptime F64: SubStr = BUILD_A_TYPE("f64");
 comptime BOOL: SubStr = BUILD_A_TYPE("bool");
 comptime CHAR: SubStr = BUILD_A_TYPE("char");
-func getBuiltinTypeKind(name: Token) -> usize {
+@trace func getBuiltinTypeKind(name: Token) -> usize {
     if (equals(&name.content, &ANY)) return PARSED_TYPE_ANY;
     else if (equals(&name.content, &I8)) return PARSED_TYPE_I8;
     else if (equals(&name.content, &I16)) return PARSED_TYPE_I16;
@@ -1034,11 +1081,11 @@ struct ParsedTypeNode {
     typeState: TCState;
 }
 
-func getID(this: &ParsedTypeNode) -> usize {
+@trace func getID(this: &ParsedTypeNode) -> usize {
     return indexOf(&typeNodes, this);
 }
 
-func newParsedTypeNode(span: Span, kind: usize) -> &ParsedTypeNode {
+@trace func newParsedTypeNode(span: Span, kind: usize) -> &ParsedTypeNode {
     push(&typeNodes, ParsedTypeNode {
         ignored: ignoringNodes,
         span: span,
@@ -1047,7 +1094,7 @@ func newParsedTypeNode(span: Span, kind: usize) -> &ParsedTypeNode {
     return last(&typeNodes);
 }
 
-func newBuiltinTypeDecl(span: Span, kind: usize) -> &ParsedTypeNode {
+@trace func newBuiltinTypeDecl(span: Span, kind: usize) -> &ParsedTypeNode {
     let t: &ParsedTypeNode = at(&typeNodes, kind);
     (*t).span = span;
     (*t).kind = PARSED_TYPE_BUILTIN;
@@ -1089,14 +1136,14 @@ union UnaryExpr {
     Negate(&ParsedExpr),
     Not(&ParsedExpr),
 }
-func fromTkn(kind: usize, expr: &ParsedExpr) -> UnaryExpr {
+@trace func fromTkn(kind: usize, expr: &ParsedExpr) -> UnaryExpr {
     if (kind == TOKEN_ASTERISK_SINGLE) return UnaryExpr::Deref(expr);
     else if (kind == TOKEN_AMPERSAND_SINGLE) return UnaryExpr::Ref(expr);
     else if (kind == TOKEN_MINUS_SINGLE) return UnaryExpr::Negate(expr);
     else if (kind == TOKEN_BANG) return UnaryExpr::Not(expr);
     unreachable("fromTkn: Exhaustive handling of unary ops");
 }
-func extractOperand(expr: &UnaryExpr, lhs: &&ParsedExpr) {
+@trace func extractOperand(expr: &UnaryExpr, lhs: &&ParsedExpr) {
     match (expr) {
         &UnaryExpr::Comptime(_lhs) => { *lhs = _lhs; }
         &UnaryExpr::Ref(_lhs) => { *lhs = _lhs; }
@@ -1128,7 +1175,7 @@ union BinaryExpr {
     BitXor(&ParsedExpr, &ParsedExpr),
     Indexed(&ParsedExpr, &ParsedExpr),
 }
-func binOpAsStr(expr: &BinaryExpr) -> &char {
+@trace func binOpAsStr(expr: &BinaryExpr) -> &char {
     match (expr) {
         &BinaryExpr::Path(..) => { return "::"; }
         &BinaryExpr::Dot(..) => { return "."; }
@@ -1155,7 +1202,7 @@ func binOpAsStr(expr: &BinaryExpr) -> &char {
     unreachable("binOpAsStr: Exhaustive handling of binary expressions");
 }
 
-func extractOperands(expr: &BinaryExpr, lhs: &&ParsedExpr, rhs: &&ParsedExpr) {
+@trace func extractOperands(expr: &BinaryExpr, lhs: &&ParsedExpr, rhs: &&ParsedExpr) {
     match (expr) {
         &BinaryExpr::Path(_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
         &BinaryExpr::Dot(_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
@@ -1180,7 +1227,7 @@ func extractOperands(expr: &BinaryExpr, lhs: &&ParsedExpr, rhs: &&ParsedExpr) {
         _ => { unreachable("extractOperands: Exhaustive handling of binary expressions"); }
     }
 }
-func fromTkn(kind: usize, lhs: &ParsedExpr, rhs: &ParsedExpr) -> BinaryExpr {
+@trace func fromTkn(kind: usize, lhs: &ParsedExpr, rhs: &ParsedExpr) -> BinaryExpr {
     if (kind == TOKEN_PLUS_SINGLE) return BinaryExpr::Plus(lhs, rhs);
     else if (kind == TOKEN_MINUS_SINGLE) return BinaryExpr::Sub(lhs, rhs);
     else if (kind == TOKEN_ASTERISK_SINGLE) return BinaryExpr::Mult(lhs, rhs);
@@ -1203,7 +1250,7 @@ func fromTkn(kind: usize, lhs: &ParsedExpr, rhs: &ParsedExpr) -> BinaryExpr {
     else if (kind == TOKEN_COLON_DOUBLE) return BinaryExpr::Path(lhs, rhs);
     unreachable("fromTkn: Exhaustive handling of binary kinds");
 }
-func isArithmetic(this: &BinaryExpr) -> bool {
+@trace func isArithmetic(this: &BinaryExpr) -> bool {
     match (this) {
         &BinaryExpr::Plus(..) => { return true; }
         &BinaryExpr::Sub(..) => { return true; }
@@ -1214,7 +1261,7 @@ func isArithmetic(this: &BinaryExpr) -> bool {
     }
     return false;
 }
-func isComparison(this: &BinaryExpr) -> bool {
+@trace func isComparison(this: &BinaryExpr) -> bool {
     match (this) {
         &BinaryExpr::CmpGte(..) => { return true; }
         &BinaryExpr::CmpGt(..) => { return true; }
@@ -1226,7 +1273,7 @@ func isComparison(this: &BinaryExpr) -> bool {
     }
     return false;
 }
-func isLogical(this: &BinaryExpr) -> bool {
+@trace func isLogical(this: &BinaryExpr) -> bool {
     match (this) {
         &BinaryExpr::LogAnd(..) => { return true; }
         &BinaryExpr::LogOr(..) => { return true; }
@@ -1234,7 +1281,7 @@ func isLogical(this: &BinaryExpr) -> bool {
     }
     return false;
 }
-func isBitwise(this: &BinaryExpr) -> bool {
+@trace func isBitwise(this: &BinaryExpr) -> bool {
     match (this) {
         &BinaryExpr::BitAnd(..) => { return true; }
         &BinaryExpr::BitOr(..) => { return true; }
@@ -1243,7 +1290,7 @@ func isBitwise(this: &BinaryExpr) -> bool {
     }
     return false;
 }
-func isAssignment(this: &BinaryExpr) -> bool {
+@trace func isAssignment(this: &BinaryExpr) -> bool {
     match (this) {
         &BinaryExpr::Assign(..) => { return true; }
         _ => { }
@@ -1280,22 +1327,22 @@ struct ParsedExpr {
     data: ExprData;
     typeState: TCState;
 }
-func getID(this: &ParsedExpr) -> usize {
+@trace func getID(this: &ParsedExpr) -> usize {
     return indexOf(&exprs, this);
 }
-func wrap(this: ParsedExpr) -> &ParsedExpr {
+@trace func wrap(this: ParsedExpr) -> &ParsedExpr {
     push(&exprs, this);
     return last(&exprs);
 }
 
-func newParsedExpr(span: Span, data: ExprData) -> &ParsedExpr {
+@trace func newParsedExpr(span: Span, data: ExprData) -> &ParsedExpr {
     return wrap(ParsedExpr {
         span: span,
         data: data
     });
 }
 
-func intoPointer(this: &ParsedExpr) -> usize {
+@trace func intoPointer(this: &ParsedExpr) -> usize {
     let unary = ParsedExpr {
         span: this.span,
         data: ExprData::Unary(UnaryExpr::Ref(this)),
@@ -1303,7 +1350,7 @@ func intoPointer(this: &ParsedExpr) -> usize {
     return getID(wrap(unary));
 }
 
-func isLValue(this: &ParsedExpr) -> bool {
+@trace func isLValue(this: &ParsedExpr) -> bool {
     match (this.data) {
         ExprData::Unary(UnaryExpr::Deref(_)) => { return true; }
         ExprData::Binary(BinaryExpr::Indexed(..)) => { return true; }
@@ -1320,13 +1367,13 @@ func isLValue(this: &ParsedExpr) -> bool {
 }
 
 // FIXME: Remove these isXYZ functions
-func isBlank(this: &ParsedExpr) -> bool {
+@trace func isBlank(this: &ParsedExpr) -> bool {
     return tag(&this.data) == tag(&ExprData::Blank);
 }
-func isIdentifier(this: &ParsedExpr) -> bool {
+@trace func isIdentifier(this: &ParsedExpr) -> bool {
     return tag(&this.data) == tag(&ExprData::Ident);
 }
-func isLiteral(this: &ParsedExpr) -> bool {
+@trace func isLiteral(this: &ParsedExpr) -> bool {
     match (&this.data) {
         &ExprData::IntLit { .. } => { return true; }
         &ExprData::StrLit { .. } => { return true; }
@@ -1340,15 +1387,15 @@ func isLiteral(this: &ParsedExpr) -> bool {
     return false;
 }
 
-func isUnary(this: &ParsedExpr) -> bool {
+@trace func isUnary(this: &ParsedExpr) -> bool {
     return tag(&this.data) == tag(&ExprData::Unary);
 }
 
-func isCall(this: &ParsedExpr) -> bool {
+@trace func isCall(this: &ParsedExpr) -> bool {
     return tag(&this.data) == tag(&ExprData::Call);
 }
 
-func isAssignment(this: &ParsedExpr) -> bool {
+@trace func isAssignment(this: &ParsedExpr) -> bool {
     match (&this.data) {
         &ExprData::Binary(BinaryExpr::Assign(..)) => { return true; }
         _ => { }
@@ -1375,11 +1422,11 @@ struct ParsedPattern {
     data: Pattern;
 }
 
-func getID(this: &ParsedPattern) -> usize {
+@trace func getID(this: &ParsedPattern) -> usize {
     return indexOf(&patterns, this);
 }
 
-func newParsedPattern(span: Span, pat: Pattern) -> &ParsedPattern {
+@trace func newParsedPattern(span: Span, pat: Pattern) -> &ParsedPattern {
     push(&patterns, ParsedPattern {
         ignored: ignoringNodes,
         span: span,
@@ -1388,7 +1435,7 @@ func newParsedPattern(span: Span, pat: Pattern) -> &ParsedPattern {
     return last(&patterns);
 }
 
-func toString(this: &ParsedPattern) -> String {
+@trace func toString(this: &ParsedPattern) -> String {
     match (&this.data) {
         &Pattern::Rest => { return newStringFromStrLit(".."); }
         &Pattern::Wildcard => { return newStringFromStrLit("_"); }

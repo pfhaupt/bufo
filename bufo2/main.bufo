@@ -38,14 +38,6 @@ import "lookup.bufo";
  * ...
  */
 
-func sleep(us: i64) {
-    let start = get_high_resolution_timestamp();
-    let now = get_high_resolution_timestamp();
-    while (get_duration_between_high_resolution_timestamps_in_microseconds(start, now) < us) {
-        now = get_high_resolution_timestamp();
-    }
-}
-
 @trace func main(argc: i32, argv: &&char) -> i32 {
     if (argc < 2) {
         C::fprintf(stderr, "error: Expected file input\n");

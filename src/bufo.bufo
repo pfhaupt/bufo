@@ -54,7 +54,7 @@ struct Flags {
     llvm_passes: &String;
 }
 let flags = Flags {};
-func main(argc: i32, argv: &&char) -> i32 {
+@trace func main(argc: i32, argv: &&char) -> i32 {
     @os(WINDOWS) if (!tryFind("cl.exe")) {
         C::fprintf(stderr, "%s: Developer environment is not initialized properly!\n", ERR_STR);
         C::fprintf(stderr, "%s: Could not find `cl.exe`.\n", NOTE_STR);
@@ -169,10 +169,15 @@ func main(argc: i32, argv: &&char) -> i32 {
         C::printf("exprs.length         = %llu\n", exprs.length);
     }
     drop(&string);
+    @if_tracing {
+        // REVIEW(2026-06-23): We quit before tracy can submit all samples, so we sleep a bit.
+        //                     This shouldn't happen, yet it does.
+        sleep(5000 * 1000);
+    }
     return 0;
 }
 
-func findDirRelativeToCompilerAndAddToImports(parser: &Parser, dir: &char) -> bool {
+@trace func findDirRelativeToCompilerAndAddToImports(parser: &Parser, dir: &char) -> bool {
     let _my_path = getBufoPath();
     let my_path = newStringFromStrLit(_my_path);
     C::free(_my_path);
@@ -188,7 +193,7 @@ func findDirRelativeToCompilerAndAddToImports(parser: &Parser, dir: &char) -> bo
     return true;
 }
 
-@os(WINDOWS) func getBufoPath() -> &char {
+@os(WINDOWS) @trace func getBufoPath() -> &char {
     // TODO: Get actual size of MAX_PATH, as the user can set this to values other than 260
     comptime MAX_PATH: u32 = 260;
     let buf = ['\0'; 260];
@@ -199,7 +204,7 @@ func findDirRelativeToCompilerAndAddToImports(parser: &Parser, dir: &char) -> bo
     return buffer as &char;
 }
 
-@os(LINUX) func getBufoPath() -> &char {
+@os(LINUX) @trace func getBufoPath() -> &char {
     let buffer = C::malloc(1024);
     C::memset(buffer, 0, 1024);
     let n = readlink("/proc/self/exe", buffer, 1024);
@@ -210,7 +215,7 @@ func findDirRelativeToCompilerAndAddToImports(parser: &Parser, dir: &char) -> bo
     return buffer;
 }
 
-@os(WINDOWS) func linkExecutable() -> bool {
+@os(WINDOWS) @trace func linkExecutable() -> bool {
     if (*flags.dontLink) {
         return true;
     }
@@ -298,7 +303,7 @@ func findDirRelativeToCompilerAndAddToImports(parser: &Parser, dir: &char) -> bo
     return success;
 }
 
-@os(LINUX) func linkExecutable() -> bool {
+@os(LINUX) @trace func linkExecutable() -> bool {
     if (*flags.dontLink) {
         return true;
     }

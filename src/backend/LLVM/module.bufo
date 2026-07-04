@@ -12,20 +12,20 @@ struct LLVMModule {
     ref: LLVM::ModuleRef;
 }
 
-func print(this: &LLVMModule) {
+@trace func print(this: &LLVMModule) {
     let s: &char = LLVM::PrintModuleToString(this.ref);
     C::printf("%s\n", s);
 }
 
-func setTriple(this: &LLVMModule, triple: &char) {
+@trace func setTriple(this: &LLVMModule, triple: &char) {
     LLVM::SetTarget(this.ref, triple);
 }
 
-func setDataLayout(this: &LLVMModule, layout: LLVMDataLayout) {
+@trace func setDataLayout(this: &LLVMModule, layout: LLVMDataLayout) {
     LLVM::SetDataLayout(this.ref, layout.ref);
 }
 
-func writeToFile(this: &LLVMModule, path: SubStr) -> bool {
+@trace func writeToFile(this: &LLVMModule, path: SubStr) -> bool {
     let err: LLVMString = blank;
     let _n: String = toString(&path);
     let code: LLVMBool = LLVM::PrintModuleToFile(this.ref, _n.buffer, &err);
@@ -39,7 +39,7 @@ func writeToFile(this: &LLVMModule, path: SubStr) -> bool {
     return true;
 }
 
-func verify(this: &LLVMModule) -> bool {
+@trace func verify(this: &LLVMModule) -> bool {
     let err: LLVMString = blank;
     let code: LLVMBool = LLVM::VerifyModule(this.ref, LLVMReturnStatusAction, &err);
     if (code.val != 0) {
@@ -50,7 +50,7 @@ func verify(this: &LLVMModule) -> bool {
     return true;
 }
 
-func addFunction(this: &LLVMModule, name: SubStr, function: LLVMType) -> LLVMValue {
+@trace func addFunction(this: &LLVMModule, name: SubStr, function: LLVMType) -> LLVMValue {
     assert(!LLVM::isNull(function.ref), "Expected valid LLVMType in LLVMModule.addFunction");
     let _n: String = toString(&name);
     let f: LLVM::ValueRef = LLVM::AddFunction(this.ref, _n.buffer, function.ref);
@@ -58,20 +58,20 @@ func addFunction(this: &LLVMModule, name: SubStr, function: LLVMType) -> LLVMVal
     assert(!LLVM::isNull(f), "Could not add function to module");
     return newLLVMValueFromRef(f);
 }
-func hasFunction(this: &LLVMModule, name: SubStr) -> bool {
+@trace func hasFunction(this: &LLVMModule, name: SubStr) -> bool {
     let _n: String = toString(&name);
     let f: LLVM::ValueRef = LLVM::GetNamedFunction(this.ref, _n.buffer);
     drop(&_n);
     return !LLVM::isNull(f);
 }
-func getFunction(this: &LLVMModule, name: SubStr) -> LLVMValue {
+@trace func getFunction(this: &LLVMModule, name: SubStr) -> LLVMValue {
     let _n: String = toString(&name);
     let f: LLVM::ValueRef = LLVM::GetNamedFunction(this.ref, _n.buffer);
     drop(&_n);
     assert(!LLVM::isNull(f), "Could not get function from module");
     return newLLVMValueFromRef(f);
 }
-func addGlobal(this: &LLVMModule, typ: LLVMType, space: u32, name: SubStr) -> LLVMValue {
+@trace func addGlobal(this: &LLVMModule, typ: LLVMType, space: u32, name: SubStr) -> LLVMValue {
     assert(!LLVM::isNull(typ.ref), "Expected valid LLVMType in LLVMModule.addGlobal");
     let _n: String = toString(&name);
     let g: LLVM::ValueRef = LLVM::AddGlobalInAddressSpace(this.ref, typ.ref, _n.buffer, space);
@@ -79,7 +79,7 @@ func addGlobal(this: &LLVMModule, typ: LLVMType, space: u32, name: SubStr) -> LL
     assert(!LLVM::isNull(g), "Could not add global in module");
     return newLLVMValueFromRef(g);
 }
-func getGlobal(this: &LLVMModule, name: SubStr) -> LLVMValue {
+@trace func getGlobal(this: &LLVMModule, name: SubStr) -> LLVMValue {
     let _n: String = toString(&name);
     let g: LLVM::ValueRef = LLVM::GetNamedGlobal(this.ref, _n.buffer);
     drop(&_n);
@@ -87,7 +87,7 @@ func getGlobal(this: &LLVMModule, name: SubStr) -> LLVMValue {
     return newLLVMValueFromRef(g);
 }
 
-func runPasses(this: LLVMModule, passes: &char, target: LLVMTargetMachine, options: LLVMPassBuilderOptions) -> bool {
+@trace func runPasses(this: LLVMModule, passes: &char, target: LLVMTargetMachine, options: LLVMPassBuilderOptions) -> bool {
     assert(!LLVM::isNull(this.ref));
     let err = LLVM::RunPasses(this.ref, passes, target.ref, options.ref);
     if (err.ptr != null) {
@@ -99,12 +99,12 @@ func runPasses(this: LLVMModule, passes: &char, target: LLVMTargetMachine, optio
     return true;
 }
 
-func addModuleFlag(this: LLVMModule, behavior: i32, flag: SubStr, value: LLVMValue) {
+@trace func addModuleFlag(this: LLVMModule, behavior: i32, flag: SubStr, value: LLVMValue) {
     let meta = LLVM::ValueAsMetadata(value.ref);
     LLVM::AddModuleFlag(this.ref, behavior, flag.start, flag.len, meta);
 }
 
-func newLLVMModuleFromRef(ref: LLVM::ModuleRef) -> LLVMModule {
+@trace func newLLVMModuleFromRef(ref: LLVM::ModuleRef) -> LLVMModule {
     assert(!LLVM::isNull(ref), "Passed invalid reference to newLLVMModuleFromRef");
     return LLVMModule {
         ref: ref

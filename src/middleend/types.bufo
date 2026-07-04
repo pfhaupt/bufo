@@ -11,7 +11,7 @@ import "../frontend/context.bufo";
 import "./checker.bufo";
 import "../backend/LLVM/metadata.bufo";
 
-func nextMultipleOf(a: usize, b: usize) -> usize {
+@trace func nextMultipleOf(a: usize, b: usize) -> usize {
     assert(b != 0, "nextMultipleOf: b is 0!");
     if (a % b == 0) return a;
     return a + (b - (a % b));
@@ -36,7 +36,7 @@ union PrimType {
 }
 comptime PRIM_TYPE_COUNT: usize = 15; // FIXME: When we add a new PrimType we need to update this
 
-func index_of_type(table: &TypeInfoTable, type: &Type) -> usize {
+@trace func index_of_type(table: &TypeInfoTable, type: &Type) -> usize {
     let n = toString(type);
     for (let i: usize = 0; i < table.length; i = i + 1) {
         let b = equals(&get_name(&table.elements[i]), &asSubStr(&n));
@@ -69,7 +69,7 @@ union Type {
     Tuple(TypeList),
 }
 
-func containsInvalidType(this: &Type) -> bool {
+@trace func containsInvalidType(this: &Type) -> bool {
     match (this) {
         &Type::Error => { return true; }
         &Type::Unknown => { return true; }
@@ -97,7 +97,7 @@ func containsInvalidType(this: &Type) -> bool {
     unreachable("containsInvalidType");
 }
 
-func getMangledName(this: &Type) -> String {
+@trace func getMangledName(this: &Type) -> String {
     match (this) {
         &Type::Prim(typ) => {
             // OPT: Make these Strings comptime
@@ -188,17 +188,17 @@ func getMangledName(this: &Type) -> String {
     unreachable("Exhaustive handling of types in Type.getMangledName");
 }
 
-func getID(this: &Type) -> usize {
+@trace func getID(this: &Type) -> usize {
     return indexOf(&types, this);
 }
 
 // TODO: Equality in a type system context is kinda stupid
 //       What we want to know is if a type can be converted to another one
 //       where f(A, B) may return true, but f(B, A) false.
-func equals(this: &Type, other: &Type) -> bool {
+@trace func equals(this: &Type, other: &Type) -> bool {
     return _equals(this, other, true);
 }
-func _equals(this: &Type, other: &Type, allowData: bool) -> bool {
+@trace func _equals(this: &Type, other: &Type, allowData: bool) -> bool {
     // TODO: Tuple expressions
     if (allowData) {
         match (this) {
@@ -339,10 +339,10 @@ func _equals(this: &Type, other: &Type, allowData: bool) -> bool {
     unreachable("&Type.equals() should've caught all combinations by this point!");
 }
 
-func isUnknown(this: &Type) -> bool {
+@trace func isUnknown(this: &Type) -> bool {
     return tag(this) == comptime tag(&Type::Unknown);
 }
-func isFloat(this: &Type) -> bool {
+@trace func isFloat(this: &Type) -> bool {
     match (this) {
         &Type::Prim(PrimType::F32) => { return true; }
         &Type::Prim(PrimType::F64) => { return true; }
@@ -350,10 +350,10 @@ func isFloat(this: &Type) -> bool {
     }
     return false;
 }
-func isInteger(this: &Type) -> bool {
+@trace func isInteger(this: &Type) -> bool {
     return isSignedInteger(this) || isUnsignedInteger(this);
 }
-func isSignedInteger(this: &Type) -> bool {
+@trace func isSignedInteger(this: &Type) -> bool {
     match (this) {
         &Type::Prim(PrimType::I8)  => { return true; }
         &Type::Prim(PrimType::I16) => { return true; }
@@ -363,7 +363,7 @@ func isSignedInteger(this: &Type) -> bool {
     }
     return false;
 }
-func isUnsignedInteger(this: &Type) -> bool {
+@trace func isUnsignedInteger(this: &Type) -> bool {
     match (this) {
         &Type::Prim(PrimType::U8)  => { return true; }
         &Type::Prim(PrimType::U16) => { return true; }
@@ -374,42 +374,42 @@ func isUnsignedInteger(this: &Type) -> bool {
     }
     return false;
 }
-func isVariadicType(this: &Type) -> bool {
+@trace func isVariadicType(this: &Type) -> bool {
     match (this) {
         &Type::Variadic(_) => { return true; }
         _ => { }
     }
     return false;
 }
-func isChar(this: &Type) -> bool {
+@trace func isChar(this: &Type) -> bool {
     match (this) {
         &Type::Prim(PrimType::Char) => { return true; }
         _ => { }
     }
     return false;
 }
-func isBoolean(this: &Type) -> bool {
+@trace func isBoolean(this: &Type) -> bool {
     match (this) {
         &Type::Prim(PrimType::Bool) => { return true; }
         _ => { }
     }
     return false;
 }
-func isNone(this: &Type) -> bool {
+@trace func isNone(this: &Type) -> bool {
     match (this) {
         &Type::Prim(PrimType::None) => { return true; }
         _ => { }
     }
     return false;
 }
-func isAny(this: &Type) -> bool {
+@trace func isAny(this: &Type) -> bool {
     match (this) {
         &Type::Prim(PrimType::Any) => { return true; }
         _ => { }
     }
     return false;
 }
-func isData(this: &Type) -> bool {
+@trace func isData(this: &Type) -> bool {
     match (this) {
         &Type::Struct(decl) => {
             return decl.isDataDefinition;
@@ -418,10 +418,10 @@ func isData(this: &Type) -> bool {
     }
     return false;
 }
-func isPrimitive(this: &Type) -> bool {
+@trace func isPrimitive(this: &Type) -> bool {
     return tag(this) == comptime tag(&Type::Prim);
 }
-func isFunction(this: &Type) -> bool {
+@trace func isFunction(this: &Type) -> bool {
     return tag(this) == comptime tag(&Type::Func);
 }
 struct FuncAttr {
@@ -429,27 +429,27 @@ struct FuncAttr {
     isNoreturn: bool;
     isNodiscard: bool;
 }
-func isVariadic(this: &Type) -> bool {
+@trace func isVariadic(this: &Type) -> bool {
     match (this) {
         &Type::Func(_, _, attr) => { return attr.isVariadic; }
         _ => { }
     }
     return false;
 }
-func isNoreturn(this: &Type) -> bool {
+@trace func isNoreturn(this: &Type) -> bool {
     match (this) {
         &Type::Func(_, _, attr) => { return attr.isNoreturn; }
         _ => { }
     }
     return false;
 }
-func isNodiscard(this: &Type) -> bool {
+@trace func isNodiscard(this: &Type) -> bool {
     if let &Type::Func(_, _, attr) = this {
         return attr.isNodiscard;
     }
     return false;
 }
-func isPointer(this: &Type) -> bool {
+@trace func isPointer(this: &Type) -> bool {
     match (this) {
         &Type::Ptr(_) => { return true; }
         &Type::Prim(PrimType::Any) => { return true; }
@@ -457,45 +457,45 @@ func isPointer(this: &Type) -> bool {
     }
     return false;
 }
-func isStructPointer(this: &Type) -> bool {
+@trace func isStructPointer(this: &Type) -> bool {
     if (!isPointer(this)) return false;
     return isStruct(getUnderlyingType(this, false));
 }
-func isTuplePointer(this: &Type) -> bool {
+@trace func isTuplePointer(this: &Type) -> bool {
     if (!isPointer(this)) return false;
     return isTuple(getUnderlyingType(this, false));
 }
-func isArrayPointer(this: &Type) -> bool {
+@trace func isArrayPointer(this: &Type) -> bool {
     if (!isPointer(this)) return false;
     return isArray(getUnderlyingType(this, false));
 }
-func isPointerTo(this: &Type, typ: &Type) -> bool {
+@trace func isPointerTo(this: &Type, typ: &Type) -> bool {
     match (this) {
         &Type::Ptr(to) => { return equals(to, typ); }
         _ => { }
     }
     return false;
 }
-func isModule(this: &Type) -> bool {
+@trace func isModule(this: &Type) -> bool {
     return tag(this) == comptime tag(&Type::Module);
 }
-func isStruct(this: &Type) -> bool {
+@trace func isStruct(this: &Type) -> bool {
     return tag(this) == comptime tag(&Type::Struct);
 }
-func isUnion(this: &Type) -> bool {
+@trace func isUnion(this: &Type) -> bool {
     return tag(this) == comptime tag(&Type::Union);
 }
-func isArray(this: &Type) -> bool {
+@trace func isArray(this: &Type) -> bool {
     return tag(this) == comptime tag(&Type::Array);
 }
-func isTuple(this: &Type) -> bool {
+@trace func isTuple(this: &Type) -> bool {
     return tag(this) == comptime tag(&Type::Tuple);
 }
-func isStructArray(this: &Type) -> bool {
+@trace func isStructArray(this: &Type) -> bool {
     if (!isArray(this)) return false;
     return isStruct(getUnderlyingType(this, false));
 }
-func getUnderlyingType(this: &Type, deep: bool) -> &Type {
+@trace func getUnderlyingType(this: &Type, deep: bool) -> &Type {
     let underlying = this;
     while (isVariadicType(this) || isPointer(this) || isArray(this)) {
         match (underlying) {
@@ -509,7 +509,7 @@ func getUnderlyingType(this: &Type, deep: bool) -> &Type {
     return underlying;
 }
 // OPT: Make toString() accept a buffer, so we don't allocate 20 bytes on the heap 1 million times
-func toString(this: &Type) -> String {
+@trace func toString(this: &Type) -> String {
     match (this) {
         &Type::Error => { return newStringFromStrLit("<propagated error>"); }
         &Type::Unknown => { return newStringFromStrLit("<unknown>"); }
@@ -604,10 +604,10 @@ func toString(this: &Type) -> String {
     }
     unreachable("Exhaustive handling of types in Type.toString");
 }
-func getAlignmentInBits(this: &Type) -> usize {
+@trace func getAlignmentInBits(this: &Type) -> usize {
     return getAlignmentInBytes(this) * 8;
 }
-func getAlignmentInBytes(this: &Type) -> usize {
+@trace func getAlignmentInBytes(this: &Type) -> usize {
     let res: usize = 0;
     match (this) {
         &Type::Ptr(_) => { res = 8; }
@@ -635,16 +635,7 @@ func getAlignmentInBytes(this: &Type) -> usize {
         }
         &Type::Array(sub, _) => { res = getAlignmentInBytes(sub); }
         &Type::Struct(decl) => {
-            assert(isSuccess(&decl.typeState), "Can only get alignment of valid structs");
-            let maxAlign: usize = 1;
-            for (let i: usize = 0; i < decl.context.fieldLength; i = i + 1) {
-                let td: &ParsedTypeNode = getFieldTypeAtIndex(&decl.context, i);
-                assert(isSuccess(&td.typeState), "Expected valid field type");
-                let tt: &Type = getType(&td.typeState);
-                let _a: usize = getAlignmentInBytes(tt);
-                if (_a > maxAlign) maxAlign = _a;
-            }
-            res = maxAlign;
+            res = getAlignmentInBytes(decl);
         }
         &Type::Union(decl, _) => {
             res = getAlignmentInBytes(decl);
@@ -664,16 +655,14 @@ func getAlignmentInBytes(this: &Type) -> usize {
     }
     // Alignment is always a power of two
     assert(res != 0, "Alignment can't be 0 bytes");
-    let n: usize = 1;
-    while (n < res) n = n * 2;
-    return n;
+    return nextPowerOfTwo(res);
 }
-func getSizeInBits(this: &Type) -> usize {
+@trace func getSizeInBits(this: &Type) -> usize {
     let s = getSizeInBytes(this) * 8;
     if (s == 0) return 1;
     return s;
 }
-func getSizeInBytes(this: &Type) -> usize {
+@trace func getSizeInBytes(this: &Type) -> usize {
     match (this) {
         &Type::Ptr(_) => { return 8; }
         &Type::Variadic(_) => { return 16; } // ptr + size
@@ -702,24 +691,7 @@ func getSizeInBytes(this: &Type) -> usize {
         &Type::Module(_) => { return 0; }
         &Type::Array(sub, size) => { return getSizeInBytes(sub) * size; }
         &Type::Struct(decl) => {
-            assert(isSuccess(&decl.typeState), "Can only get size of valid structs");
-            let size: usize = 0;
-            let maxAlign: usize = 1;
-            for (let i: usize = 0; i < decl.context.fieldLength; i = i + 1) {
-                let td: &ParsedTypeNode = getFieldTypeAtIndex(&decl.context, i);
-                assert(isSuccess(&td.typeState), "Expected valid field type");
-                let tt: &Type = getType(&td.typeState);
-                size = size + getSizeInBytes(tt);
-                let _a: usize = getAlignmentInBytes(tt);
-                if (_a > maxAlign) maxAlign = _a;
-                if (i != decl.context.fieldLength - 1) {
-                    let next: &ParsedTypeNode = getFieldTypeAtIndex(&decl.context, i + 1);
-                    let nextType: &Type = getType(&next.typeState);
-                    size = nextMultipleOf(size, getAlignmentInBytes(nextType));
-                }
-            }
-            size = nextMultipleOf(size, maxAlign);
-            return size;
+            return getSizeInBytes(decl);
         }
         &Type::Union(decl, _) => {
             return getSizeInBytes(decl);
@@ -744,27 +716,27 @@ func getSizeInBytes(this: &Type) -> usize {
     }
     unreachable("Exhaustive handling of type kinds in Type.getSizeInBytes");
 }
-func getParam(fnType: &Type, id: usize) -> &Type {
+@trace func getParam(fnType: &Type, id: usize) -> &Type {
     match (fnType) {
         &Type::Func(params, _, _) => { return *at(&params, id); }
         _ => { }
     }
     unreachable("getParam() called on non-function type");
 }
-func getReturnType(fnType: &Type) -> &Type {
+@trace func getReturnType(fnType: &Type) -> &Type {
     match (fnType) {
         &Type::Func(_, ret, _) => { return ret; }
         _ => { }
     }
     unreachable("getReturnType() called on non-function type");
 }
-func getTupleElement(tuple: &Type, index: usize) -> &Type {
+@trace func getTupleElement(tuple: &Type, index: usize) -> &Type {
     let &Type::Tuple(elems) = tuple else {
         unreachable("getTupleElement() called on non-tuple type");
     };
     return *at(&elems, index);
 }
-func getMaxFloatValue(this: &Type) -> f64 {
+@trace func getMaxFloatValue(this: &Type) -> f64 {
     match (this) {
         &Type::Prim(PrimType::F32) => {
             let VAL: i32 = 2139095039;
@@ -778,18 +750,18 @@ func getMaxFloatValue(this: &Type) -> f64 {
     }
     unreachable("Type.getMaxFloatValue() called on non-Float");
 }
-func intoPointer(this: &Type) -> &Type {
+@trace func intoPointer(this: &Type) -> &Type {
     return wrap(Type::Ptr(this));
 }
-func intoArrayType(this: &Type, size: usize) -> &Type {
+@trace func intoArrayType(this: &Type, size: usize) -> &Type {
     return wrap(Type::Array(this, size));
 }
 
-func copy(this: &Type) -> &Type {
+@trace func copy(this: &Type) -> &Type {
     return wrap(*this);
 }
 
-func wrap(t: Type) -> &Type {
+@trace func wrap(t: Type) -> &Type {
     match (t) {
         Type::Prim(p) => {
             let id = tag(&p) as usize;
