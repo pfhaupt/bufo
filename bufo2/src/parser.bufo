@@ -19,6 +19,8 @@ import "lookup.bufo";
 import "codegen.bufo";
 import "interp.bufo";
 
+import "../generated/ast.template.bufo";
+
 struct Insert_Context {
     parse_fn: func (&Parse_Context) -> (bool, &AST);
     parent: &AST;

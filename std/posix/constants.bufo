@@ -5,12 +5,6 @@ Usage of any of these constants is moderately unsafe and might destroy
 your system if not treated carefully.
 */
 
-// REVIEW: Do errors actually write this errno?
-import "posix/functions.bufo";
-func errno() -> &i32 { return __errno_location(); }
-
-comptime ENOENT: i32 = 2;
-
 comptime PROT_READ: i32 = 1;
 comptime PROT_WRITE: i32 = 2;
 comptime PROT_EXEC: i32 = 4;

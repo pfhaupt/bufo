@@ -14,6 +14,8 @@ import "interp.bufo";
 import "lexer.bufo";
 import "lookup.bufo";
 
+import "../generated/ast.template.bufo";
+
 struct BID { _i: usize; }
 struct Reg { _i: usize; offset: usize; size: usize; }
 

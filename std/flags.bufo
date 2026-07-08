@@ -312,4 +312,3 @@ func _runOn(this: &FlagParser, argc: i32, argv: &&char) -> bool {
     }
     return allGotten;
 }
-

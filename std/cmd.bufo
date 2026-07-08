@@ -1,8 +1,10 @@
 import "prelude.bufo";
 import "libc.bufo";
-import "string_buf.bufo";
 import "string.bufo";
 import "substr.bufo";
+
+import "list.bufo";
+import "type_info.bufo";
 
 @os(WINDOWS) import "winapi/structs.bufo";
 @os(WINDOWS) import "windows.bufo";
@@ -11,18 +13,14 @@ import "substr.bufo";
 @os(LINUX) import "linux.bufo";
 
 struct Cmd {
-    log: bool;
-    buf: StringBuffer;
+    dont_log: bool;
+    buf: GAF_List; // List<SubStr>
 }
 
-func add(this: &Cmd, arg: &char) {
-    add(&this.buf, newSubStrOfStrLit(arg));
-}
-func addSubStr(this: &Cmd, arg: SubStr) {
-    add(&this.buf, arg);
-}
-func addMany(this: &Cmd, args: StringBuffer) {
-    extend(&this.buf, &args);
+func add(this: &Cmd, args: ...SubStr) {
+    for (let i: usize = 0; i < args.length; i = i + 1) {
+        push(&this.buf, args[i]);
+    }
 }
 func runSync(this: &Cmd) -> bool {
     return runCmdSync(*this);
@@ -31,25 +29,38 @@ func runAsync(this: &Cmd) -> Handle {
     return runCmdAsync(*this);
 }
 func toString(this: &Cmd) -> String {
-    return toCmdString(&this.buf);
+    let s: String = blank;
+    for (let i: usize = 0; i < this.buf.length; i = i + 1) {
+        let str: &SubStr = get_ref_raw(&this.buf, i);
+        if (hasSpace(str)) {
+            pushChar(&s, '"');
+            pushSubStr(&s, str);
+            pushChar(&s, '"');
+        } else {
+            pushSubStr(&s, str);
+        }
+        if (i != this.buf.length - 1) pushChar(&s, ' ');
+    }
+    return s;
 }
 func asCharPtrs(this: &Cmd) -> &&char {
     let _any: Any = C::calloc(this.buf.length + 1, sizeof &char);
     assert(_any != null);
     let _mut: &&char = _any as &&char;
     for (let i: usize = 0; i < this.buf.length; i = i + 1) {
-        let elem: String = toString(this.buf.data + i * sizeof SubStr);
-        *(_mut + i * sizeof &char) = elem.buffer as &char;
+        let str: &SubStr = get_ref_raw(&this.buf, i);
+        let _s = toString(str);
+        pushChar(&_s, '\0');
+        *(_mut + i * sizeof &char) = _s.buffer;
     }
     return _any as &&char;
 }
 
 func newCmd() -> Cmd {
     return Cmd {
-        buf: newStringBuffer()
+        buf: new_GAF_List(type_info(SubStr)),
     };
 }
-
 func newCmdFromStrLit(command: &char) -> Cmd {
     let cmd: Cmd = newCmd();
     let pos: usize = 0;
@@ -59,27 +70,27 @@ func newCmdFromStrLit(command: &char) -> Cmd {
         if (nextSpace == null) break;
         let offset: usize = nextSpace - command;
         let substr: SubStr = newSubStr(command, 0, offset);
-        addSubStr(&cmd, substr);
+        add(&cmd, substr);
         command = command + offset + 1;
         pos = pos + offset + 1;
     }
     if (pos < len) {
         // Rest of command, for example `help` in `cargo help`
         let rest: SubStr = newSubStr(command, 0, C::strlen(command));
-        addSubStr(&cmd, rest);
+        add(&cmd, rest);
     }
     return cmd;
 }
 
 func moveFile(from: &char, to: &char) -> bool {
     let moveCmd: Cmd = newCmdFromStrLit("mv");
-    add(&moveCmd, from);
-    add(&moveCmd, to);
+    add(&moveCmd, newSubStr(from));
+    add(&moveCmd, newSubStr(to));
     return runSync(&moveCmd);
 }
 
 func deleteFile(path: &char) -> bool {
     let delCmd: Cmd = newCmdFromStrLit("rm");
-    add(&delCmd, path);
+    add(&delCmd, newSubStr(path));
     return runSync(&delCmd);
 }

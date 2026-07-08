@@ -1,0 +1,16 @@
+build/
+*.exe
+*.pdb
+*.rdi
+*.obj
+*.ll
+*.s
+*.o
+
+*.lib
+*.dll
+*.so
+*.a
+
+*.d2
+*.svg

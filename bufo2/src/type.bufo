@@ -8,8 +8,10 @@ import "format.bufo";
 import "hashset.bufo";
 import "hashmap.bufo";
 
-import "ast.bufo";
 import "common.bufo";
+import "ast.bufo";
+
+import "../generated/ast.template.bufo";
 
 // FIXME(2026-01-30): Primitive Types are scattered in multiple places around the compiler
 //                    including the Lexer. Would be cool to collect that into a single place

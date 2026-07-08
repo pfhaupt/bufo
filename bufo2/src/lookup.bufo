@@ -6,6 +6,7 @@ import "substr.bufo";
 import "type_info.bufo";
 import "string.bufo";
 
+import "../generated/ast.template.bufo";
 import "ast.bufo";
 import "common.bufo";
 import "type.bufo";

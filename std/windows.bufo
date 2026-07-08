@@ -62,6 +62,7 @@ import "string.bufo";
     let s: String = newStringFromStrLit("where /Q ");
     pushStr(&s, program);
     let cmd: Cmd = newCmdFromStrLit(s.buffer);
+    cmd.dont_log = true;
     return runCmdSync(cmd);
 }
 
@@ -108,7 +109,7 @@ import "string.bufo";
 
     let str: String = toString(&cmd);
     pushChar(&str, '\0');
-    if (cmd.log) {
+    if (!cmd.dont_log) {
         C::printf("[CMD] %s\n", str.buffer);
     }
     let bSuccess = WinAPI::CreateProcessA(
@@ -126,7 +127,7 @@ import "string.bufo";
     drop(&str);
 
     if (failed(bSuccess)) {
-        C::fprintf(stderr, "[ERROR] Could not create child process: %#010x\n", WinError(WinAPI::GetLastError()));
+        C::fprintf(stderr, "[ERROR] Could not create child process: %s\n", WinError(WinAPI::GetLastError()));
         return INVALID_HANDLE;
     }
 

@@ -1,5 +1,7 @@
 import "prelude.bufo";
 
+comptime ENOENT: i32 = 2;
+
 module C {
     @os(WINDOWS) config {
         dynamic: "msvcrt.dll",
@@ -17,6 +19,16 @@ module C {
     @os(WASM) config {
         static: "emcc",
     }
+
+    // REVIEW: Do errors actually write this errno?
+    @os(WINDOWS) @extern @no_mangle func _errno() -> &i32;
+    @os(LINUX) @extern @no_mangle func __errno_location() -> &i32;
+    func errno() -> i32 {
+        @os(WINDOWS) return *C::_errno();
+        @os(LINUX) return *C::__errno_location();
+    }
+    @extern @no_mangle func strerror(errno: i32) -> &char;
+
     @os(WINDOWS) @extern @mangle("_fdopen") func fdopen(fd: i32, mode: &char) -> Any;
     @os(WINDOWS) @extern @mangle("_snprintf") func snprintf(buffer: Any, size: usize, format: &char, ...) -> i32;
     @os(WINDOWS) @extern @mangle("_fullpath") func _fullpath(absPath: &char, relPath: &char, maxLength: i32) -> &char;
@@ -94,4 +106,11 @@ module C {
         C::_exit(code);
     }
     @noreturn @extern @mangle("exit") func _exit(code: i32);
+
+    func mkdir(path: &char) -> i32 {
+        @os(WINDOWS) return C::_mkdir(path);
+        @os(LINUX) return C::mkdir(path, 493); // octal 755
+    }
+    @os(WINDOWS) @extern @mangle("_mkdir") func _mkdir(path: &char) -> i32;
+    @os(LINUX) @extern @mangle("mkdir") func mkdir(path: &char, flags: i32) -> i32;
 }

@@ -4,9 +4,9 @@ import "substr.bufo";
 import "string.bufo";
 import "cmd.bufo";
 import "format.bufo";
+import "flags.bufo";
 
 import "./util/span.bufo";
-import "./util/flags.bufo";
 import "./util/arena.bufo";
 import "./util/lists.bufo";
 import "./frontend/nodes.bufo";
@@ -297,7 +297,7 @@ let flags = Flags {};
         pushStr(&s, " /NOLOGO");
     }
     let cmd: Cmd = newCmdFromStrLit(s.buffer);
-    cmd.log = *flags.verbose;
+    cmd.dont_log = !*flags.verbose;
     let success = runSync(&cmd);
     drop(&s);
     return success;
@@ -365,7 +365,7 @@ let flags = Flags {};
         }
     }
     let cmd: Cmd = newCmdFromStrLit(s.buffer);
-    cmd.log = *flags.verbose;
+    cmd.dont_log = !*flags.verbose;
     let success = runSync(&cmd);
     drop(&s);
     return success;

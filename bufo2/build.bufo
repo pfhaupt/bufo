@@ -1,0 +1,101 @@
+
+import "format.bufo";
+import "string.bufo";
+import "substr.bufo";
+import "cmd.bufo";
+import "libc.bufo";
+
+@os(WINDOWS) import "windows.bufo";
+@os(LINUX) import "linux.bufo";
+
+import "flags.bufo";
+let flagParser = FlagParser {};
+struct Flags {
+    opt: &bool;
+}
+
+func parse_flags(flags: &Flags, argc: i32, argv: &&char) -> bool {
+    flags.opt = addBoolFlag(&flagParser, "--opt", "Build with optimizations");
+    if (!runOn(&flagParser, argc, argv)) {
+        showErrors(stderr, &flagParser);
+        showUsage(stderr, &flagParser);
+        showHelp(stderr, &flagParser);
+        return false;
+    }
+    return true;
+}
+
+func generate_templates(flags: &Flags) -> bool {
+    @os(WINDOWS) let cmd = newCmdFromStrLit("bufo.exe util/share_template.bufo -o ./build/share_template.exe");
+    if (*flags.opt) add(&cmd, comptime newSubStr("--opt"));
+    if (!runSync(&cmd)) return false;
+
+    if (!mkdir_if_not_exist(flags, "generated")) return false;
+
+    let files = [
+        "ast.template",
+    ];
+    for (let i: usize = 0; i < files.length; i = i + 1) {
+        let file = files[i];
+        let _s = newStringFromStrLit(".\\build\\share_template.exe");
+        format(&_s, " ./templates/% ./generated/%.bufo", file, file);
+        cmd = newCmdFromStrLit(_s.buffer);
+        if (!runSync(&cmd)) return false;
+    }
+    return true;
+}
+
+func build_bufo2(flags: &Flags) -> bool {
+    @os(WINDOWS) let cmd = newCmdFromStrLit("bufo.exe src/main.bufo -o ./build/bufo2.exe");
+    @os(LINUX) let cmd = newCmdFromStrLit("bufo_linux src/main.bufo -o ./build/bufo2.exe");
+    if (*flags.opt) add(&cmd, comptime newSubStr("--opt"));
+    return runSync(&cmd);
+}
+
+func build_test_program(flags: &Flags) -> bool {
+    @os(WINDOWS) let cmd = newCmdFromStrLit(".\\build\\bufo2.exe ./test.bufo2");
+    @os(LINUX) let cmd = newCmdFromStrLit("./build/bufo2.exe ./test.bufo2");
+    return runSync(&cmd);
+}
+
+func mkdir_if_not_exist(flags: &Flags, dir: &char) -> bool {
+    if (dirExists(dir)) {
+        fprint("[Build] Directory % already exists\n", dir);
+        return true;
+    }
+    let result = C::mkdir(dir);
+    if (result < 0) {
+        eprint("[Build] Could not create directory %: %:\n", dir, C::strerror(C::errno()));
+        return false;
+    }
+    fprint("[Build] Created directory %\n", dir);
+    return true;
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let flags: Flags = blank;
+    if (!parse_flags(&flags, argc, argv)) return 1;
+
+    if (!mkdir_if_not_exist(&flags, "build")) return 1;
+
+    if (!generate_templates(&flags)) return 1;
+    if (!build_bufo2(&flags)) return 1;
+    if (!build_test_program(&flags)) return 1;
+
+    fprint("[Build] Done!\n");
+    return 0;
+}
+
+// .PHONY: debug
+// 
+// EXTRA =
+// 
+// test.exe: test.bufo bufo2.exe
+// 	./bufo2.exe test.bufo
+// 
+// bufo2.exe: $(filter-out ops.bufo test.bufo, $(wildcard *.bufo))
+// 	bufo.exe main.bufo -o bufo2.exe $(EXTRA)
+// 
+// debug:
+// 	bufo.exe main.bufo -o bufo2.exe --debug $(EXTRA)
+// 	lldb bufo2.exe test.bufo

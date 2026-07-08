@@ -121,11 +121,23 @@ func splitNext(this: &SubStr, pred: func (char) -> bool) -> SubStr {
     for (let i: usize = 0; i < this.len; i = i + 1) {
         if (pred(this.start[i])) {
             let _s1 = substring(this, 0, i);
-            advance(this, i);
+            advance(this, i + 1);
             return _s1;
         }
     }
     return *this;
+}
+func trim(this: SubStr) -> SubStr {
+    let new = this;
+    while (new.len > 0) {
+        if (!isWhitespace(new.start[0])) break;
+        advance(&new, 1);
+    }
+    while (new.len > 0) {
+        if (!isWhitespace(new.start[new.len - 1])) break;
+        new.len = new.len - 1;
+    }
+    return new;
 }
 func advance(this: &SubStr) {
     advance(this, 1);

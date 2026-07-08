@@ -1,5 +1,6 @@
 import "prelude.bufo";
 import "libc.bufo";
+import "list.bufo";
 import "./substr.bufo";
 import "./string.bufo";
 import "./cmd.bufo";
@@ -14,8 +15,8 @@ comptime INVALID_HANDLE: Handle = Handle { ptr: 18446744073709551615 };
 
     if (stat(filePath, &statbuf) < 0) {
         // NOTE: if output does not exist it 100% must be rebuilt
-        if (*errno() == ENOENT) return 0;
-        C::fprintf(stderr, "[ERROR] Could not get time of %s: %#010x\n", filePath, strerror(*errno()));
+        if (C::errno() == ENOENT) return 0;
+        C::fprintf(stderr, "[ERROR] Could not get time of %s: %#010x\n", filePath, C::strerror(C::errno()));
         return 0;
     }
     return statbuf.st_mtime as usize;
@@ -26,7 +27,7 @@ comptime INVALID_HANDLE: Handle = Handle { ptr: 18446744073709551615 };
     while (true) {
         let wstatus: i32 = 0;
         if (waitpid(proc, &wstatus, 0) < 0) {
-            C::fprintf(stderr, "[ERROR] Could not wait on command (pid %d): %s\n", proc, strerror(*errno()));
+            C::fprintf(stderr, "[ERROR] Could not wait on command (pid %d): %s\n", proc, C::strerror(C::errno()));
             return false;
         }
 
@@ -51,7 +52,7 @@ comptime INVALID_HANDLE: Handle = Handle { ptr: 18446744073709551615 };
     let statbuf: Stat = blank;
 
     if (stat(path, &statbuf) < 0) {
-        if (*errno() == ENOENT) return false;
+        if (C::errno() == ENOENT) return false;
     }
     return true;
 }
@@ -65,21 +66,22 @@ comptime INVALID_HANDLE: Handle = Handle { ptr: 18446744073709551615 };
 @os(LINUX) func runCmdAsync(cmd: Cmd) -> Handle {
     let cpid: i32 = fork();
     if (cpid < 0) {
-        C::fprintf(stderr, "[ERROR] Could not fork child process: %s\n", strerror(*errno()));
+        C::fprintf(stderr, "[ERROR] Could not fork child process: %s\n", C::strerror(C::errno()));
         return INVALID_HANDLE;
     }
 
     if (cpid == 0) {
         let str: String = toString(&cmd);
         pushChar(&str, '\0');
-        if (cmd.log) {
+        if (!cmd.dont_log) {
             C::printf("[CMD] %s\n", str.buffer);
         }
 
-        let progName: String = toString(&cmd.buf.data[0]);
         let args: &&char = asCharPtrs(&cmd);
+        let _prog: &SubStr = get_ref_raw(&cmd.buf, 0);
+        let progName = toString(_prog);
         if (execvp(progName.buffer as &char, args) < 0) {
-            C::fprintf(stderr, "[ERROR] Could not exec child process: %s\n", strerror(*errno()));
+            C::fprintf(stderr, "[ERROR] Could not exec child process: %s\n", C::strerror(C::errno()));
             C::exit(1);
         }
         unreachable("execvp");

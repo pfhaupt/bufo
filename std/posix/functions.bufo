@@ -13,7 +13,6 @@ import "../linux.bufo";
 import "./structs.bufo";
 
 @os(LINUX) @extern @mangle("stat") func stat(path: &char, Statbuf: &Stat) -> i32;
-@os(LINUX) @extern @mangle("strerror") func strerror(errno: i32) -> &char;
 @os(LINUX) @extern @mangle("fork") func fork() -> i32;
 @os(LINUX) @extern @mangle("execvp") func execvp(name: &char, args: &&char) -> i32;
 @os(LINUX) @extern @mangle("waitpid") func waitpid(pid: Handle, out: &i32, flags: i32) -> i32;
@@ -30,7 +29,6 @@ import "./structs.bufo";
     return (Status & 65280) / 256;
 }
 @os(LINUX) @extern @mangle("strsignal") func strsignal(signal: i32) -> &char;
-@os(LINUX) @extern @mangle("__errno_location") func __errno_location() -> &i32;
 @os(LINUX) @extern @mangle("readlink") func readlink(pathname: &char, buf: &char, bufsiz: i32) -> i32;
 
 @os(LINUX) @extern @mangle("mmap") func mmap(addr: Any, length: usize, prot: i32, flags: i32, fd: i32, offset: usize) -> Any;
@@ -54,6 +52,7 @@ import "./structs.bufo";
 
 @os(LINUX) module pthread {
     config {
+        libpath: "../wrapper",
         libpath: "./wrapper",
         static: "pthread1",
     }

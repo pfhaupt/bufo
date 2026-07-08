@@ -1,4 +1,4 @@
-#load "ops.bufo";
+#load "ops.bufo2";
 
 func main() {
     #run {

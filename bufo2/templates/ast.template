@@ -1,0 +1,172 @@
+
+import "list.bufo";
+import "hashmap.bufo";
+import "substr.bufo";
+import "string.bufo";
+
+import "common.bufo";
+import "lexer.bufo";
+import "type.bufo";
+import "codegen.bufo";
+import "interp.bufo";
+import "parser.bufo";
+
+shared ASTCommon {
+    super_node: &AST; // Function, Struct or the like
+    parent: &AST;     // Expr can be parent of Expr
+    origin: SubStr;
+    loc: Loc;
+    attributes: GAF_List; // List<ASTAttr>
+    type: &Type;
+}
+
+struct AST : ASTCommon {
+    data: ASTData;
+}
+
+union ASTData {
+    Struct(ASTStruct),
+    Field(SubStr, &AST),
+    Function(ASTFunction),
+    Stmt(ASTStmt),
+    Expr(ASTExpr),
+    Pat(ASTPat),
+    Param(&AST),
+    Directive(Directive),
+}
+
+struct ASTStruct {
+    state: StructState;
+    loc: Loc;
+    name: SubStr;
+    parameters: GAF_List; // List<&AST>
+    fields: GAF_List; // List<&AST>
+    monomorphized_instances: GAF_HashMap; // HashMap<String, &AST>
+    size_in_bytes: usize;
+    align_in_bytes: usize;
+}
+
+struct StructState {
+    is_monomorphized: bool;
+    did_parse_signature: bool;
+    did_parse_fields: bool;
+    did_check_fields: bool;
+}
+
+struct ASTFunction {
+    state: FunctionState;
+    loc: Loc;
+    name: SubStr;
+    scopes: GAF_List;     // List<Scope_Info>
+    return_type: &AST;
+    params: GAF_List;     // List<&AST>
+    block: &AST;
+    code: Code;
+    monomorphized_instances: GAF_HashMap; // HashMap<String, &AST>
+}
+
+struct FunctionState {
+    is_generic: bool;
+    is_monomorphized: bool;
+    did_parse_signature: bool;
+    did_check_signature: bool;
+    did_parse_body: bool;
+    did_check_body: bool;
+    did_codegen_body: bool;
+}
+
+struct ASTAttr {
+    name: SubStr;
+    loc: Loc;
+    data: ASTAttrData;
+}
+
+union ASTAttrData {
+    Expand,
+    Naked,
+    __count,
+}
+
+union ASTStmt {
+    Directive(&AST),
+    Expr(&AST),
+    ReturnExpr(&AST),
+    ReturnVoid,
+    Let {
+        pat: &AST,
+        expr: &AST,       // if null: let <pat>;
+        trampoline: &AST, // if null: let <pat> = <expr>;
+    },
+    Comptime {
+        pat: &AST,
+        expr: &AST,       // if null: let <pat>;
+        trampoline: &AST, // if null: let <pat> = <expr>;
+    },
+}
+
+union ASTPat {
+    Ident(SubStr),
+    PatWithType(&AST, &AST), // SubPattern, Type
+}
+
+union ASTExpr {
+    Noop, // See FIXME for union Directive
+    BuiltinType { name: SubStr },
+    Ident { name: SubStr },
+    FnIdent { name: SubStr, fn: &AST },
+    Number { value: SubStr },
+    StringLiteral { value: String },
+    Call(&AST, GAF_List), // arguments = List<&AST>
+    // if (<cond>) <then>
+    If(&AST, &AST),
+    // if (<cond>) <then> else <else>
+    IfElse(&AST, &AST, &AST),
+    // BlockExpr is something like `{ let a = 12; a }` and returns a non-none value
+    BlockExpr(GAF_List, &AST), // List<&AST>
+    BlockVoid(GAF_List), // List<&AST>
+    Unary(ASTUnary),
+    Binary(ASTBinary),
+    Blank,
+    Null,
+    Directive(&AST),
+    ComptimeValue(Value),
+    Generic,
+    ResolvedGeneric(&Type),
+    As(&AST, &AST),
+    Dot(&AST, &AST),
+}
+
+union ASTBinary {
+    Assign(&AST, &AST),
+    PlusAssign(&AST, &AST),
+    MinusAssign(&AST, &AST),
+    MultAssign(&AST, &AST),
+    DivAssign(&AST, &AST),
+    Equal(&AST, &AST),
+    Plus(&AST, &AST),
+    Minus(&AST, &AST),
+    Mult(&AST, &AST),
+    Div(&AST, &AST),
+    LessThan(&AST, &AST),
+    LessEqual(&AST, &AST),
+    GreaterThan(&AST, &AST),
+    GreaterEqual(&AST, &AST),
+    __count,
+}
+
+union ASTUnary {
+    LogicalNot(&AST),
+    AddressOf(&AST),
+    ValueOf(&AST),
+}
+
+union Directive {
+    Run(&AST),
+    Insert(&AST, Insert_Context),
+    Assert(&AST, String),
+    // FIXME(2026-06-05): Ideally we dont wanna have a CheckedBir,
+    //                    but the code around #bir is kinda sloppy rn
+    Bir(Lexer),
+    CheckedBir(Lexer, GAF_List), // List<Type>
+    Debug,
+}

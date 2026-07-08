@@ -18,6 +18,8 @@ import "parser.bufo";
 import "codegen.bufo";
 import "interp.bufo";
 
+import "../generated/ast.template.bufo";
+
 @trace func check_struct(node: &AST) {
     let &ASTData::Struct(struct_info) = &node.data else {
         unreachable("check_struct: Node is not a struct");

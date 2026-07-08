@@ -1,8 +1,8 @@
 
-#load "ops.bufo";
+#load "ops.bufo2";
 
-#load "tests/long_func.bufo";
-#load "tests/fib.bufo";
+#load "tests/long_func.bufo2";
+#load "tests/fib.bufo2";
 
 struct List($T) {
     // Pointer to the heap

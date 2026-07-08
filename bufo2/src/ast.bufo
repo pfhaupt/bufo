@@ -17,22 +17,7 @@ import "parser.bufo";
 import "codegen.bufo";
 import "interp.bufo";
 
-struct FunctionState {
-    is_generic: bool;
-    is_monomorphized: bool;
-    did_parse_signature: bool;
-    did_check_signature: bool;
-    did_parse_body: bool;
-    did_check_body: bool;
-    did_codegen_body: bool;
-}
-
-struct StructState {
-    is_monomorphized: bool;
-    did_parse_signature: bool;
-    did_parse_fields: bool;
-    did_check_fields: bool;
-}
+import "../generated/ast.template.bufo";
 
 func create_mapping_key(out: &String, mapping: &GAF_HashMap) {
     for (let i: usize = 0; i < mapping.capacity; i = i + 1) {
@@ -41,16 +26,6 @@ func create_mapping_key(out: &String, mapping: &GAF_HashMap) {
         let type = *(val_ptr as &&Type);
         to_string(out, type);
     }
-}
-
-struct AST {
-    super_node: &AST; // Function, Struct or the like
-    parent: &AST;     // Expr can be parent of Expr
-    origin: SubStr;
-    loc: Loc;
-    attributes: GAF_List; // List<ASTAttr>
-    type: &Type;
-    data: ASTData;
 }
 
 func has_attribute(node: &AST, attr: ASTAttrData) -> bool {
@@ -111,28 +86,6 @@ func is_block(node: &AST) -> bool {
         return true;
     }
     return false;
-}
-
-union ASTData {
-    Struct(ASTStruct),
-    Field(SubStr, &AST),
-    Function(ASTFunction),
-    Stmt(ASTStmt),
-    Expr(ASTExpr),
-    Pat(ASTPat),
-    Param(&AST),
-    Directive(Directive),
-}
-
-struct ASTStruct {
-    state: StructState;
-    loc: Loc;
-    name: SubStr;
-    parameters: GAF_List; // List<&AST>
-    fields: GAF_List; // List<&AST>
-    monomorphized_instances: GAF_HashMap; // HashMap<String, &AST>
-    size_in_bytes: usize;
-    align_in_bytes: usize;
 }
 
 func is_generic(struct_info: &ASTStruct) -> bool {
@@ -227,18 +180,6 @@ func get_func_info(fn: &AST) -> &ASTFunction {
     return &func_info;
 }
 
-struct ASTFunction {
-    state: FunctionState;
-    loc: Loc;
-    name: SubStr;
-    scopes: GAF_List;     // List<Scope_Info>
-    return_type: &AST;
-    params: GAF_List;     // List<&AST>
-    block: &AST;
-    code: Code;
-    monomorphized_instances: GAF_HashMap; // HashMap<String, &AST>
-}
-
 func is_generic(func_info: &ASTFunction) -> bool {
     let (handler, state) = wait_for_monitor(&func_info.state.did_parse_signature);
     let Corot_Result::Success = state else {
@@ -269,18 +210,8 @@ func finalize_function_type(ast: &AST, func_info: &ASTFunction) {
     unregister_monitor(&ast.type, Corot_Result::Success);
 }
 
-struct ASTAttr {
-    name: SubStr;
-    loc: Loc;
-    data: ASTAttrData;
-}
 func is_function_attribute(attr: ASTAttr) -> bool {
     return is_function_attribute(attr.data);
-}
-union ASTAttrData {
-    Expand,
-    Naked,
-    __count,
 }
 func is_function_attribute(attr: ASTAttrData) -> bool {
     (comptime assert(tag(&ASTAttrData::__count) == 2, "is_function_attribute: Added more ASTAttrData"));
@@ -292,55 +223,6 @@ func is_function_attribute(attr: ASTAttrData) -> bool {
     return false;
 }
 
-union ASTStmt {
-    Directive(&AST),
-    Expr(&AST),
-    ReturnExpr(&AST),
-    ReturnVoid,
-    Let {
-        pat: &AST,
-        expr: &AST,       // if null: let <pat>;
-        trampoline: &AST, // if null: let <pat> = <expr>;
-    },
-    Comptime {
-        pat: &AST,
-        expr: &AST,       // if null: let <pat>;
-        trampoline: &AST, // if null: let <pat> = <expr>;
-    },
-}
-
-union ASTPat {
-    Ident(SubStr),
-    PatWithType(&AST, &AST), // SubPattern, Type
-}
-
-union ASTExpr {
-    Noop, // See FIXME for union Directive
-    BuiltinType { name: SubStr },
-    Ident { name: SubStr },
-    FnIdent { name: SubStr, fn: &AST },
-    Number { value: SubStr },
-    StringLiteral { value: String },
-    Call(&AST, GAF_List), // arguments = List<&AST>
-    // if (<cond>) <then>
-    If(&AST, &AST),
-    // if (<cond>) <then> else <else>
-    IfElse(&AST, &AST, &AST),
-    // BlockExpr is something like `{ let a = 12; a }` and returns a non-none value
-    BlockExpr(GAF_List, &AST), // List<&AST>
-    BlockVoid(GAF_List), // List<&AST>
-    Unary(ASTUnary),
-    Binary(ASTBinary),
-    Blank,
-    Null,
-    Directive(&AST),
-    ComptimeValue(Value),
-    Generic,
-    ResolvedGeneric(&Type),
-    As(&AST, &AST),
-    Dot(&AST, &AST),
-}
-
 func get_statements(node: &ASTExpr) -> &GAF_List {
     if let &ASTExpr::BlockVoid(stmts) = node {
         return &stmts;
@@ -349,41 +231,6 @@ func get_statements(node: &ASTExpr) -> &GAF_List {
         return &stmts;
     }
     unreachable("get_statements: Node is not a block");
-}
-
-union Directive {
-    Run(&AST),
-    Insert(&AST, Insert_Context),
-    Assert(&AST, String),
-    // FIXME(2026-06-05): Ideally we dont wanna have a CheckedBir,
-    //                    but the code around #bir is kinda sloppy rn
-    Bir(Lexer),
-    CheckedBir(Lexer, GAF_List), // List<Type>
-    Debug,
-}
-
-union ASTUnary {
-    LogicalNot(&AST),
-    AddressOf(&AST),
-    ValueOf(&AST),
-}
-
-union ASTBinary {
-    Assign(&AST, &AST),
-    PlusAssign(&AST, &AST),
-    MinusAssign(&AST, &AST),
-    MultAssign(&AST, &AST),
-    DivAssign(&AST, &AST),
-    Equal(&AST, &AST),
-    Plus(&AST, &AST),
-    Minus(&AST, &AST),
-    Mult(&AST, &AST),
-    Div(&AST, &AST),
-    LessThan(&AST, &AST),
-    LessEqual(&AST, &AST),
-    GreaterThan(&AST, &AST),
-    GreaterEqual(&AST, &AST),
-    __count,
 }
 
 func is_assignment(bin: ASTBinary) -> bool {
