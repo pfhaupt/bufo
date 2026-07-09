@@ -37,6 +37,7 @@
  *         - Implement better metaprogramming
  *       - Oh shit, bufo2 was supposed to have `type`
  *         - Compiler Refactoring (WE ARE HERE)
+ *           - Refactoring is done, but we can't really use variants yet
  */
 
 struct Foo {
@@ -49,21 +50,60 @@ union Option($T) {
     None;
 }
 
+type Stuff {
+    n: i64;
+    Value(i32);
+}
+
+func sizeof(t: $T) -> u64 @naked {
+    comptime ty = $T;
+    #bir {
+        entry:
+        param ty r9999, 0;
+        alloca ty r0;
+        alloca ty r1;
+        sub u64 r2, r1, r0;
+        ret u64 r2;
+    };
+}
+
 func main() {
     #run {
-        let n: i32 = 1;
-        // let some0: Option(i32) = blank;
-        // let some1 = Option.Some(n);
-        // let some2: Option(i32) = Option.Some(n);
-        // let some3: Option(i32) = Some(n);
-        // let some4 = Some(n);
-        // let none1: Option = None; // should fail, dont know $T
-        // let none2: Option(i32) = None;
-        // let none3: Option(i32) = Option.None;
-        // some4 = None;
-        // #assert some1 == Option.Some, "some1 is not Some";
-        // #assert some4 == Option.None, "some4 is not None";
-        // #assert none2 == None, "none2 is not None";
-        // #assert none3 != Option.None, "none3 is None";
+        let some0: Option(i32) = blank;
+        let stuff: Stuff = blank;
+        let size = sizeof(stuff);
+        #assert size == 16;
+
+        let some1 = Option.Some(n);
+        let some2: Option(i32) = Option.Some(n);
+        let some3: Option(i32) = .Some(n);
+        let some4 = .Some(n);
+        // none1 should fail, dont know $T
+        let none1: Option = .None;
+        let none2: Option(i32) = .None;
+        let none3: Option(i32) = Option.None;
+        some4 = .None;
+
+        #assert some1 == Option.Some;
+        #assert some1 == .Some;
+        #assert some4 == Option.None;
+        #assert some4 == .None;
+        #assert none2 == .None;
+        #assert none3 != Option.None;
+        #assert none3 != .None;
+
+        // Bonus:
+        // let stuff1: Stuff = blank; // warning: Initializing type with variants with blank
+        // stuff1.n = 12;
+        // stuff1 = .Value(n); // works but sets n to 0
+        // #assert stuff1.n == 0, "stuff1.n is not 0";
+        // stuff1 = .{ n: 12, Value(n) }; // set fields accordingly, infer struct type
+        // stuff1 = Stuff { n: 12, Value(n) }; // explicit initialization
+        // #assert stuff1.n == 12, "stuff1.n is not 12 part 1";
+
+        // let stuff2 = Stuff { n: 13, Value(n) };
+        // #assert stuff1.n == 12, "stuff1.n is not 12 part 2";
+        // stuff1 = .{ Value(n), ..stuff2 }; // copy stuff2 to stuff1 and set variant
+        // #assert stuff1.n == 13, "stuff1.n is not 13";
     }
 }

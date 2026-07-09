@@ -335,6 +335,9 @@ func to_string(out: &String, t: &Type) {
     to_string(out, t.base);
 }
 
+func get_size_and_alignment(t: &Type) -> (usize, usize) {
+    return (get_size(t), get_align(t));
+}
 func get_align(t: &Type) -> usize {
     if (t.meta_level == 0) return get_align(t.base);
     message(todo(blank, "get_align of meta type %", t.base));

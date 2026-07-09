@@ -44,7 +44,6 @@ shared Generic_Fields {
 }
 
 shared Data_Structure_Fields {
-    parameters: GAF_List; // List<&AST>
     size_in_bytes: usize;
     align_in_bytes: usize;
 }
@@ -53,12 +52,13 @@ struct ASTTypeDeclField : Common_Fields {
     type_node: &AST;
 }
 
-struct ASTTypeDeclVariant : Common_Fields {
+struct ASTTypeDeclVariant : Common_Fields, Data_Structure_Fields {
     fields: GAF_List; // List<&AST>
 }
 
 struct ASTTypeDecl : Common_Fields, Generic_Fields, Data_Structure_Fields {
     state: TypeDeclState;
+    parameters: GAF_List; // List<&AST>
     fields: GAF_List;   // List<ASTTypeDeclField>
     variants: GAF_List; // List<ASTTypeDeclVariant>
 }
@@ -88,6 +88,8 @@ struct FunctionState : State {
 struct TypeDeclState : State {
     did_parse_fields: bool;
     did_check_fields: bool;
+    did_parse_variants: bool;
+    did_check_variants: bool;
 }
 
 struct ASTAttr {
@@ -173,6 +175,7 @@ union ASTUnary {
     LogicalNot(&AST),
     AddressOf(&AST),
     ValueOf(&AST),
+    __count,
 }
 
 union Directive {

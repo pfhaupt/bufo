@@ -476,7 +476,7 @@ func expect(l: &Lexer, tokens: ...TokenData) -> Token {
     }
     format(&out, ", but got %.", to_cstr(tkn.data));
     message(error(tkn.loc, "%", out));
-    unreachable(); // error terminates
+    return blank; // normally unreachable, except for skip_until_matching
 }
 
 func skip_until(l: &Lexer, token: TokenData) -> Token {
@@ -487,10 +487,16 @@ func skip_until(l: &Lexer, token: TokenData) -> Token {
 }
 
 func skip_until_matching(lexer: &Lexer, start: TokenData, end: TokenData) -> Token {
-    expect(lexer, start);
+    let tok = expect(lexer, start);
     let count: usize = 1;
     while (count != 0) {
         let tkn = next(lexer);
+        if (tag(&tkn.data) == tag(&TokenData::EndOfFile)) {
+            suppress_exit_on_error();
+            expect(lexer, end);
+            message(note(tok.loc, "...while trying to match this %.", to_cstr(start)));
+            message(finalize_error());
+        }
         if (tag(&tkn.data) == tag(&start)) {
             count = count + 1;
         } else if (tag(&tkn.data) == tag(&end)) {

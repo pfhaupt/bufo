@@ -20,15 +20,41 @@ import "interp.bufo";
 
 import "../generated/ast.template.bufo";
 
-@trace func calculate_size_and_alignment_of_type_decl(type_decl_info: &ASTTypeDecl) {
+@trace func calculate_size_and_alignment_of_type_decl_variant(variant: &ASTTypeDeclVariant) {
     let align: usize = 1;
     let size: usize = 0;
+    for (let i: usize = 0; i < variant.fields.length; i = i + 1) {
+        let field = get_ref(&variant.fields, i) as &AST;
+        assert(field.type != null, "variant field type is null");
+        let ft = unwrap_meta_type(field.type, 1);
+        let (fs, fa) = get_size_and_alignment(ft);
+        if (fa > align) align = fa;
+        size = size + fs;
+        if (i != variant.fields.length - 1) {
+            let nf = get_ref(&variant.fields, i + 1) as &AST;
+            let nft = unwrap_meta_type(nf.type, 1);
+            let na = get_align(nft);
+            size = next_multiple_of(size, na);
+        }
+    }
+    size = next_multiple_of(size, align);
+
+    variant.size_in_bytes = size;
+    variant.align_in_bytes = align;
+    unregister_monitor(&variant.size_in_bytes);
+    unregister_monitor(&variant.align_in_bytes);
+}
+
+@trace func calculate_size_and_alignment_of_type_decl(type_decl_info: &ASTTypeDecl) {
+    // <fields> <pad> <tag> <pad> <variant>
+    let align: usize = 1;
+    let size: usize = 0;
+
     for (let i: usize = 0; i < type_decl_info.fields.length; i = i + 1) {
         let field: &ASTTypeDeclField = get_ref_raw(&type_decl_info.fields, i);
         assert(field.type_node.type != null, "field type is null");
         let field_type = unwrap_meta_type(field.type_node.type, 1);
-        let field_size = get_size(field_type);
-        let field_align = get_align(field_type);
+        let (field_size, field_align) = get_size_and_alignment(field_type);
         if (field_align > align) align = field_align;
         size = size + field_size;
         if (i != type_decl_info.fields.length - 1) {
@@ -38,6 +64,31 @@ import "../generated/ast.template.bufo";
             size = next_multiple_of(size, next_align);
         }
     }
+
+    if (type_decl_info.variants.length > 0) {
+        assert(type_decl_info.variants.length <= 65535, "bro wtf are you doing");
+        let tag_s: usize = 1;
+        let tag_a: usize = 1;
+        if (type_decl_info.variants.length >= 256) tag_s = tag_a = 2;
+
+        size = next_multiple_of(size, tag_a);
+        size = size + tag_s;
+
+        let max_va: usize = 1;
+        let max_vs: usize = 0;
+        for (let i: usize = 0; i < type_decl_info.variants.length; i = i + 1) {
+            let variant: &ASTTypeDeclVariant = get_ref_raw(&type_decl_info.variants, i);
+            calculate_size_and_alignment_of_type_decl_variant(variant);
+            let vs = variant.size_in_bytes;
+            let va = variant.align_in_bytes;
+            if (vs > max_vs) max_vs = vs;
+            if (va > max_va) max_va = va;
+        }
+
+        size = next_multiple_of(size, max_va);
+        size = size + max_vs;
+    }
+
     size = next_multiple_of(size, align);
 
     type_decl_info.size_in_bytes = size;
@@ -50,21 +101,35 @@ import "../generated/ast.template.bufo";
     let &ASTData::TypeDecl(type_decl_info) = &node.data else {
         unreachable("check_type_decl: Node is not a type_decl");
     };
+
     let scopes = new_GAF_List(type_info(Scope_Info));
     for (let i: usize = 0; i < type_decl_info.fields.length; i = i + 1) {
         let field: &ASTTypeDeclField = get_ref_raw(&type_decl_info.fields, i);
-        let type = check_expr(&scopes, field.type_node);
-        if (type == null) message(todo(node.loc, "field type is null"));
+        let field_state = check_expr(&scopes, field.type_node);
+        let type = assert_is_valid(field_state, "TypeDecl Field type is invalid");
         if (type.meta_level == 0) message(fatal(node.loc, "field type is value: %", *type));
     }
     type_decl_info.state.did_check_fields = true;
     unregister_monitor(&type_decl_info.state.did_check_fields);
 
+    for (let i: usize = 0; i < type_decl_info.variants.length; i = i + 1) {
+        let variant: &ASTTypeDeclVariant = get_ref_raw(&type_decl_info.variants, i);
+        for (let j: usize = 0; j < variant.fields.length; j = j + 1) {
+            let field: &&AST = get_ref_raw(&variant.fields, j);
+            let field_state = check_expr(&scopes, *field);
+            let type = assert_is_valid(field_state, "TypeDecl Variant Field type is invalid");
+            if (type.meta_level == 0) message(fatal(node.loc, "variant field type is value: %", *type));
+        }
+    }
+    type_decl_info.state.did_check_variants = true;
+    unregister_monitor(&type_decl_info.state.did_check_variants);
+
     calculate_size_and_alignment_of_type_decl(&type_decl_info);
 }
 
 @trace func check_function_return_type(func_state: &ASTFunction) {
-    let ret_type = check_expr(&func_state.scopes, func_state.return_type);
+    let ret_state = check_expr(&func_state.scopes, func_state.return_type);
+    let ret_type = assert_is_valid(ret_state, "check_function_return_type: Return type is invalid");
     let fn = get_parent_function(func_state.return_type);
     let none = create_meta_type(1, PrimType::None);
     if (has_attribute(fn, ASTAttrData::Expand) && !is_equal_to(ret_type, none)) {
@@ -88,7 +153,8 @@ import "../generated/ast.template.bufo";
     if (contains(&_last.variables, param.origin)) {
         message(todo(param.loc, "check_param: Redefinition of param"));
     } else {
-        param.type = check_expr(scopes, p_type);
+        let param_state = check_expr(scopes, p_type);
+        param.type = assert_is_valid(param_state, "check_param: Param type is invalid");
         add(&_last.variables, param.origin, Variable {
             origin: param,
             type: unwrap_meta_type(param.type, 1),
@@ -96,7 +162,7 @@ import "../generated/ast.template.bufo";
     }
 }
 
-@trace func check_block(block: &AST) -> &Type {
+@trace func check_block(block: &AST) -> TCState {
     // TODO(2026-04-13): Once we have stuff like #value_of() we can condense BlockExpr and
     //                   BlockVoid into one block in the parser, so we don't have to pass
     //                   null as value here. BlockVoid would simply have an implicit
@@ -134,20 +200,23 @@ import "../generated/ast.template.bufo";
 
     let type = create_base_type(PrimType::None);
     if (value != null) {
-        type = check_expr(&func_state.scopes, value);
+        let value_state = check_expr(&func_state.scopes, value);
+        if (value_state.please_infer) return value_state;
+        type = assert_is_valid(value_state, "check_block: Value type is invalid");
     }
 
     pop(&func_state.scopes);
 
-    return type;
+    return mktcs(true, false, false, type);
 }
 
-@trace func check_stmt(scopes: &GAF_List, stmt: &AST) -> &Type {
+@trace func check_stmt(scopes: &GAF_List, stmt: &AST) -> TCState {
     let &ASTData::Stmt(actual_stmt) = &stmt.data else {
         message(fatal(stmt.loc, "check_stmt: Node is not a statement"));
         unreachable();
     };
-    if (stmt.type != null) return stmt.type;
+    if (stmt.type != null) return mktcs(true, false, false, stmt.type);
+
     let type: &Type = create_base_type(PrimType::None);
     let f = func (stmt: &AST, scopes: &GAF_List, pat: &AST, expr: &AST, trampoline: &AST) {
         if (expr != null) {
@@ -209,11 +278,12 @@ import "../generated/ast.template.bufo";
             assert(ret_type != null, "check_stmt: Function doesn't have return type set");
             assert(ret_type.meta_level > 0, "check_stmt: Function doesn't have meta return type");
             let instance_of_ret_type = unwrap_meta_type(ret_type, 1);
-            let etype = check_expr(scopes, expr);
-            if (etype == null) {
-                etype = infer_type_onto_expr(scopes, instance_of_ret_type, expr);
-                assert(etype != null, "check_stmt: Could not infer return type onto expression");
+            let expr_state = check_expr(scopes, expr);
+            if (expr_state.please_infer) {
+                expr_state = infer_type_onto_expr(scopes, instance_of_ret_type, expr);
+                assert(!expr_state.please_infer, "check_stmt: Could not infer return type onto expression");
             }
+            let etype: &Type = assert_is_valid(expr_state, "check_stmt: Return Expr type is invalid");
             if (!is_equal_to(etype, instance_of_ret_type)) {
                 let t1 = to_string(instance_of_ret_type);
                 let t2 = to_string(etype);
@@ -226,14 +296,15 @@ import "../generated/ast.template.bufo";
         }
         &ASTStmt::Expr(expr) => {
             let is_assignment = is_assignment(expr);
-            let _type = check_expr(scopes, expr);
+            let expr_state = check_expr(scopes, expr);
             let none = create_base_type(PrimType::None);
-            if (_type == null) {
-                _type = infer_type_onto_expr(scopes, none, expr);
-                if (_type == null) {
+            if (expr_state.please_infer) {
+                expr_state = infer_type_onto_expr(scopes, none, expr);
+                if (expr_state.please_infer) {
                     message(error(stmt.loc, "Couldn't infer type of expression."));
                 }
             }
+            let _type = assert_is_valid(expr_state, "check_stmt: Expr type is invalid");
             if (!is_equal_to(_type, none) && !is_assignment) {
                 message(warn(stmt.loc, "Unused expression."));
             }
@@ -242,67 +313,78 @@ import "../generated/ast.template.bufo";
         &ASTStmt::Directive(dir) => {
             let (_type, replaced_node) = check_directive(scopes, stmt, dir);
             if (replaced_node) return check_stmt(scopes, stmt);
-            type = _type;
+            if (_type.please_infer) return _type;
+            type = assert_is_valid(_type, "check_stmt: Directive type is invalid");
         }
         _ => {
             message(todo(stmt.loc, "check_stmt: Can't check stmt % yet", stmt));
         }
     }
 
+    assert(type != null, "check_stmt: Type is null");
+
     stmt.type = type;
-    return type;
+    return mktcs(true, false, false, type);
 }
 
-@trace func infer_type_onto_call(scopes: &GAF_List, ret_type: &Type, _expr: &AST) -> &Type {
+@trace func infer_type_onto_call(scopes: &GAF_List, ret_type: &Type, _expr: &AST) -> TCState {
     let &ASTData::Expr(ASTExpr::Call(_base, _args)) = &_expr.data else {
         unreachable("infer_type_onto_call: Node is not a call");
     };
     let args = new_GAF_List(type_info(&Type));
     for (let i: usize = 0; i < _args.length; i = i + 1) {
         let arg = get_ref(&_args, i) as &AST;
-        let arg_type = check_expr(scopes, arg);
+        let arg_state = check_expr(scopes, arg);
+        let arg_type = arg_state.computed_type;
         if (arg_type == null) {
             arg_type = create_base_type(BaseType::Unknown);
         }
         push(&args, arg_type);
     }
+
     let fn = create_base_type(BaseType::Func(args, ret_type));
-    let res = infer_type_onto_expr(scopes, fn, _base);
-    if (res == null) return null;
+    let res_state = infer_type_onto_expr(scopes, fn, _base);
+    if (res_state.please_infer) return res_state;
+    let res = assert_is_valid(res_state, "infer_type_onto_call: Base type is invalid");
     let BaseType::Func(params, ret) = res.base else {
         unreachable("infer_type_onto_call: Inferred non-function onto call");
     };
+
     for (let i: usize = 0; i < _args.length; i = i + 1) {
         let arg = get_ref(&_args, i) as &AST;
         let _par = get_ref(&params, i) as &Type;
         let par = unwrap_meta_type(_par, 1);
-        let arg_type = infer_type_onto_expr(scopes, par, arg);
-        if (arg_type == null) {
+        let arg_state = infer_type_onto_expr(scopes, par, arg);
+        if (arg_state.please_infer) {
             message(todo(_expr.loc, "infer_type_onto_call: Can't infer call argument"));
         }
+        let arg_type = assert_is_valid(arg_state, "infer_type_onto_call: Call argument type is invalid");
     }
     // REVIEW(2026-05-30): Should we expand here?
     if (expand_function_if_necessary(_expr, _base, &_args)) {
         // We just replaced a function call with a new block, we don't know anything about it.
-        return null;
+        return mktcs(false, false, true, null);
     }
-    return ret_type;
+
+    ret = unwrap_meta_type(ret, 1);
+    return mktcs(true, false, false, ret);
 }
 
-@trace func infer_type_onto_expr(scopes: &GAF_List, type: &Type, _expr: &AST) -> &Type {
-    let expr_type = check_expr(scopes, _expr);
-    if (expr_type != null) {
+@trace func infer_type_onto_expr(scopes: &GAF_List, type: &Type, _expr: &AST) -> TCState {
+    let expr_state = check_expr(scopes, _expr);
+    if let (true, expr_type) = get_type_if_complete(expr_state) {
         if (!is_equal_to(type, expr_type)) {
             message(error(_expr.loc, "Could not infer type: Expected type %, but got %.", to_string(type), to_string(expr_type)));
         }
-        return expr_type;
+        return mktcs(true, false, false, expr_type);
     }
     let &ASTData::Expr(expr) = &_expr.data else {
         unreachable("infer_type_onto_expr: Node is not an expression");
     };
+    let res_state = mktcs(true, false, false, type);
     match (&expr) {
         &ASTExpr::Ident { value } => {
-            type = infer_type_onto_ident(scopes, type, _expr, value);
+            res_state = infer_type_onto_ident(scopes, type, _expr, value);
         }
         &ASTExpr::Number { value } => {
             if (!is_number(type)) {
@@ -331,14 +413,17 @@ import "../generated/ast.template.bufo";
         }
         &ASTExpr::Blank => { },
         &ASTExpr::Call(_base, _args) => {
-            type = infer_type_onto_call(scopes, type, _expr);
+            res_state = infer_type_onto_call(scopes, type, _expr);
         }
         _ => {
             message(todo(_expr.loc, "infer_type_onto_expr: Can't infer expression %", expr));
         }
     }
-    _expr.type = type;
-    return type;
+
+    if (res_state.please_infer) return res_state;
+
+    _expr.type = assert_is_valid(res_state, "infer_type_onto_expr: Inferred type is invalid");
+    return res_state;
 }
 
 @trace func check_and_bind_pattern(scopes: &GAF_List, _pat: &AST, _expr: &AST) -> (bool, bool) {
@@ -352,8 +437,10 @@ import "../generated/ast.template.bufo";
     let type: &Type = null;
     match (&pat) {
         &ASTPat::Ident(name) => {
-            type = check_expr(scopes, _expr);
-            if (type == null) message(todo(_expr.loc, "check_and_bind_pattern: % wants infer", name));
+            let type_state = check_expr(scopes, _expr);
+            if (type_state.please_infer) message(todo(_expr.loc, "check_and_bind_pattern: % wants infer", name));
+            type = assert_is_valid(type_state, "check_and_bind_pattern: Ident type is invalid");
+
             let _last = get_ref_raw(scopes, scopes.length - 1) as &Scope_Info;
             if (contains(&_last.variables, _pat.origin)) {
                 message(todo(_pat.loc, "check_and_bind_pattern: Redefinition of identifier"));
@@ -366,11 +453,12 @@ import "../generated/ast.template.bufo";
             result = (false, false);
         },
         &ASTPat::PatWithType(subpat, subtype) => {
-            type = check_expr(scopes, subtype);
-            assert(type != null, "check_and_bind_pattern: PatWithType: Type wants infer");
+            let type_state = check_expr(scopes, subtype);
+            if (type_state.please_infer) message(todo(_expr.loc, "check_and_bind_pattern: Type wants infer"));
+            type = assert_is_valid(type_state, "check_and_bind_pattern: PatWithType type is invalid");
             type = unwrap_meta_type(type, 1);
-            type = infer_type_onto_expr(scopes, type, _expr);
-            assert(_expr.type != null, "check_and_bind_pattern: PatWithType: Inference failed");
+            type_state = infer_type_onto_expr(scopes, type, _expr);
+            assert(type_state.is_complete && _expr.type != null, "check_and_bind_pattern: PatWithType: Inference failed");
 
             result = check_and_bind_pattern(scopes, subpat, _expr);
             assert(subpat.type != null, "check_and_bind_pattern: PatWithType: Subpattern has no type");
@@ -384,7 +472,7 @@ import "../generated/ast.template.bufo";
     return result;
 }
 
-@trace func infer_type_onto_ident(scopes: &GAF_List, infer_type: &Type, ast: &AST, ident: SubStr) -> &Type {
+@trace func infer_type_onto_ident(scopes: &GAF_List, infer_type: &Type, ast: &AST, ident: SubStr) -> TCState {
     let type: &Type = null;
     if let (var, true) = get_variable_by_name(scopes, ident) {
         if (var.type == null) {
@@ -398,11 +486,14 @@ import "../generated/ast.template.bufo";
             if (sl != null && fl != null) {
                 message(todo(ast.loc, "infer_type_onto_ident: global ident can be both"));
             } else if (sl != null) {
-                type = create_meta_type(1, BaseType::TypeDecl(sl.node));
+                let type = create_meta_type(1, BaseType::TypeDecl(sl.node));
+                let info = get_type_decl_info(sl.node);
+                let isg = is_generic(info);
+                return mktcs(!isg, isg, false, type);
             } else if (fl != null) {
                 assert(fl.overloads.length != 0, "infer_type_onto_ident: function overloads are empty??");
 
-                if (infer_type == null) return null;
+                if (infer_type == null) return mktcs(false, false, true, null);
                 let &BaseType::Func(args, ret) = &infer_type.base else {
                     message(error(ast.loc, "Expected value of type %, but found a function named %.", to_string(infer_type), ident));
                     unreachable(); // error terminates
@@ -469,7 +560,7 @@ import "../generated/ast.template.bufo";
                 }
                 if (candidates.length == 0) {
                     if (is_unknown(ret)) {
-                        return null;
+                        return mktcs(false, false, true, null);
                     }
                     suppress_exit_on_error();
                     message(
@@ -526,9 +617,10 @@ import "../generated/ast.template.bufo";
             message(todo(ast.loc, "infer_type_onto_ident: no such ident"));
         }
     }
-    return type;
-}
 
+    assert(type != null, "infer_type_onto_ident: Type is null");
+    return mktcs(true, false, false, type);
+}
 
 @trace func convert_to_comptime_value_if_possible(scopes: &GAF_List, expr: &AST) -> (Value, bool) {
     let &ASTData::Expr(sub) = &expr.data else {
@@ -548,15 +640,16 @@ import "../generated/ast.template.bufo";
     return (ct_value, true);
 }
 
-@trace func check_directive(scopes: &GAF_List, parent: &AST, dir: &AST) -> (&Type, bool) {
+@trace func check_directive(scopes: &GAF_List, parent: &AST, dir: &AST) -> (TCState, bool) {
     let &ASTData::Directive(directive) = &dir.data else {
         unreachable("check_directive: Node is not a directive");
     };
     match (directive) {
         Directive::Run(run_expr) => {
-            let _type = check_expr(scopes, run_expr);
+            let _type_state = check_expr(scopes, run_expr);
             // We don't know what `#run <expr>` should return. Must infer.
-            if (_type == null) return (null, false);
+            if (_type_state.please_infer) return (_type_state, false);
+            let _type = assert_is_valid(_type_state, "check_directive: #run expr type is invalid");
 
             // We do know its type. We can now execute the expression and
             // replace the AST node with a new value.
@@ -589,14 +682,15 @@ import "../generated/ast.template.bufo";
                 parent.data = ASTData::Expr(ASTExpr::ComptimeValue(var));
             }
             parent.type = _type;
-            return (_type, true);
+            return (mktcs(true, false, false, _type), true);
         }
         Directive::Insert(insert_expr, insert_context) => {
-            let _type = check_expr(scopes, insert_expr);
+            let _type_state = check_expr(scopes, insert_expr);
             let str = create_base_type(PrimType::Str);
-            if (_type == null) {
-                _type = infer_type_onto_expr(scopes, str, insert_expr);
+            if (_type_state.please_infer) {
+                _type_state = infer_type_onto_expr(scopes, str, insert_expr);
             }
+            let _type = assert_is_valid(_type_state, "check_directive: #insert expr type is invalid");
             if (!is_equal_to(_type, str)) {
                 message(error(dir.loc, "#insert sub-expression must be a value of type %, but got %.", to_string(str), to_string(_type)));
             }
@@ -631,28 +725,32 @@ import "../generated/ast.template.bufo";
                     message(error(dir.loc, "Expected a statement in this #insert context, but got an expression instead."));
                     unreachable(); // error terminates
                 };
-                res.type = check_stmt(scopes, res);
+                let res_state = check_stmt(scopes, res);
+                res.type = assert_is_valid(res_state, "check_directive: #insert-ed stmt type is invalid");
             } else if (insert_context.parse_fn as Any == parse_expr as Any) {
                 let ASTData::Expr(_) = res.data else {
                     message(error(dir.loc, "Expected an expression in this #insert context, but got a statement instead."));
                     unreachable(); // error terminates
                 };
-                res.type = check_expr(scopes, res);
+                let res_state = check_expr(scopes, res);
+                res.type = assert_is_valid(res_state, "check_directive: #insert-ed expr type is invalid");
             }
 
             *parent = *res;
-            return (res.type, true);
+            return (mktcs(true, false, false, res.type), true);
         }
         Directive::Assert(assert_expr, _msg) => {
-            let _type = check_expr(scopes, assert_expr);
+            let _type_state = check_expr(scopes, assert_expr);
             let b = create_base_type(PrimType::Bool);
-            if (_type == null) {
-                _type = infer_type_onto_expr(scopes, b, assert_expr);
+            if (_type_state.please_infer) {
+                _type_state = infer_type_onto_expr(scopes, b, assert_expr);
             }
+            let _type = assert_is_valid(_type_state, "check_directive: #assert expr type is invalid");
             if (!is_equal_to(_type, b)) {
                 message(error(dir.loc, "#assert sub-expression must be a value of type %, but got %.", to_string(b), to_string(_type)));
             }
-            return (create_base_type(PrimType::None), false);
+            let t = create_base_type(PrimType::None);
+            return (mktcs(true, false, false, t), false);
         }
         Directive::Bir(lexer) => {
             let checked_lexer = lexer;
@@ -667,60 +765,17 @@ import "../generated/ast.template.bufo";
                 push(&type_list, type);
             }
             directive = Directive::CheckedBir(checked_lexer, type_list);
-            return (type, false);
+            return (mktcs(true, false, false, type), false);
         }
         Directive::Debug => {
-            return (create_base_type(PrimType::None), false);
+            let t = create_base_type(PrimType::None);
+            return (mktcs(true, false, false, t), false);
         }
         _ => {
             message(todo(dir.loc, "check_directive: Exhaustive handling of Directives"));
         }
     }
     unreachable("check_directive");
-}
-
-@trace func check_type_decl_type(scopes: &GAF_List, ast: &AST, base: &Type, args: GAF_List, node: &AST) -> &Type {
-    let &ASTData::TypeDecl(type_decl_info) = &node.data else {
-        unreachable("check_type_decl_type: Node is not a type_decl");
-    };
-    if (!is_generic(&type_decl_info)) message(todo(ast.loc, "check_type_decl_type: TypeDecl is not generic"));
-    if (args.length != type_decl_info.parameters.length) {
-        message(todo(ast.loc, "check_type_decl_type: Generic instantiation didn't get enough / got too many arguments"));
-    }
-    let types = new_GAF_List(type_info(&Type));
-    for (let i: usize = 0; i < args.length; i = i + 1) {
-        let arg = get_ref(&args, i) as &AST;
-        let &ASTData::Expr(_) = &arg.data else {
-            message(todo(arg.loc, "check_type_decl_type: Unexpected AST node %", arg.data));
-            unreachable(); // todo terminates
-        };
-        let type = check_expr(scopes, arg);
-        if (type == null) message(todo(arg.loc, "check_type_decl_type: Generic parameter wants infer???"));
-        assert(type != null, "check_type_decl_type: Could not get type of generic parameter");
-        if (type.meta_level == 0) {
-            message(todo(arg.loc, "check_type_decl_type: Generic parameter is not a meta-type"));
-            unreachable(); // todo terminates
-        }
-        push(&types, type);
-    }
-    return check_type_decl_type2(scopes, ast, base, types, node);
-}
-@trace func check_type_decl_type2(scopes: &GAF_List, ast: &AST, base: &Type, types: GAF_List, node: &AST) -> &Type {
-    let &ASTData::TypeDecl(type_decl_info) = &node.data else {
-        unreachable("check_type_decl_type2: Node is not a type_decl");
-    };
-    if (!is_generic(&type_decl_info)) message(todo(ast.loc, "check_type_decl_type2: TypeDecl is not generic"));
-    if (types.length != type_decl_info.parameters.length) {
-        message(todo(ast.loc, "check_type_decl_type2: Generic instantiation didn't get enough / got too many arguments"));
-    }
-    let mapping = new_generic_type_mapping();
-    for (let i: usize = 0; i < type_decl_info.parameters.length; i = i + 1) {
-        let node = get_ref(&type_decl_info.parameters, i) as &AST;
-        let type = get_ref(&types, i) as &Type;
-        add(&mapping, node.origin, type);
-    }
-    let new_node = monomorphize_type_decl_node(node, mapping);
-    return create_meta_type(base.meta_level, BaseType::TypeDecl(new_node));
 }
 
 @trace func __expand_helper(loc: Loc, parent: &AST, node: &AST, mapping: &GAF_HashMap, scopes: &GAF_List) -> &AST {
@@ -894,29 +949,56 @@ import "../generated/ast.template.bufo";
     return true;
 }
 
-@trace func check_expr(scopes: &GAF_List, _expr: &AST) -> &Type {
+struct TCState {
+    is_complete: bool;
+    needs_monomorphization: bool;
+    please_infer: bool;
+    computed_type: &Type;
+}
+
+@trace func get_type_if_complete(t: TCState) -> (bool, &Type) {
+    return (t.is_complete, t.computed_type);
+}
+
+@trace func assert_is_valid(t: TCState, msg: &char) -> &Type {
+    assert(t.is_complete || t.needs_monomorphization, msg);
+    assert(t.computed_type != null, msg);
+    return t.computed_type;
+}
+
+@trace func mktcs(is_complete: bool, needs_monomorphization: bool, please_infer: bool, type: &Type) -> TCState {
+    return TCState {
+        is_complete: is_complete,
+        needs_monomorphization: needs_monomorphization,
+        please_infer: please_infer,
+        computed_type: type,
+    };
+}
+
+@trace func check_expr(scopes: &GAF_List, _expr: &AST) -> TCState {
     message(dbg(_expr.loc, "check_expr: %", _expr.data));
-    if (_expr.type != null) return _expr.type;
+    if (_expr.type != null) return mktcs(true, false, false, _expr.type);
 
     let &ASTData::Expr(expr) = &_expr.data else {
         message(fatal(_expr.loc, "check_expr: Node is not an expression: %", _expr.data));
         unreachable();
     };
-    let type: &Type = null;
+    let type_state: TCState = blank;
     match (&expr) {
         &ASTExpr::ResolvedGeneric(gen) => {
-            type = gen;
+            type_state = mktcs(true, false, false, gen);
         }
         &ASTExpr::BuiltinType { name } => {
-            type = get_builtin_type(name);
+            let type = get_builtin_type(name);
+            type_state = mktcs(true, false, false, type);
         }
         &ASTExpr::FnIdent { name, fn } => {
             assert(fn.type != null, "FnIdent function type is null");
-            type = fn.type;
+            let type = fn.type;
+            type_state = mktcs(true, false, false, type);
         }
         &ASTExpr::Ident { name } => {
-            type = infer_type_onto_ident(scopes, null, _expr, name);
-            if (type == null) return null;
+            type_state = infer_type_onto_ident(scopes, null, _expr, name);
             if (is_in_function(_expr)) {
                 // If this identifier refers to a compile time variable, insert the value here.
                 let fn = get_parent_function(_expr);
@@ -927,47 +1009,51 @@ import "../generated/ast.template.bufo";
             }
         }
         &ASTExpr::Number { value } => {
-            return null; // Number Literals must be inferred from context
+            type_state = mktcs(false, false, true, null); // Number Literals must be inferred from context
         }
         &ASTExpr::StringLiteral { value } => {
-            type = create_base_type(PrimType::Str);
+            let type = create_base_type(PrimType::Str);
+            type_state = mktcs(true, false, false, type);
         }
         &ASTExpr::If(cond, then) => {
-            let cond_type = check_expr(scopes, cond);
+            let cond_state = check_expr(scopes, cond);
             let b = create_base_type(PrimType::Bool);
-            if (cond_type == null) {
-                cond_type = infer_type_onto_expr(scopes, b, cond);
+            if (cond_state.please_infer) {
+                cond_state = infer_type_onto_expr(scopes, b, cond);
             }
+            let cond_type = assert_is_valid(cond_state, "check_expr: If Cond type is invalid");
             if (!is_convertible_to(cond_type, b)) {
                 let t1 = to_string(b);
                 let t2 = to_string(cond_type);
                 message(error(cond.loc, "Expected expression of type %, but got %.", t1, t2));
             }
-            let then_type = check_stmt(scopes, then);
-            if (then_type == null) {
+            let then_state = check_stmt(scopes, then);
+            if (then_state.please_infer) {
                 message(todo(then.loc, "then needs infer?"));
             }
-            type = create_base_type(PrimType::None);
+            assert_is_valid(then_state, "check_expr: If Then type is invalid");
+            let type = create_base_type(PrimType::None);
+            type_state = mktcs(true, false, false, type);
         }
         &ASTExpr::Dot(lhs, member) => {
-            type = check_member_expr(scopes, _expr, lhs, member);
+            type_state = check_member_expr(scopes, _expr, lhs, member);
         }
         &ASTExpr::Call(_base, _args) => {
-            let base = check_expr(scopes, _base);
-            if (base == null) {
+            let base_state = check_expr(scopes, _base);
+            if (base_state.please_infer) {
                 // base may be null because of function overloading,
                 // however we already have some information at this point:
                 // The arguments of the call. We may not know all of them,
                 // and we don't even know what we expect, but we can still try
                 // to get a candidate here.
                 let ret_type = create_base_type(BaseType::Unknown);
-                let _fn_type = infer_type_onto_call(scopes, ret_type, _expr);
+                base_state = infer_type_onto_call(scopes, ret_type, _expr);
                 // Still nothing, we have to retry later.
-                if (_fn_type == null) return null;
-                assert(_base.type != null, "check_expr: infer_type_onto_call success but base type null");
-                base = _base.type;
+                if (base_state.please_infer) return base_state;
+                assert(_base.type != null, "check_expr: Base type is null");
+                base_state = mktcs(true, false, false, _base.type);
             }
-            if (base == null) return null;
+            let base = assert_is_valid(base_state, "check_expr: Call base type is invalid");
             match (&base.base) {
                 &BaseType::Func(params, ret) => {
                     if (_args.length != params.length) {
@@ -977,10 +1063,11 @@ import "../generated/ast.template.bufo";
                         let arg = get_ref(&_args, i) as &AST;
                         let _par = get_ref(&params, i) as &Type;
                         let par = unwrap_meta_type(_par, 1);
-                        let atype = check_expr(scopes, arg);
-                        if (atype == null) {
-                            atype = infer_type_onto_expr(scopes, par, arg);
+                        let arg_state = check_expr(scopes, arg);
+                        if (arg_state.please_infer) {
+                            arg_state = infer_type_onto_expr(scopes, par, arg);
                         }
+                        let atype = assert_is_valid(arg_state, "check_expr: Arg type is invalid");
                         if (!is_equal_to(atype, par)) {
                             if (is_convertible_to(atype, par)) {
                                 message(todo(arg.loc, "Parameter was declared to be %, but we got %. However, the type system could allow conversion.", par, atype));
@@ -988,55 +1075,91 @@ import "../generated/ast.template.bufo";
                             message(error(arg.loc, "Expected type %, but got %.", to_string(par), to_string(atype)));
                         }
                     }
-                    type = unwrap_meta_type(ret, 1);
+                    let type = unwrap_meta_type(ret, 1);
+                    type_state = mktcs(true, false, false, type);
                 }
                 &BaseType::TypeDecl(node) => {
+                    assert(node != null, "TypeDecl node is null");
+                    let info = get_type_decl_info(node);
+                    assert(is_generic(info), "TypeDecl node is not generic?");
+
                     if (base.meta_level == 0) {
-                        message(todo(_base.loc, "type_decl instance can't be called"));
-                    } else {
-                        type = check_type_decl_type(scopes, _expr, base, _args, node);
+                        message(
+                            error(_base.loc, "Cannot call expression of type %.", info.name),
+                            note(node.loc, "Type % declared here.", info.name),
+                        );
                     }
+                    if (!base_state.needs_monomorphization) {
+                        message(
+                            error(_base.loc, "Unexpected generic parameters for non-generic type %.", info.name),
+                            note(node.loc, "Type % declared here.", info.name),
+                        );
+                    }
+                    if (_args.length != info.parameters.length) {
+                        message(todo(_base.loc, "Generic instantiation didn't get enough / got too many arguments"));
+                    }
+
+                    let mapping = new_generic_type_mapping();
+                    for (let i: usize = 0; i < _args.length; i = i + 1) {
+                        let node = get_ref(&info.parameters, i) as &AST;
+                        let arg = get_ref(&_args, i) as &AST;
+                        let arg_state = check_expr(scopes, arg);
+                        if (arg_state.please_infer) {
+                            message(todo(arg.loc, "Generic parameter wants infer???"));
+                        }
+                        let type = assert_is_valid(arg_state, "Generic Type argument type is invalid");
+                        if (type.meta_level == 0) {
+                            message(todo(arg.loc, "check_type_decl_type: Generic parameter is not a meta-type"));
+                        }
+                        add(&mapping, node.origin, type);
+                    }
+                    let new_node = monomorphize_type_decl_node(node, mapping);
+                    let new_type = create_meta_type(base.meta_level, BaseType::TypeDecl(new_node));
+                    type_state = mktcs(true, false, false, new_type);
                 }
                 _ => { message(todo(_expr.loc, "check_expr: Call with base type %", *base)); }
             }
             expand_function_if_necessary(_expr, _base, &_args);
         }
         &ASTExpr::Unary(_) => {
-            type = check_unary_expr(scopes, _expr);
+            type_state = check_unary_expr(scopes, _expr);
         }
         &ASTExpr::Binary(_) => {
-            type = check_binary_expr(scopes, _expr);
+            type_state = check_binary_expr(scopes, _expr);
         }
         // Types of blank and null must be inferred elsewhere
-        &ASTExpr::Blank => { type = null; }
-        &ASTExpr::Null => { type = null; }
+        &ASTExpr::Blank => { type_state = mktcs(false, false, true, null); }
+        &ASTExpr::Null  => { type_state = mktcs(false, false, true, null); }
         &ASTExpr::Directive(dir) => {
             let (_type, replaced_node) = check_directive(scopes, _expr, dir);
-            if (replaced_node) type = check_expr(scopes, _expr);
-            else type = _type;
+            if (replaced_node) type_state = check_expr(scopes, _expr);
+            else type_state = _type;
         }
         &ASTExpr::BlockVoid(stmts) => {
-            type = check_block(_expr);
+            type_state = check_block(_expr);
         }
         &ASTExpr::BlockExpr(stmts, value) => {
-            type = check_block(_expr);
+            type_state = check_block(_expr);
         }
         &ASTExpr::Noop => {
-            type = create_base_type(PrimType::None);
+            type_state = mktcs(true, false, false, create_base_type(PrimType::None));
         }
         _ => {
             message(todo(_expr.loc, "check_expr: Can't check expression %", expr));
         }
     }
-    _expr.type = type;
-    return type;
+    if (type_state.please_infer) return type_state;
+    _expr.type = assert_is_valid(type_state, "check_expr: Expr type is invalid");
+    return type_state;
 }
 
-@trace func check_member_expr(scopes: &GAF_List, dot: &AST, lhs: &AST, member: &AST) -> &Type {
+@trace func check_member_expr(scopes: &GAF_List, dot: &AST, lhs: &AST, member: &AST) -> TCState {
     message(dbg(dot.loc, "check_member_expr"));
-    let lhs_type = check_expr(scopes, lhs);
-    if (lhs_type == null) return null;
+    let lhs_type_state = check_expr(scopes, lhs);
+    if (lhs_type_state.please_infer) return lhs_type_state;
+    let lhs_type = assert_is_valid(lhs_type_state, "check_member_expr: LHS type is invalid");
     if (is_pointer(lhs_type)) lhs_type = get_underlying_type(lhs_type);
+
     if let BaseType::TypeDecl(type_decl_node) = lhs_type.base {
         let &ASTData::Expr(ASTExpr::Ident { field_or_method }) = &member.data else {
             message(error(member.loc, "The Dot operator only supports member fields for structs."));
@@ -1045,7 +1168,6 @@ import "../generated/ast.template.bufo";
         let type_decl_info = get_type_decl_info(type_decl_node);
 
         if (lhs_type.meta_level == 0) {
-            fprint("info: %\n", *type_decl_info);
             assert(!is_generic(type_decl_info), "check_member_expr: Member access on generic LHS type?");
             assert(type_decl_info.state.did_check_fields, "check_member_expr: Node of LHS type is not type checked?");
             let (true, field) = get_field_by_name(type_decl_info, field_or_method) else {
@@ -1056,7 +1178,8 @@ import "../generated/ast.template.bufo";
             };
             assert(field.type_node.type != null, "check_member_expr: Field type is not ready");
             assert(field.type_node.type.meta_level > 0, "check_member_expr: Field type is not a meta type");
-            return unwrap_meta_type(field.type_node.type, 1);
+            let type = unwrap_meta_type(field.type_node.type, 1);
+            return mktcs(true, false, false, type);
         } else {
             message(todo(dot.loc, "check_member_expr: LHS is meta type"));
         }
@@ -1066,7 +1189,7 @@ import "../generated/ast.template.bufo";
     unreachable();
 }
 
-@trace func check_unary_expr(scopes: &GAF_List, expr: &AST) -> &Type {
+@trace func check_unary_expr(scopes: &GAF_List, expr: &AST) -> TCState {
     let &ASTData::Expr(ASTExpr::Unary(unary)) = &expr.data else {
         unreachable("check_unary_expr: Node is not a unary");
     };
@@ -1074,8 +1197,9 @@ import "../generated/ast.template.bufo";
     match (&unary) {
         &ASTUnary::AddressOf(sub) => {
             // & <sub>
-            let _type = check_expr(scopes, sub);
-            if (_type == null) return null;
+            let _type_state = check_expr(scopes, sub);
+            if (_type_state.please_infer) return _type_state;
+            let _type = assert_is_valid(_type_state, "check_unary_expr: AddressOf expr type is invalid");
             if (_type.meta_level != 0) {
                 message(todo(expr.loc, "&<type> doesn't make sense"));
             }
@@ -1083,8 +1207,9 @@ import "../generated/ast.template.bufo";
         }
         &ASTUnary::ValueOf(sub) => {
             // * <sub>
-            let _type = check_expr(scopes, sub);
-            if (_type == null) return null;
+            let _type_state = check_expr(scopes, sub);
+            if (_type_state.please_infer) return _type_state;
+            let _type = assert_is_valid(_type_state, "check_unary_expr: ValueOf expr type is invalid");
             if (_type.meta_level > 0) {
                 _type = unwrap_meta_type(_type, 1);
                 type = create_meta_type(1, BaseType::Ptr(_type));
@@ -1100,21 +1225,19 @@ import "../generated/ast.template.bufo";
             message(todo(expr.loc, "check_unary_expr: Can't check expression %", unary));
         }
     }
-    return type;
+    return mktcs(true, false, false, type);
 }
-@trace func check_binary_expr(scopes: &GAF_List, expr: &AST) -> &Type {
+@trace func check_binary_expr(scopes: &GAF_List, expr: &AST) -> TCState {
     let &ASTData::Expr(ASTExpr::Binary(bin)) = &expr.data else {
         unreachable("check_binary_expr: Node is not a binary");
     };
     let lhs: &AST = null;
     let rhs: &AST = null;
     extract_operands(bin, &lhs, &rhs);
-    let lhs_type = check_expr(scopes, lhs);
-    let rhs_type = check_expr(scopes, rhs);
+
     let args = new_GAF_List(type_info(&AST));
     if (is_assignment(bin)) {
         lhs = create_expr(lhs.parent, lhs.loc, blank, ASTExpr::Unary(ASTUnary::AddressOf(lhs)));
-        lhs_type = into_pointer_type(lhs_type);
     }
     push(&args, lhs);
     push(&args, rhs);

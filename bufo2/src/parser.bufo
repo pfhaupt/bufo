@@ -232,7 +232,9 @@ let loaded_files: GAF_HashMap = blank;
     register_monitor(&type_decl_state.size_in_bytes);
     register_monitor(&type_decl_state.align_in_bytes);
     register_monitor(&type_decl_state.state.did_parse_fields);
+    register_monitor(&type_decl_state.state.did_parse_variants);
     register_monitor(&type_decl_state.state.did_check_fields);
+    register_monitor(&type_decl_state.state.did_check_variants);
 
     expect(lexer, TokenData::CurlyOpen);
     while (!lexer_at(lexer, TokenData::CurlyClose)) {
@@ -268,6 +270,14 @@ let loaded_files: GAF_HashMap = blank;
     }
     type_decl_state.state.did_parse_fields = true;
     unregister_monitor(&type_decl_state.state.did_parse_fields);
+    type_decl_state.state.did_parse_variants = true;
+    unregister_monitor(&type_decl_state.state.did_parse_variants);
+
+    for (let i: usize = 0; i < type_decl_state.variants.length; i = i + 1) {
+        let variant: &ASTTypeDeclVariant = get_ref_raw(&type_decl_state.variants, i);
+        register_monitor(&variant.size_in_bytes);
+        register_monitor(&variant.align_in_bytes);
+    }
 
     check_type_decl(type_decl_node);
 }
@@ -711,6 +721,19 @@ union Assoc { Left, Right }
     return Assoc::Left;
 }
 
+@trace func get_unary_precedence(tkn: TokenData) -> usize {
+    (comptime assert(tag(&TokenData::EndOfFile) == 49, "Parser::get_unary_precedence: Added more tokens"));
+    (comptime assert(tag(&ASTUnary::__count) == 3, "Parser::get_unary_precedence: Added more Operands"));
+    match (tkn) {
+        TokenData::AsteriskSingle  => { return 14; }
+        TokenData::AmpersandSingle => { return 14; }
+        TokenData::Bang            => { return 14; }
+        TokenData::Hash            => { return 0; }
+        _ => { }
+    }
+    unreachable("get_unary_precedence");
+}
+
 @trace func __parse_expr(context: &Parse_Context, precedence: usize, associativity: Assoc) -> (bool, &AST) {
     let _start = peek(&context.lexer);
     let is_generic = false;
@@ -860,6 +883,8 @@ union Assoc { Left, Right }
     let old_parent = context.parent;
     let unary = context.parent = create_expr(context.parent, tkn.loc, blank, ASTExpr::Unary); // dummy node
 
+    let precedence = get_unary_precedence(tkn.data);
+
     let is_generic = false;
     match (tkn.data) {
         TokenData::Hash => {
@@ -868,17 +893,17 @@ union Assoc { Left, Right }
             unary.data = ASTData::Expr(ASTExpr::Directive(dir));
         }
         TokenData::AmpersandSingle => {
-            let (gen, sub) = parse_expr(context);
+            let (gen, sub) = __parse_expr(context, precedence, Assoc::Left);
             is_generic = gen;
             unary.data = ASTData::Expr(ASTExpr::Unary(ASTUnary::AddressOf(sub)));
         }
         TokenData::AsteriskSingle => {
-            let (gen, sub) = parse_expr(context);
+            let (gen, sub) = __parse_expr(context, precedence, Assoc::Left);
             is_generic = gen;
             unary.data = ASTData::Expr(ASTExpr::Unary(ASTUnary::ValueOf(sub)));
         }
         TokenData::Bang => {
-            let (gen, sub) = parse_expr(context);
+            let (gen, sub) = __parse_expr(context, precedence, Assoc::Left);
             is_generic = gen;
             unary.data = ASTData::Expr(ASTExpr::Unary(ASTUnary::LogicalNot(sub)));
         }

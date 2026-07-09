@@ -74,6 +74,7 @@ func help(loc: Loc, fmt: &char, args: ...Data) -> Message {
 }
 
 func dbg(loc: Loc, fmt: &char, args: ...Data) -> Message {
+    if (!PRINT_DEBUG) return Message::Debug(loc, blank);
     comptime DEBUG_STR: &char = "\x1b[96mDEBUG\x1b[0m";
     return Message::Debug(loc, format1("%: %", DEBUG_STR, format1(fmt, args)));
 }

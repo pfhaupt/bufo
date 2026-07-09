@@ -44,6 +44,9 @@ struct ASTTypeDeclVariant {
     // Fields from Share `Common_Fields`
     loc: Loc;
     name: SubStr;
+    // Fields from Share `Data_Structure_Fields`
+    size_in_bytes: usize;
+    align_in_bytes: usize;
     // Structure fields
     fields: GAF_List; // List<&AST>
 } // End of ASTTypeDeclVariant
@@ -55,11 +58,11 @@ struct ASTTypeDecl {
     // Fields from Share `Generic_Fields`
     monomorphized_instances: GAF_HashMap; // HashMap<String, &AST>
     // Fields from Share `Data_Structure_Fields`
-    parameters: GAF_List; // List<&AST>
     size_in_bytes: usize;
     align_in_bytes: usize;
     // Structure fields
     state: TypeDeclState;
+    parameters: GAF_List; // List<&AST>
     fields: GAF_List;   // List<ASTTypeDeclField>
     variants: GAF_List; // List<ASTTypeDeclVariant>
 } // End of ASTTypeDecl
@@ -98,6 +101,8 @@ struct TypeDeclState {
     // Structure fields
     did_parse_fields: bool;
     did_check_fields: bool;
+    did_parse_variants: bool;
+    did_check_variants: bool;
 } // End of TypeDeclState
 
 struct ASTAttr {
@@ -203,6 +208,7 @@ union ASTUnary {
     LogicalNot(&AST),
     AddressOf(&AST),
     ValueOf(&AST),
+    __count,
 } // End of ASTUnary
 
 union Directive {

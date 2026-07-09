@@ -97,7 +97,7 @@ import "../generated/ast.template.bufo";
         unreachable(); // above terminates
     };
     assert(type_decl_info.state.did_parse_signature, "is_generic(TypeDecl): monitor failed");
-    return type_decl_info.parameters.length != 0;
+    return !type_decl_info.state.is_monomorphized && type_decl_info.parameters.length != 0;
 }
 
 @trace func get_field_offset_size_and_align(type_decl_info: &ASTTypeDecl, name: SubStr) -> (bool, usize, usize, usize) {

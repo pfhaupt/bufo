@@ -315,38 +315,46 @@ func parse_bufo_ir_into_function_body(fn: &AST, register_map: &GAF_HashMap, lexe
     };
 
     let op = Op::Noop;
-    if (equals(&op_name, &comptime newSubStrOfStrLit("param"))) {
+    if (equals(&op_name, &comptime newSubStr("alloca"))) {
+        let (reg_tkn, reg_name, reg_loc) = _h(lexer);
+        let size = get_size(type);
+        let _name = format1("bir_alloca_%", reg_name);
+        let _ptr = create_base_type(BaseType::Ptr(type));
+        let var = allocate_register(&func_info.code, _ptr);
+        add(register_map, reg_name, var);
+        op = Op::Alloca(var, asSubStr(&_name));
+    } else if (equals(&op_name, &comptime newSubStr("store"))) {
+        let (dst_reg, src_reg) = _2(lexer, func_info, register_map, type);
+        op = Op::Store(dst_reg, src_reg);
+    } else if (equals(&op_name, &comptime newSubStr("load"))) {
+        let (dst_reg, src_reg) = _2(lexer, func_info, register_map, type);
+        op = Op::Load(dst_reg, src_reg);
+    } else if (equals(&op_name, &comptime newSubStr("param"))) {
         let (reg_tkn, reg_name, reg_loc) = _h(lexer);
         expect(lexer, TokenData::Comma);
         let (index_tkn, index_name, index_loc) = _h(lexer);
         let reg = _r(func_info, register_map, reg_loc, type, reg_name);
         let index = toU64(&index_name);
         op = Op::LoadParameter(reg, index as usize);
-    } else if (equals(&op_name, &comptime newSubStrOfStrLit("add"))) {
+    } else if (equals(&op_name, &comptime newSubStr("add"))) {
         let (dst_reg, src1_reg, src2_reg) = _3(lexer, func_info, register_map, type);
         op = Op::Add(dst_reg, src1_reg, src2_reg);
-    } else if (equals(&op_name, &comptime newSubStrOfStrLit("mul"))) {
+    } else if (equals(&op_name, &comptime newSubStr("mul"))) {
         let (dst_reg, src1_reg, src2_reg) = _3(lexer, func_info, register_map, type);
         op = Op::Mul(dst_reg, src1_reg, src2_reg);
-    } else if (equals(&op_name, &comptime newSubStrOfStrLit("sub"))) {
+    } else if (equals(&op_name, &comptime newSubStr("sub"))) {
         let (dst_reg, src1_reg, src2_reg) = _3(lexer, func_info, register_map, type);
         op = Op::Sub(dst_reg, src1_reg, src2_reg);
-    } else if (equals(&op_name, &comptime newSubStrOfStrLit("eq"))) {
+    } else if (equals(&op_name, &comptime newSubStr("eq"))) {
         let (dst_reg, src1_reg, src2_reg) = _3(lexer, func_info, register_map, type);
         op = Op::Eq(dst_reg, src1_reg, src2_reg);
-    } else if (equals(&op_name, &comptime newSubStrOfStrLit("gte"))) {
+    } else if (equals(&op_name, &comptime newSubStr("gte"))) {
         let (dst_reg, src1_reg, src2_reg) = _3(lexer, func_info, register_map, type);
         op = Op::Gte(dst_reg, src1_reg, src2_reg);
-    } else if (equals(&op_name, &comptime newSubStrOfStrLit("lte"))) {
+    } else if (equals(&op_name, &comptime newSubStr("lte"))) {
         let (dst_reg, src1_reg, src2_reg) = _3(lexer, func_info, register_map, type);
         op = Op::Lte(dst_reg, src1_reg, src2_reg);
-    } else if (equals(&op_name, &comptime newSubStrOfStrLit("store"))) {
-        let (dst_reg, src_reg) = _2(lexer, func_info, register_map, type);
-        op = Op::Store(dst_reg, src_reg);
-    } else if (equals(&op_name, &comptime newSubStrOfStrLit("load"))) {
-        let (dst_reg, src_reg) = _2(lexer, func_info, register_map, type);
-        op = Op::Load(dst_reg, src_reg);
-    } else if (equals(&op_name, &comptime newSubStrOfStrLit("ret"))) {
+    } else if (equals(&op_name, &comptime newSubStr("ret"))) {
         assert(func_info.code.comptime_level == 0, "Return in comptime context?");
         if (lexer_at(lexer, TokenData::Ident)) {
             let (src_tkn, src_name, src_loc) = _h(lexer);
