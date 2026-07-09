@@ -81,18 +81,18 @@ import "lookup.bufo";
     message(info(blank, "In total, we spawned % coroutine(s).", get_corot_count()));
     message(info(blank, "In total, we took %.%ms.", ms, (dt / 10) % 100));
 
+    @if_tracing {
+        // REVIEW(2026-06-23): We quit before tracy can submit all samples, so we sleep a bit.
+        //                     This shouldn't happen, yet it does.
+        sleep(5000 * 1000);
+        tracy::emit_frame_mark_end("Program Execution");
+    }
+
     if (error_happened) {
         C::fprintf(stderr, "error: Could not compile program due to the above errors.\n");
         return 1;
     }
     message(note(blank, "done"));
-
-    @if_tracing {
-        // REVIEW(2026-06-23): We quit before tracy can submit all samples, so we sleep a bit.
-        //                     This shouldn't happen, yet it does.
-        sleep(1000 * 1000);
-        tracy::emit_frame_mark_end("Program Execution");
-    }
 
     return 0;
 }

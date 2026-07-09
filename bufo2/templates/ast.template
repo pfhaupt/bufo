@@ -25,8 +25,7 @@ struct AST : ASTCommon {
 }
 
 union ASTData {
-    Struct(ASTStruct),
-    Field(SubStr, &AST),
+    TypeDecl(ASTTypeDecl),
     Function(ASTFunction),
     Stmt(ASTStmt),
     Expr(ASTExpr),
@@ -35,44 +34,60 @@ union ASTData {
     Directive(Directive),
 }
 
-struct ASTStruct {
-    state: StructState;
+shared Common_Fields {
     loc: Loc;
     name: SubStr;
-    parameters: GAF_List; // List<&AST>
-    fields: GAF_List; // List<&AST>
+}
+
+shared Generic_Fields {
     monomorphized_instances: GAF_HashMap; // HashMap<String, &AST>
+}
+
+shared Data_Structure_Fields {
+    parameters: GAF_List; // List<&AST>
     size_in_bytes: usize;
     align_in_bytes: usize;
 }
 
-struct StructState {
-    is_monomorphized: bool;
-    did_parse_signature: bool;
-    did_parse_fields: bool;
-    did_check_fields: bool;
+struct ASTTypeDeclField : Common_Fields {
+    type_node: &AST;
 }
 
-struct ASTFunction {
+struct ASTTypeDeclVariant : Common_Fields {
+    fields: GAF_List; // List<&AST>
+}
+
+struct ASTTypeDecl : Common_Fields, Generic_Fields, Data_Structure_Fields {
+    state: TypeDeclState;
+    fields: GAF_List;   // List<ASTTypeDeclField>
+    variants: GAF_List; // List<ASTTypeDeclVariant>
+}
+
+struct ASTFunction : Common_Fields, Generic_Fields {
     state: FunctionState;
-    loc: Loc;
-    name: SubStr;
     scopes: GAF_List;     // List<Scope_Info>
     return_type: &AST;
     params: GAF_List;     // List<&AST>
     block: &AST;
     code: Code;
-    monomorphized_instances: GAF_HashMap; // HashMap<String, &AST>
 }
 
-struct FunctionState {
-    is_generic: bool;
+shared State {
     is_monomorphized: bool;
     did_parse_signature: bool;
+}
+
+struct FunctionState : State {
+    is_generic: bool;
     did_check_signature: bool;
     did_parse_body: bool;
     did_check_body: bool;
     did_codegen_body: bool;
+}
+
+struct TypeDeclState : State {
+    did_parse_fields: bool;
+    did_check_fields: bool;
 }
 
 struct ASTAttr {

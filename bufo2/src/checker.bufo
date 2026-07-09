@@ -20,47 +20,47 @@ import "interp.bufo";
 
 import "../generated/ast.template.bufo";
 
-@trace func check_struct(node: &AST) {
-    let &ASTData::Struct(struct_info) = &node.data else {
-        unreachable("check_struct: Node is not a struct");
-    };
-    let scopes = new_GAF_List(type_info(Scope_Info));
-    for (let i: usize = 0; i < struct_info.fields.length; i = i + 1) {
-        let _field = get_ref(&struct_info.fields, i) as &AST;
-        let &ASTData::Field(_name, field) = &_field.data else {
-            unreachable();
-        };
-        let type = check_expr(&scopes, field);
-        if (type == null) message(todo(node.loc, "field type is null"));
-        if (type.meta_level == 0) message(fatal(node.loc, "field type is value: %", *type));
-        _field.type = type;
-    }
-    struct_info.state.did_check_fields = true;
-    register_monitor(&struct_info.state.did_check_fields);
-
+@trace func calculate_size_and_alignment_of_type_decl(type_decl_info: &ASTTypeDecl) {
     let align: usize = 1;
     let size: usize = 0;
-    for (let i: usize = 0; i < struct_info.fields.length; i = i + 1) {
-        let field = get_ref(&struct_info.fields, i) as &AST;
-        assert(field.type != null, "field type is null");
-        let field_type = unwrap_meta_type(field.type, 1);
+    for (let i: usize = 0; i < type_decl_info.fields.length; i = i + 1) {
+        let field: &ASTTypeDeclField = get_ref_raw(&type_decl_info.fields, i);
+        assert(field.type_node.type != null, "field type is null");
+        let field_type = unwrap_meta_type(field.type_node.type, 1);
         let field_size = get_size(field_type);
         let field_align = get_align(field_type);
         if (field_align > align) align = field_align;
         size = size + field_size;
-        if (i != struct_info.fields.length - 1) {
-            let next_field = get_ref(&struct_info.fields, i + 1) as &AST;
-            let next_field_type = unwrap_meta_type(next_field.type, 1);
+        if (i != type_decl_info.fields.length - 1) {
+            let next_field: &ASTTypeDeclField = get_ref_raw(&type_decl_info.fields, i + 1);
+            let next_field_type = unwrap_meta_type(next_field.type_node.type, 1);
             let next_align = get_align(next_field_type);
             size = next_multiple_of(size, next_align);
         }
     }
     size = next_multiple_of(size, align);
 
-    struct_info.size_in_bytes = size;
-    struct_info.align_in_bytes = align;
-    unregister_monitor(&struct_info.size_in_bytes);
-    unregister_monitor(&struct_info.align_in_bytes);
+    type_decl_info.size_in_bytes = size;
+    type_decl_info.align_in_bytes = align;
+    unregister_monitor(&type_decl_info.size_in_bytes);
+    unregister_monitor(&type_decl_info.align_in_bytes);
+}
+
+@trace func check_type_decl(node: &AST) {
+    let &ASTData::TypeDecl(type_decl_info) = &node.data else {
+        unreachable("check_type_decl: Node is not a type_decl");
+    };
+    let scopes = new_GAF_List(type_info(Scope_Info));
+    for (let i: usize = 0; i < type_decl_info.fields.length; i = i + 1) {
+        let field: &ASTTypeDeclField = get_ref_raw(&type_decl_info.fields, i);
+        let type = check_expr(&scopes, field.type_node);
+        if (type == null) message(todo(node.loc, "field type is null"));
+        if (type.meta_level == 0) message(fatal(node.loc, "field type is value: %", *type));
+    }
+    type_decl_info.state.did_check_fields = true;
+    unregister_monitor(&type_decl_info.state.did_check_fields);
+
+    calculate_size_and_alignment_of_type_decl(&type_decl_info);
 }
 
 @trace func check_function_return_type(func_state: &ASTFunction) {
@@ -293,7 +293,7 @@ import "../generated/ast.template.bufo";
     let expr_type = check_expr(scopes, _expr);
     if (expr_type != null) {
         if (!is_equal_to(type, expr_type)) {
-            message(error(_expr.loc, "Expected type %, but got %.", to_string(type), to_string(expr_type)));
+            message(error(_expr.loc, "Could not infer type: Expected type %, but got %.", to_string(type), to_string(expr_type)));
         }
         return expr_type;
     }
@@ -367,6 +367,7 @@ import "../generated/ast.template.bufo";
         },
         &ASTPat::PatWithType(subpat, subtype) => {
             type = check_expr(scopes, subtype);
+            assert(type != null, "check_and_bind_pattern: PatWithType: Type wants infer");
             type = unwrap_meta_type(type, 1);
             type = infer_type_onto_expr(scopes, type, _expr);
             assert(_expr.type != null, "check_and_bind_pattern: PatWithType: Inference failed");
@@ -397,7 +398,7 @@ import "../generated/ast.template.bufo";
             if (sl != null && fl != null) {
                 message(todo(ast.loc, "infer_type_onto_ident: global ident can be both"));
             } else if (sl != null) {
-                type = create_meta_type(1, BaseType::Struct(sl.node));
+                type = create_meta_type(1, BaseType::TypeDecl(sl.node));
             } else if (fl != null) {
                 assert(fl.overloads.length != 0, "infer_type_onto_ident: function overloads are empty??");
 
@@ -678,39 +679,51 @@ import "../generated/ast.template.bufo";
     unreachable("check_directive");
 }
 
-@trace func check_struct_type(scopes: &GAF_List, ast: &AST, base: &Type, args: GAF_List, node: &AST) -> &Type {
-    let &ASTData::Struct(struct_info) = &node.data else {
-        unreachable("check_struct_type: Node is not a struct");
+@trace func check_type_decl_type(scopes: &GAF_List, ast: &AST, base: &Type, args: GAF_List, node: &AST) -> &Type {
+    let &ASTData::TypeDecl(type_decl_info) = &node.data else {
+        unreachable("check_type_decl_type: Node is not a type_decl");
     };
-    if (!is_generic(&struct_info)) message(todo(ast.loc, "check_struct_type: Struct is not generic"));
-    if (args.length != struct_info.parameters.length) {
-        message(todo(ast.loc, "check_struct_type: Generic instantiation didn't get enough / got too many arguments"));
+    if (!is_generic(&type_decl_info)) message(todo(ast.loc, "check_type_decl_type: TypeDecl is not generic"));
+    if (args.length != type_decl_info.parameters.length) {
+        message(todo(ast.loc, "check_type_decl_type: Generic instantiation didn't get enough / got too many arguments"));
     }
-    let mapping = new_generic_type_mapping();
-    for (let i: usize = 0; i < struct_info.parameters.length; i = i + 1) {
-        let node = get_ref(&struct_info.parameters, i) as &AST;
-        let index = mapping.length;
-        let arg = get_ref(&args, index) as &AST;
-        let type: &Type = null;
+    let types = new_GAF_List(type_info(&Type));
+    for (let i: usize = 0; i < args.length; i = i + 1) {
+        let arg = get_ref(&args, i) as &AST;
         let &ASTData::Expr(_) = &arg.data else {
-            message(todo(arg.loc, "check_struct_type: Unexpected AST node %", arg.data));
+            message(todo(arg.loc, "check_type_decl_type: Unexpected AST node %", arg.data));
             unreachable(); // todo terminates
         };
-        type = check_expr(scopes, arg);
-        if (type == null) message(todo(arg.loc, "check_struct_type: Generic parameter wants infer???"));
-        assert(type != null, "check_struct_type: Could not get type of generic parameter");
+        let type = check_expr(scopes, arg);
+        if (type == null) message(todo(arg.loc, "check_type_decl_type: Generic parameter wants infer???"));
+        assert(type != null, "check_type_decl_type: Could not get type of generic parameter");
         if (type.meta_level == 0) {
-            message(todo(arg.loc, "check_struct_type: Generic parameter is not a meta-type"));
+            message(todo(arg.loc, "check_type_decl_type: Generic parameter is not a meta-type"));
             unreachable(); // todo terminates
         }
+        push(&types, type);
+    }
+    return check_type_decl_type2(scopes, ast, base, types, node);
+}
+@trace func check_type_decl_type2(scopes: &GAF_List, ast: &AST, base: &Type, types: GAF_List, node: &AST) -> &Type {
+    let &ASTData::TypeDecl(type_decl_info) = &node.data else {
+        unreachable("check_type_decl_type2: Node is not a type_decl");
+    };
+    if (!is_generic(&type_decl_info)) message(todo(ast.loc, "check_type_decl_type2: TypeDecl is not generic"));
+    if (types.length != type_decl_info.parameters.length) {
+        message(todo(ast.loc, "check_type_decl_type2: Generic instantiation didn't get enough / got too many arguments"));
+    }
+    let mapping = new_generic_type_mapping();
+    for (let i: usize = 0; i < type_decl_info.parameters.length; i = i + 1) {
+        let node = get_ref(&type_decl_info.parameters, i) as &AST;
+        let type = get_ref(&types, i) as &Type;
         add(&mapping, node.origin, type);
     }
-
-    let new_node = monomorphize_struct_node(node, mapping);
-    return create_meta_type(base.meta_level, BaseType::Struct(new_node));
+    let new_node = monomorphize_type_decl_node(node, mapping);
+    return create_meta_type(base.meta_level, BaseType::TypeDecl(new_node));
 }
 
-func __expand_helper(loc: Loc, parent: &AST, node: &AST, mapping: &GAF_HashMap, scopes: &GAF_List) -> &AST {
+@trace func __expand_helper(loc: Loc, parent: &AST, node: &AST, mapping: &GAF_HashMap, scopes: &GAF_List) -> &AST {
     match (node.data) {
         // Statements
         ASTData::Stmt(ASTStmt::Let { pat, expr, trampoline }) => {
@@ -799,7 +812,7 @@ func __expand_helper(loc: Loc, parent: &AST, node: &AST, mapping: &GAF_HashMap, 
     unreachable("__expand_helper");
 }
 
-func expand_function_if_necessary(expr: &AST, base: &AST, args: &GAF_List) -> bool {
+@trace func expand_function_if_necessary(expr: &AST, base: &AST, args: &GAF_List) -> bool {
     let &ASTData::Expr(ASTExpr::FnIdent { name, fn }) = &base.data else {
         return false; // Not a function
     };
@@ -882,6 +895,7 @@ func expand_function_if_necessary(expr: &AST, base: &AST, args: &GAF_List) -> bo
 }
 
 @trace func check_expr(scopes: &GAF_List, _expr: &AST) -> &Type {
+    message(dbg(_expr.loc, "check_expr: %", _expr.data));
     if (_expr.type != null) return _expr.type;
 
     let &ASTData::Expr(expr) = &_expr.data else {
@@ -976,11 +990,11 @@ func expand_function_if_necessary(expr: &AST, base: &AST, args: &GAF_List) -> bo
                     }
                     type = unwrap_meta_type(ret, 1);
                 }
-                &BaseType::Struct(node) => {
+                &BaseType::TypeDecl(node) => {
                     if (base.meta_level == 0) {
-                        message(todo(_base.loc, "struct instance can't be called"));
+                        message(todo(_base.loc, "type_decl instance can't be called"));
                     } else {
-                        type = check_struct_type(scopes, _expr, base, _args, node);
+                        type = check_type_decl_type(scopes, _expr, base, _args, node);
                     }
                 }
                 _ => { message(todo(_expr.loc, "check_expr: Call with base type %", *base)); }
@@ -1019,25 +1033,33 @@ func expand_function_if_necessary(expr: &AST, base: &AST, args: &GAF_List) -> bo
 }
 
 @trace func check_member_expr(scopes: &GAF_List, dot: &AST, lhs: &AST, member: &AST) -> &Type {
+    message(dbg(dot.loc, "check_member_expr"));
     let lhs_type = check_expr(scopes, lhs);
     if (lhs_type == null) return null;
     if (is_pointer(lhs_type)) lhs_type = get_underlying_type(lhs_type);
-    if let BaseType::Struct(struct_node) = lhs_type.base {
+    if let BaseType::TypeDecl(type_decl_node) = lhs_type.base {
         let &ASTData::Expr(ASTExpr::Ident { field_or_method }) = &member.data else {
             message(error(member.loc, "The Dot operator only supports member fields for structs."));
             unreachable(); // error terminates
         };
-        let struct_info = get_struct_info(struct_node);
-        assert(struct_info.state.did_check_fields, "check_member_expr: Node of LHS type is not type checked?");
-        let (true, field) = get_field_by_name(struct_info, field_or_method) else {
-            message(
-                error(member.loc, "The struct % doesn't have a field named `%`.", struct_info.name, field_or_method),
-                note(struct_info.loc, "Struct % is declared here.", struct_info.name));
-            unreachable(); // error terminates
-        };
-        assert(field.type != null, "check_member_expr: Field type is not ready");
-        assert(field.type.meta_level > 0, "check_member_expr: Field type is not a meta type");
-        return unwrap_meta_type(field.type, 1);
+        let type_decl_info = get_type_decl_info(type_decl_node);
+
+        if (lhs_type.meta_level == 0) {
+            fprint("info: %\n", *type_decl_info);
+            assert(!is_generic(type_decl_info), "check_member_expr: Member access on generic LHS type?");
+            assert(type_decl_info.state.did_check_fields, "check_member_expr: Node of LHS type is not type checked?");
+            let (true, field) = get_field_by_name(type_decl_info, field_or_method) else {
+                message(
+                    error(member.loc, "The type % doesn't have a field named `%`.", type_decl_info.name, field_or_method),
+                    note(type_decl_info.loc, "Type % is declared here.", type_decl_info.name));
+                unreachable(); // error terminates
+            };
+            assert(field.type_node.type != null, "check_member_expr: Field type is not ready");
+            assert(field.type_node.type.meta_level > 0, "check_member_expr: Field type is not a meta type");
+            return unwrap_meta_type(field.type_node.type, 1);
+        } else {
+            message(todo(dot.loc, "check_member_expr: LHS is meta type"));
+        }
     } else {
         message(error(dot.loc, "The Dot operator is currently only supported for struct types."));
     }

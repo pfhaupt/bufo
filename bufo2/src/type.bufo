@@ -135,7 +135,7 @@ func to_string(out: &String, t: PrimType) {
 
 union BaseType {
     Unknown,
-    Struct(&AST),
+    TypeDecl(&AST),
     Func(GAF_List, &Type), // Params, RetType
     Prim(PrimType),
     Ptr(&Type),
@@ -157,9 +157,9 @@ func to_string(out: &String, bt: BaseType) {
             pushStr(out, ") -> ");
             to_string(out, ret);
         }
-        BaseType::Struct(node) => {
-            let &ASTData::Struct(struct_info) = &node.data else {
-                unreachable("to_string(BaseType): Non-Struct AST");
+        BaseType::TypeDecl(node) => {
+            let &ASTData::TypeDecl(struct_info) = &node.data else {
+                unreachable("to_string(BaseType): Non-TypeDecl AST");
             };
             pushSubStr(out, &struct_info.name);
             if (node.parent == null) {
@@ -198,7 +198,7 @@ func get_align(t: BaseType) -> usize {
         BaseType::Ptr(_) => { return 8; }
         BaseType::Func(_, _) => { return get_align(BaseType::Ptr); }
         BaseType::Prim(pt) => { return get_align(pt); }
-        BaseType::Struct(str) => { return get_align(str); }
+        BaseType::TypeDecl(str) => { return get_align(str); }
         _ => {
             message(todo(blank, "get_align(BaseType): %", t));
         }
@@ -211,7 +211,7 @@ func get_size(t: BaseType) -> usize {
         BaseType::Ptr(_) => { return 8; }
         BaseType::Func(_, _) => { return get_size(BaseType::Ptr); }
         BaseType::Prim(pt) => { return get_size(pt); }
-        BaseType::Struct(str) => { return get_size(str); }
+        BaseType::TypeDecl(str) => { return get_size(str); }
         _ => {
             message(todo(blank, "get_size(BaseType): %", t));
         }
@@ -412,7 +412,7 @@ func is_convertible_to(t1: &Type, t2: &Type) -> bool {
     // REVIEW(2026-03-03): Can we find a more elegant way for this?
     match ((&t1.base, &t2.base)) {
         (&BaseType::Prim(pt1), &BaseType::Prim(pt2)) => { return tag(&pt1) == tag(&pt2); }
-        (&BaseType::Struct(s1), &BaseType::Struct(s2)) => { return s1 == s2; }
+        (&BaseType::TypeDecl(s1), &BaseType::TypeDecl(s2)) => { return s1 == s2; }
         (&BaseType::Ptr(p1), &BaseType::Ptr(p2)) => { return is_convertible_to(p1, p2); }
         (&BaseType::Func(p1, r1), &BaseType::Func(p2, r2)) => {
             if (p1.length != p2.length) return false;

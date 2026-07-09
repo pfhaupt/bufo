@@ -568,12 +568,12 @@ func codegen_function_entry(fn: &AST) {
             let (lhs_reg, lhs_instr) = codegen_expr(fn, lhs, !is_pointer(lhs.type));
             assert(lhs_reg.size == 8, "Expected pointer sized register as LHS of dot");
             let lhs_type = get_underlying_type(lhs.type);
-            if let BaseType::Struct(struct_node) = lhs_type.base {
-                let struct_info = get_struct_info(struct_node);
+            if let BaseType::TypeDecl(type_decl_node) = lhs_type.base {
+                let type_decl_info = get_type_decl_info(type_decl_node);
                 let &ASTData::Expr(ASTExpr::Ident { field }) = &member.data else {
                     unreachable("codegen_expr: check_member_expr should've prevented this");
                 };
-                let (true, offset, size, align) = get_field_offset_size_and_align(struct_info, field) else {
+                let (true, offset, size, align) = get_field_offset_size_and_align(type_decl_info, field) else {
                     unreachable("codegen_expr: Only fields are supported now, and methods will be handled differently later");
                 };
                 let offset_reg = allocate_register(&fn.code, create_base_type(PrimType::Usize));

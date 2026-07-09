@@ -19,7 +19,7 @@ import "interp.bufo";
 
 import "../generated/ast.template.bufo";
 
-func create_mapping_key(out: &String, mapping: &GAF_HashMap) {
+@trace func create_mapping_key(out: &String, mapping: &GAF_HashMap) {
     for (let i: usize = 0; i < mapping.capacity; i = i + 1) {
         if (!mapping.set_elements[i]) continue;
         let (key_ptr, val_ptr) = getAtIndex(mapping, i);
@@ -28,7 +28,7 @@ func create_mapping_key(out: &String, mapping: &GAF_HashMap) {
     }
 }
 
-func has_attribute(node: &AST, attr: ASTAttrData) -> bool {
+@trace func has_attribute(node: &AST, attr: ASTAttrData) -> bool {
     for (let i: usize = 0; i < node.attributes.length; i = i + 1) {
         let a = get_ref(&node.attributes, i) as ASTAttr;
         if (tag(&a.data) == tag(&attr)) {
@@ -38,32 +38,32 @@ func has_attribute(node: &AST, attr: ASTAttrData) -> bool {
     return false;
 }
 
-func is_in_function(node: &AST) -> bool {
+@trace func is_in_function(node: &AST) -> bool {
     if let ASTData::Function { .. } = node.super_node.data {
         return true;
     }
     return false;
 }
-func get_parent_function(node: &AST) -> &AST {
+@trace func get_parent_function(node: &AST) -> &AST {
     if let ASTData::Function { .. } = node.super_node.data {
         return node.super_node;
     }
     unreachable("get_parent_function: Node is not inside a function");
 }
 
-func is_assignment(node: &AST) -> bool {
+@trace func is_assignment(node: &AST) -> bool {
     let ASTData::Expr(ASTExpr::Binary(bin)) = node.data else {
         return false;
     };
     return is_assignment(bin);
 }
-func is_statement(node: &AST) -> bool {
+@trace func is_statement(node: &AST) -> bool {
     if let ASTData::Stmt(_) = node.data {
         return true;
     }
     return false;
 }
-func is_if(node: &AST) -> bool {
+@trace func is_if(node: &AST) -> bool {
     if let ASTData::Stmt(ASTStmt::Expr(expr)) = node.data {
         return is_if(expr);
     }
@@ -75,7 +75,7 @@ func is_if(node: &AST) -> bool {
     }
     return false;
 }
-func is_block(node: &AST) -> bool {
+@trace func is_block(node: &AST) -> bool {
     if let ASTData::Stmt(ASTStmt::Expr(expr)) = node.data {
         return is_block(expr);
     }
@@ -88,35 +88,32 @@ func is_block(node: &AST) -> bool {
     return false;
 }
 
-func is_generic(struct_info: &ASTStruct) -> bool {
-    let (handler, state) = wait_for_monitor(&struct_info.state.did_parse_signature);
+@trace func is_generic(type_decl_info: &ASTTypeDecl) -> bool {
+    let (handler, state) = wait_for_monitor(&type_decl_info.state.did_parse_signature);
     let Corot_Result::Success = state else {
         handle_corot_result(state,
-            error(struct_info.loc, "Could not check if structure is generic due to a cyclic dependency on %.", corot_str(handler)),
-            error(struct_info.loc, "Could not check if structure is generic. There were errors."));
+            error(type_decl_info.loc, "Could not check if type declaration is generic due to a cyclic dependency on %.", corot_str(handler)),
+            error(type_decl_info.loc, "Could not check if type declaration is generic. There were errors."));
         unreachable(); // above terminates
     };
-    assert(struct_info.state.did_parse_signature, "is_generic(Struct): monitor failed");
-    return struct_info.parameters.length != 0;
+    assert(type_decl_info.state.did_parse_signature, "is_generic(TypeDecl): monitor failed");
+    return type_decl_info.parameters.length != 0;
 }
 
-func get_field_offset_size_and_align(struct_info: &ASTStruct, name: SubStr) -> (bool, usize, usize, usize) {
+@trace func get_field_offset_size_and_align(type_decl_info: &ASTTypeDecl, name: SubStr) -> (bool, usize, usize, usize) {
     let offset: usize = 0;
     let size: usize = 0;
     let align: usize = 1;
-    for (let i: usize = 0; i < struct_info.fields.length; i = i + 1) {
-        let field = get_ref(&struct_info.fields, i) as &AST;
-        let &ASTData::Field(field_name, _) = &field.data else {
-            unreachable("get_field_offset: Stored entry is not a Field!");
-        };
-        let field_type = unwrap_meta_type(field.type, 1);
+    for (let i: usize = 0; i < type_decl_info.fields.length; i = i + 1) {
+        let field: &ASTTypeDeclField = get_ref_raw(&type_decl_info.fields, i);
+        let field_type = unwrap_meta_type(field.type_node.type, 1);
         let field_size = get_size(field_type);
-        if (equals(&field_name, &name)) {
+        if (equals(&field.name, &name)) {
             let field_align = get_align(field_type);
             return (true, offset, field_size, field_align);
-        } else if (i != struct_info.fields.length - 1) {
-            let next_field = get_ref(&struct_info.fields, i + 1) as &AST;
-            let next_field_type = unwrap_meta_type(next_field.type, 1);
+        } else if (i != type_decl_info.fields.length - 1) {
+            let next_field: &ASTTypeDeclField = get_ref_raw(&type_decl_info.fields, i + 1);
+            let next_field_type = unwrap_meta_type(next_field.type_node.type, 1);
             let next_field_align = get_align(next_field_type);
             offset = next_multiple_of(offset + field_size, next_field_align);
         }
@@ -124,63 +121,72 @@ func get_field_offset_size_and_align(struct_info: &ASTStruct, name: SubStr) -> (
     return (false, 0, 0, 0);
 }
 
-func get_field_by_name(struct_info: &ASTStruct, name: SubStr) -> (bool, &AST) {
-    for (let i: usize = 0; i < struct_info.fields.length; i = i + 1) {
-        let field = get_ref(&struct_info.fields, i) as &AST;
-        let &ASTData::Field(field_name, field_type) = &field.data else {
-            unreachable("get_field_by_name: Stored entry is not a Field!");
-        };
-        if (equals(&field_name, &name)) {
+@trace func get_field_by_name(type_decl_info: &ASTTypeDecl, name: SubStr) -> (bool, &ASTTypeDeclField) {
+    for (let i: usize = 0; i < type_decl_info.fields.length; i = i + 1) {
+        let field: &ASTTypeDeclField = get_ref_raw(&type_decl_info.fields, i);
+        if (equals(&field.name, &name)) {
             return (true, field);
         }
     }
     return (false, null);
 }
 
-func get_align(node: &AST) -> usize {
-    let struct_info = get_struct_info(node);
-    let (handler, result) = wait_for_monitor(&struct_info.align_in_bytes);
+@trace func get_align(node: &AST) -> usize {
+    let type_decl_info = get_type_decl_info(node);
+    let (handler, result) = wait_for_monitor(&type_decl_info.align_in_bytes);
     let Corot_Result::Success = result else {
         handle_corot_result(result,
-            error(node.loc, "Could not get alignment of structure due to a cyclic dependency on %.", corot_str(handler)),
-            error(node.loc, "Could not get alignment of structure. There were errors."));
+            error(node.loc, "Could not get alignment of type declaration due to a cyclic dependency on %.", corot_str(handler)),
+            error(node.loc, "Could not get alignment of type declaration. There were errors."));
         unreachable(); // above terminates
     };
-    return struct_info.align_in_bytes;
+    return type_decl_info.align_in_bytes;
 }
 
-func get_size(node: &AST) -> usize {
-    let struct_info = get_struct_info(node);
-    let (handler, result) = wait_for_monitor(&struct_info.size_in_bytes);
+@trace func get_size(node: &AST) -> usize {
+    let type_decl_info = get_type_decl_info(node);
+    let (handler, result) = wait_for_monitor(&type_decl_info.size_in_bytes);
     let Corot_Result::Success = result else {
         handle_corot_result(result,
-            error(node.loc, "Could not get size of structure due to a cyclic dependency on %.", corot_str(handler)),
-            error(node.loc, "Could not get size of structure. There were errors."));
+            error(node.loc, "Could not get size of type declaration due to a cyclic dependency on %.", corot_str(handler)),
+            error(node.loc, "Could not get size of type declaration. There were errors."));
         unreachable(); // above terminates
     };
-    return struct_info.size_in_bytes;
+    return type_decl_info.size_in_bytes;
 }
 
-func add_field(parent: &AST, struct_info: &ASTStruct, loc: Loc, name: SubStr, type: &AST) {
-    let field = create_node(parent, loc, name);
-    field.data = ASTData::Field(name, type);
-    push(&struct_info.fields, field);
-}
-
-func get_struct_info(fn: &AST) -> &ASTStruct {
-    let &ASTData::Struct(struct_info) = &fn.data else {
-        unreachable("get_struct_info: Node is not a struct");
+@trace func add_field(parent: &AST, type_decl_info: &ASTTypeDecl, loc: Loc, name: SubStr, type: &AST) {
+    let field = ASTTypeDeclField {
+        loc: loc,
+        name: name,
+        type_node: type,
     };
-    return &struct_info;
+    push(&type_decl_info.fields, field);
 }
-func get_func_info(fn: &AST) -> &ASTFunction {
+
+@trace func add_variant(parent: &AST, type_decl_info: &ASTTypeDecl, loc: Loc, name: SubStr, variant_fields: GAF_List) {
+    let variant = ASTTypeDeclVariant {
+        loc: loc,
+        name: name,
+        fields: variant_fields,
+    };
+    push(&type_decl_info.variants, variant);
+}
+
+@trace func get_type_decl_info(fn: &AST) -> &ASTTypeDecl {
+    let &ASTData::TypeDecl(type_decl_info) = &fn.data else {
+        unreachable("get_type_decl_info: Node is not a type declaration");
+    };
+    return &type_decl_info;
+}
+@trace func get_func_info(fn: &AST) -> &ASTFunction {
     let &ASTData::Function(func_info) = &fn.data else {
         unreachable("get_func_info: Node is not a function");
     };
     return &func_info;
 }
 
-func is_generic(func_info: &ASTFunction) -> bool {
+@trace func is_generic(func_info: &ASTFunction) -> bool {
     let (handler, state) = wait_for_monitor(&func_info.state.did_parse_signature);
     let Corot_Result::Success = state else {
         handle_corot_result(state,
@@ -192,7 +198,7 @@ func is_generic(func_info: &ASTFunction) -> bool {
     return func_info.state.is_generic;
 }
 
-func finalize_function_type(ast: &AST, func_info: &ASTFunction) {
+@trace func finalize_function_type(ast: &AST, func_info: &ASTFunction) {
     assert(ast.type == null, "finalize_function_type: Node already has a type");
     assert(func_info.state.did_check_signature, "finalize_function_type: Function signature is not type checked");
 
@@ -210,10 +216,10 @@ func finalize_function_type(ast: &AST, func_info: &ASTFunction) {
     unregister_monitor(&ast.type, Corot_Result::Success);
 }
 
-func is_function_attribute(attr: ASTAttr) -> bool {
+@trace func is_function_attribute(attr: ASTAttr) -> bool {
     return is_function_attribute(attr.data);
 }
-func is_function_attribute(attr: ASTAttrData) -> bool {
+@trace func is_function_attribute(attr: ASTAttrData) -> bool {
     (comptime assert(tag(&ASTAttrData::__count) == 2, "is_function_attribute: Added more ASTAttrData"));
     match (attr) {
         ASTAttrData::Expand => { return true; }
@@ -223,7 +229,7 @@ func is_function_attribute(attr: ASTAttrData) -> bool {
     return false;
 }
 
-func get_statements(node: &ASTExpr) -> &GAF_List {
+@trace func get_statements(node: &ASTExpr) -> &GAF_List {
     if let &ASTExpr::BlockVoid(stmts) = node {
         return &stmts;
     }
@@ -233,7 +239,7 @@ func get_statements(node: &ASTExpr) -> &GAF_List {
     unreachable("get_statements: Node is not a block");
 }
 
-func is_assignment(bin: ASTBinary) -> bool {
+@trace func is_assignment(bin: ASTBinary) -> bool {
     (comptime assert(tag(&ASTBinary::__count) == 14, "is_assignment: Added more Operands"));
     match (bin) {
         ASTBinary::Assign(..)      => { return true; }
@@ -246,7 +252,7 @@ func is_assignment(bin: ASTBinary) -> bool {
     return false;
 }
 
-func binary_expr_to_function_name(bin: ASTBinary) -> SubStr {
+@trace func binary_expr_to_function_name(bin: ASTBinary) -> SubStr {
     (comptime assert(tag(&ASTBinary::__count) == 14, "binary_expr_to_function_name: Added more Operands"));
     match (bin) {
         ASTBinary::Assign(..)       => { return comptime newSubStrOfStrLit("__assign__"); }
@@ -268,7 +274,7 @@ func binary_expr_to_function_name(bin: ASTBinary) -> SubStr {
     unreachable("binary_expr_to_function_name");
 }
 
-func binary_expr_from_op(op: Token, lhs: &AST, rhs: &AST) -> ASTExpr {
+@trace func binary_expr_from_op(op: Token, lhs: &AST, rhs: &AST) -> ASTExpr {
     (comptime assert(tag(&ASTBinary::__count) == 14, "binary_expr_from_op: Added more Operands"));
     let bin = ASTBinary::Equal;
     match (op.data) {
@@ -291,7 +297,7 @@ func binary_expr_from_op(op: Token, lhs: &AST, rhs: &AST) -> ASTExpr {
     return ASTExpr::Binary(bin);
 }
 
-func extract_operands(bin: ASTBinary, lhs: &&AST, rhs: &&AST) {
+@trace func extract_operands(bin: ASTBinary, lhs: &&AST, rhs: &&AST) {
     (comptime assert(tag(&ASTBinary::__count) == 14, "extract_operands: Added more Operands"));
     match (bin) {
         ASTBinary::Assign      (_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
@@ -338,24 +344,25 @@ let node_counter: usize = 0;
     return ptr;
 }
 
-@trace func create_struct(parent: &AST, loc: Loc, origin: SubStr, name: SubStr) -> &AST {
+@trace func create_type_decl(parent: &AST, loc: Loc, origin: SubStr, name: SubStr) -> &AST {
     let ptr = create_node(parent, loc, origin);
-    ptr.data = ASTData::Struct(ASTStruct {
+    ptr.data = ASTData::TypeDecl(ASTTypeDecl {
         state: blank,
         loc: loc,
         name: name,
-        fields: new_GAF_List(type_info(&AST)),
+        fields: new_GAF_List(type_info(ASTTypeDeclField)),
+        variants: new_GAF_List(type_info(ASTTypeDeclVariant)),
         parameters: new_GAF_List(type_info(&AST)),
         monomorphized_instances: new_hashmap_with_string_key(type_info(&AST)),
     });
-    let lookup = get_struct_by_name(&global_lookup, name);
+    let lookup = get_type_decl_by_name(&global_lookup, name);
     if (lookup != null) {
         message(
             error(loc, "Redeclaration of type %.", name),
             note(lookup.node.loc, "Type already declared here."),
         );
     }
-    add(&global_lookup.structs, name, new_struct_lookup(ptr));
+    add(&global_lookup.type_decls, name, new_type_decl_lookup(ptr));
     return ptr;
 }
 
@@ -393,8 +400,8 @@ func monomorphize_function_node(ast: &AST, mapping: GAF_HashMap) -> &AST {
     return ptr;
 }
 
-func monomorphize_struct_node(ast: &AST, mapping: GAF_HashMap) -> &AST {
-    let &ASTData::Struct(parent) = &ast.data else { unreachable(); };
+func monomorphize_type_decl_node(ast: &AST, mapping: GAF_HashMap) -> &AST {
+    let &ASTData::TypeDecl(parent) = &ast.data else { unreachable(); };
 
     let key: String = blank;
     create_mapping_key(&key, &mapping);
@@ -408,19 +415,20 @@ func monomorphize_struct_node(ast: &AST, mapping: GAF_HashMap) -> &AST {
     let ptr = create_node(null, ast.loc, ast.origin);
     let name: String = blank;
     format(&name, "%(%)", parent.name, key);
-    ptr.data = ASTData::Struct(ASTStruct {
-        state: StructState {
+    ptr.data = ASTData::TypeDecl(ASTTypeDecl {
+        state: TypeDeclState {
             is_monomorphized: true,
         },
         loc: ast.loc,
         name: asSubStr(&name),
         parameters: parent.parameters,
-        fields: new_GAF_List(type_info(&AST)),
+        fields: new_GAF_List(type_info(ASTTypeDeclField)),
+        variants: new_GAF_List(type_info(ASTTypeDeclVariant)),
         monomorphized_instances: mapping,
     });
     add(&parent.monomorphized_instances, key, ptr);
-    parse_struct_with_mapping(ptr, mapping);
-    message(dbg(ast.loc, "Monomorphized struct %", name));
+    parse_type_decl_with_mapping(ptr, mapping);
+    message(dbg(ast.loc, "Monomorphized type %", name));
     return ptr;
 }
 
@@ -481,14 +489,14 @@ func __collect_generic_type_mapping(ast: &AST, type: &Type, mapping: &GAF_HashMa
                     return __collect_generic_type_mapping(sub, ptr, mapping);
                 }
                 (ASTExpr::Call(id, args), ty) => {
-                    let BaseType::Struct(str) = ty.base else {
+                    let BaseType::TypeDecl(str) = ty.base else {
                         return false;
                     };
-                    let &ASTData::Struct(struct_state) = &str.data else {
-                        unreachable("__collect_generic_type_mapping: Expected struct");
+                    let &ASTData::TypeDecl(type_decl_state) = &str.data else {
+                        unreachable("__collect_generic_type_mapping: Expected type_decl");
                     };
-                    assert(struct_state.parameters.length == struct_state.monomorphized_instances.length, "Generic Mapping does not match Generic Param Count");
-                    if (args.length != struct_state.monomorphized_instances.length) {
+                    assert(type_decl_state.parameters.length == type_decl_state.monomorphized_instances.length, "Generic Mapping does not match Generic Param Count");
+                    if (args.length != type_decl_state.monomorphized_instances.length) {
                         return false;
                     }
                     for (let i: usize = 0; i < args.length; i = i + 1) {
@@ -498,17 +506,17 @@ func __collect_generic_type_mapping(ast: &AST, type: &Type, mapping: &GAF_HashMa
                          * foo(List(i32));
                          *
                          * call_site_param => $V
-                         * struct_def_param => $T
-                         * struct_def_type => i32
+                         * type_decl_def_param => $T
+                         * type_decl_def_type => i32
                          * add to mapping => $V => i32
                          */
                         let call_site_param = get_ref(&args, i) as &AST;
-                        let struct_def_param = get_ref(&struct_state.parameters, i) as &AST;
-                        let _t = get(&struct_state.monomorphized_instances, struct_def_param.origin);
+                        let type_decl_def_param = get_ref(&type_decl_state.parameters, i) as &AST;
+                        let _t = get(&type_decl_state.monomorphized_instances, type_decl_def_param.origin);
                         if (_t.ptr == null) return false;
-                        let struct_def_type = _t as &Type;
-                        struct_def_type = unwrap_meta_type(struct_def_type, 1);
-                        if (!maybe_add_mapping(mapping, call_site_param.origin, struct_def_type)) {
+                        let type_decl_def_type = _t as &Type;
+                        type_decl_def_type = unwrap_meta_type(type_decl_def_type, 1);
+                        if (!maybe_add_mapping(mapping, call_site_param.origin, type_decl_def_type)) {
                             return false;
                         }
                     }

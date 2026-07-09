@@ -2,9 +2,9 @@
 
 // Command line: .\build\share_template.exe ./templates/ast.template ./generated/ast.template.bufo
 
-// Generated 6 structure(s)
+// Generated 8 structure(s)
 // Generated 8 union(s)
-// Generated 1 share(s)
+// Generated 5 share(s)
 
 // -- IMPORTS BEGIN --
 import "list.bufo";
@@ -32,49 +32,73 @@ struct AST {
     data: ASTData;
 } // End of AST
 
-struct ASTStruct {
-    // Structure fields
-    state: StructState;
+struct ASTTypeDeclField {
+    // Fields from Share `Common_Fields`
     loc: Loc;
     name: SubStr;
-    parameters: GAF_List; // List<&AST>
+    // Structure fields
+    type_node: &AST;
+} // End of ASTTypeDeclField
+
+struct ASTTypeDeclVariant {
+    // Fields from Share `Common_Fields`
+    loc: Loc;
+    name: SubStr;
+    // Structure fields
     fields: GAF_List; // List<&AST>
+} // End of ASTTypeDeclVariant
+
+struct ASTTypeDecl {
+    // Fields from Share `Common_Fields`
+    loc: Loc;
+    name: SubStr;
+    // Fields from Share `Generic_Fields`
     monomorphized_instances: GAF_HashMap; // HashMap<String, &AST>
+    // Fields from Share `Data_Structure_Fields`
+    parameters: GAF_List; // List<&AST>
     size_in_bytes: usize;
     align_in_bytes: usize;
-} // End of ASTStruct
-
-struct StructState {
     // Structure fields
-    is_monomorphized: bool;
-    did_parse_signature: bool;
-    did_parse_fields: bool;
-    did_check_fields: bool;
-} // End of StructState
+    state: TypeDeclState;
+    fields: GAF_List;   // List<ASTTypeDeclField>
+    variants: GAF_List; // List<ASTTypeDeclVariant>
+} // End of ASTTypeDecl
 
 struct ASTFunction {
-    // Structure fields
-    state: FunctionState;
+    // Fields from Share `Common_Fields`
     loc: Loc;
     name: SubStr;
+    // Fields from Share `Generic_Fields`
+    monomorphized_instances: GAF_HashMap; // HashMap<String, &AST>
+    // Structure fields
+    state: FunctionState;
     scopes: GAF_List;     // List<Scope_Info>
     return_type: &AST;
     params: GAF_List;     // List<&AST>
     block: &AST;
     code: Code;
-    monomorphized_instances: GAF_HashMap; // HashMap<String, &AST>
 } // End of ASTFunction
 
 struct FunctionState {
-    // Structure fields
-    is_generic: bool;
+    // Fields from Share `State`
     is_monomorphized: bool;
     did_parse_signature: bool;
+    // Structure fields
+    is_generic: bool;
     did_check_signature: bool;
     did_parse_body: bool;
     did_check_body: bool;
     did_codegen_body: bool;
 } // End of FunctionState
+
+struct TypeDeclState {
+    // Fields from Share `State`
+    is_monomorphized: bool;
+    did_parse_signature: bool;
+    // Structure fields
+    did_parse_fields: bool;
+    did_check_fields: bool;
+} // End of TypeDeclState
 
 struct ASTAttr {
     // Structure fields
@@ -87,8 +111,7 @@ struct ASTAttr {
 // -- UNIONS BEGIN --
 union ASTData {
     // Union variants
-    Struct(ASTStruct),
-    Field(SubStr, &AST),
+    TypeDecl(ASTTypeDecl),
     Function(ASTFunction),
     Stmt(ASTStmt),
     Expr(ASTExpr),

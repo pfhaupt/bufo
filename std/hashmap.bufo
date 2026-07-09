@@ -206,7 +206,14 @@ func getRaw(this: &GAF_HashMap, key: Data) -> Any {
 }
 
 func get(this: &GAF_HashMap, key: Data) -> Data {
-    assert(equals(&this.key_type, &key.info), "GAF_HashMap.get: Key type mismatch");
+    if (!equals(&this.key_type, &key.info)) {
+        let want = get_name(&this.key_type);
+        let got = get_name(&key.info);
+        C::fprintf(stderr, "got:  %.*s\n", got.len, got.start);
+        C::fprintf(stderr, "want: %.*s\n", want.len, want.start);
+        C::fprintf(stderr, "GAF_HashMap.get: Key type mismatch\n");
+        C::exit(1);
+    }
 
     let empty = Data { info: this.value_type, ptr: null };
     if (this.length == 0) return empty;

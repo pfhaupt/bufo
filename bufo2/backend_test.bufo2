@@ -1,0 +1,69 @@
+
+#load "ops.bufo2";
+
+// @backend module LLVM_Backend {
+//     struct Context {
+//         ctx: LLVMContextRef;
+//     }
+//     func initialize() -> Context {
+//         return Context {
+//             ctx: LLVMCreateContext(),
+//         };
+//     }
+//     func generate_function(ctx: &Context, fn: Code) -> bool {
+//         return generate_block(ctx, fn.block);
+//     }
+//     func generate_block(ctx: &Context, block: &AST) -> bool {
+//         for stmt in block.stmts {
+//             emit_llvm(ctx, stmt);
+//         }
+//         return true;
+//     }
+//     func generate_expr(ctx: &Context, expr: &ASTExpr) -> bool {
+//     }
+//     func finalize(ctx: &Context) -> bool {
+//         LLVMWriteMachineCodeToFile(ctx.ctx);
+//         return true;
+//     }
+// }
+
+/*
+ * Plan:
+ * - Userspace Backends
+ *   - Module support
+ *   - Oh shit, Instructions are Unions
+ *     - Implement Unions
+ *       - Oh shit, binary operators are also userspace
+ *         - Implement better metaprogramming
+ *       - Oh shit, bufo2 was supposed to have `type`
+ *         - Compiler Refactoring (WE ARE HERE)
+ */
+
+struct Foo {
+    n: i32;
+    a: i64;
+}
+
+union Option($T) {
+    Some($T);
+    None;
+}
+
+func main() {
+    #run {
+        let n: i32 = 1;
+        // let some0: Option(i32) = blank;
+        // let some1 = Option.Some(n);
+        // let some2: Option(i32) = Option.Some(n);
+        // let some3: Option(i32) = Some(n);
+        // let some4 = Some(n);
+        // let none1: Option = None; // should fail, dont know $T
+        // let none2: Option(i32) = None;
+        // let none3: Option(i32) = Option.None;
+        // some4 = None;
+        // #assert some1 == Option.Some, "some1 is not Some";
+        // #assert some4 == Option.None, "some4 is not None";
+        // #assert none2 == None, "none2 is not None";
+        // #assert none3 != Option.None, "none3 is None";
+    }
+}
