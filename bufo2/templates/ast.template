@@ -46,14 +46,17 @@ shared Generic_Fields {
 shared Data_Structure_Fields {
     size_in_bytes: usize;
     align_in_bytes: usize;
+    tag_offset: usize;
 }
 
 struct ASTTypeDeclField : Common_Fields {
     type_node: &AST;
+    offset_in_type: usize;
 }
 
 struct ASTTypeDeclVariant : Common_Fields, Data_Structure_Fields {
     fields: GAF_List; // List<&AST>
+    field_offsets: GAF_List; // List<usize>
 }
 
 struct ASTTypeDecl : Common_Fields, Generic_Fields, Data_Structure_Fields {
@@ -151,6 +154,13 @@ union ASTExpr {
     ResolvedGeneric(&Type),
     As(&AST, &AST),
     Dot(&AST, &AST),
+    // we support two versions of initialization:
+    // shorthand: .Some(5)
+    // long form: Option.Some(5)
+    // first argument is the optional LHS, or null if it doesn't exist
+    // second argument is name of variant
+    // if list is empty, it's an empty variant, otherwise a tuple variant
+    VariantInit(&AST, SubStr, GAF_List), // List<&AST>
 }
 
 union ASTBinary {
@@ -160,6 +170,7 @@ union ASTBinary {
     MultAssign(&AST, &AST),
     DivAssign(&AST, &AST),
     Equal(&AST, &AST),
+    NotEqual(&AST, &AST),
     Plus(&AST, &AST),
     Minus(&AST, &AST),
     Mult(&AST, &AST),

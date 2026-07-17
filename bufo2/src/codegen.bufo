@@ -31,20 +31,20 @@ struct Code {
     comptime_level: usize;
     comptime_interp: Interp;
 }
-func start_comptime(code: &Code) {
+@trace func start_comptime(code: &Code) {
     code.comptime_level = code.comptime_level + 1;
 }
-func end_comptime(code: &Code) {
+@trace func end_comptime(code: &Code) {
     assert(code.comptime_level > 0, "end_comptime: comptime_level is 0");
     code.comptime_level = code.comptime_level - 1;
 }
-func get_comptime_variable(code: &Code, name: SubStr) -> (Value, bool) {
+@trace func get_comptime_variable(code: &Code, name: SubStr) -> (Value, bool) {
     let val = get(&code.comptime_variables, name);
     if (val.ptr == null) return (Value::Invalid, false);
     return (val as Value, true);
 }
 
-func create_code(owner: &AST) -> Code {
+@trace func create_code(owner: &AST) -> Code {
     return Code {
         owner: owner,
         runtime: create_code_context(),
@@ -53,28 +53,28 @@ func create_code(owner: &AST) -> Code {
     };
 }
 
-func get_context(code: &Code) -> &Code_Context {
+@trace func get_context(code: &Code) -> &Code_Context {
     if (code.comptime_level > 0) {
         return &code.komptime;
     } else {
         return &code.runtime;
     }
 }
-func get_current_block(code: &Code) -> &Block {
+@trace func get_current_block(code: &Code) -> &Block {
     return get_current_block(get_context(code));
 }
-func set_current_block(code: &Code, id: BID) {
+@trace func set_current_block(code: &Code, id: BID) {
     let cc = get_context(code);
     let _b: &Block = get_ref_raw(&cc.blocks, id._i);
     set_current_block(cc, id);
 }
-func allocate_register(code: &Code, type: &Type) -> Reg {
+@trace func allocate_register(code: &Code, type: &Type) -> Reg {
     return allocate_register(get_context(code), type);
 }
-func create_instr(code: &Code, loc: Loc, type: &Type, op: Op) -> Instr {
+@trace func create_instr(code: &Code, loc: Loc, type: &Type, op: Op) -> Instr {
     return create_instr(get_context(code), loc, type, op);
 }
-func create_block(code: &Code, name: String) -> Block {
+@trace func create_block(code: &Code, name: String) -> Block {
     return create_block(get_context(code), name);
 }
 
@@ -90,7 +90,7 @@ struct Code_Context {
     alloca_counter: usize;
 }
 
-func reset(cc: &Code_Context) {
+@trace func reset(cc: &Code_Context) {
     free(&cc.blocks);
     cc.blocks = new_GAF_List(type_info(Block));
     cc.entry = create_block(cc, comptime newReadonlyString("entry")).id;
@@ -103,32 +103,32 @@ func reset(cc: &Code_Context) {
     reset(&cc.variable_map);
 }
 
-func create_code_context() -> Code_Context {
+@trace func create_code_context() -> Code_Context {
     return Code_Context {
         blocks: new_GAF_List(type_info(Block)),
         variable_map: new_hashmap_with_substr_key(type_info(Var)),
     };
 }
 
-func get_current_block(code: &Code_Context) -> &Block {
+@trace func get_current_block(code: &Code_Context) -> &Block {
     return get_ref_raw(&code.blocks, code.current_block._i);
 }
 
-func set_current_block(code: &Code_Context, id: BID) {
+@trace func set_current_block(code: &Code_Context, id: BID) {
     code.current_block = id;
 }
 
-func allocate_register(cc: &Code_Context, type: &Type) -> Reg {
+@trace func allocate_register(cc: &Code_Context, type: &Type) -> Reg {
     return allocate_register(cc, get_size(type));
 }
-func allocate_register(cc: &Code_Context, size: usize) -> Reg {
+@trace func allocate_register(cc: &Code_Context, size: usize) -> Reg {
     let reg = Reg { _i: cc.register_count, offset: cc.total_register_size, size: size };
     cc.register_count = cc.register_count + 1;
     cc.total_register_size = cc.total_register_size + size;
     return reg;
 }
 
-func allocate_variable(code: &Code, loc: Loc, type: &Type, name: SubStr) -> Reg {
+@trace func allocate_variable(code: &Code, loc: Loc, type: &Type, name: SubStr) -> Reg {
     let cc = get_context(code);
     let curr = get_current_block(cc);
     set_current_block(cc, cc.entry);
@@ -159,10 +159,10 @@ struct Block {
     ir: GAF_List; // List<Instr>
 }
 
-func create_block(cc: &Code_Context) -> Block {
+@trace func create_block(cc: &Code_Context) -> Block {
     return create_block(cc, format1("bb%", cc.blocks.length));
 }
-func create_block(cc: &Code_Context, name: String) -> Block {
+@trace func create_block(cc: &Code_Context, name: String) -> Block {
     let block = Block {
         id: BID { _i: cc.blocks.length },
         name: name,
@@ -171,7 +171,7 @@ func create_block(cc: &Code_Context, name: String) -> Block {
     push(&cc.blocks, block);
     return block;
 }
-func is_terminated(block: &Block) -> bool {
+@trace func is_terminated(block: &Block) -> bool {
     if (block.ir.length == 0) return false;
     return is_terminator(get_ref_raw(&block.ir, block.ir.length - 1));
 }
@@ -183,7 +183,7 @@ struct Instr {
     op: Op;
 }
 
-func create_instr(cc: &Code_Context, loc: Loc, type: &Type, op: Op) -> Instr {
+@trace func create_instr(cc: &Code_Context, loc: Loc, type: &Type, op: Op) -> Instr {
     let block = get_current_block(cc);
     let instr = Instr {
         id: block.ir.length,
@@ -195,8 +195,8 @@ func create_instr(cc: &Code_Context, loc: Loc, type: &Type, op: Op) -> Instr {
     return instr;
 }
 
-func is_terminator(instr: &Instr) -> bool {
-    (comptime assert(tag(&Op::__count) == 25, "is_terminator: Op was added"));
+@trace func is_terminator(instr: &Instr) -> bool {
+    (comptime assert(tag(&Op::__count) == 26, "is_terminator: Op was added"));
     match (instr.op) {
         Op::ReturnVoid   => { return true; }
         Op::Return(_)    => { return true; }
@@ -215,7 +215,7 @@ union Op {
     LoadBool(Reg, bool),
     LoadBlank(Reg),
     Alloca(Reg, SubStr), // associate Allocas with an identifier for later use
-    Load(Reg, Reg),
+    Load(Reg, Reg),   // dst, src
     Store(Reg, Reg),
     Move(Reg, Reg),
     Br(BID),
@@ -228,6 +228,7 @@ union Op {
     Sub(Reg, Reg, Reg), // sub <dst>, <src1>, <src2>
     Mul(Reg, Reg, Reg), // mul <dst>, <src1>, <src2>
     Eq(Reg, Reg, Reg),  // eq  <dst>, <src1>, <src2>
+    Neq(Reg, Reg, Reg), // eq  <dst>, <src1>, <src2>
     Gte(Reg, Reg, Reg), // gte <dst>, <src1>, <src2>
     Lte(Reg, Reg, Reg), // lte <dst>, <src1>, <src2>
     ComptimeAssert(Reg, String),
@@ -236,7 +237,7 @@ union Op {
     __count,
 }
 
-func _h(lexer: &Lexer) -> (Token, SubStr, Loc) {
+@trace func _h(lexer: &Lexer) -> (Token, SubStr, Loc) {
     let tkn = expect(lexer, TokenData::Ident, TokenData::BuiltinType, TokenData::Number);
     let name: SubStr = blank;
     if let TokenData::Ident       { _name } = tkn.data { name = _name; }
@@ -244,7 +245,7 @@ func _h(lexer: &Lexer) -> (Token, SubStr, Loc) {
     if let TokenData::Number      { _name } = tkn.data { name = _name; }
     return (tkn, name, tkn.loc);
 }
-func _r(fi: &ASTFunction, register_map: &GAF_HashMap, loc: Loc, type: &Type, name: SubStr) -> Reg {
+@trace func _r(fi: &ASTFunction, register_map: &GAF_HashMap, loc: Loc, type: &Type, name: SubStr) -> Reg {
     let existing_reg = get(register_map, name);
     if (existing_reg.ptr != null) {
         return existing_reg as Reg;
@@ -254,7 +255,7 @@ func _r(fi: &ASTFunction, register_map: &GAF_HashMap, loc: Loc, type: &Type, nam
         return reg;
     }
 }
-func _t(fn: &AST, lexer: &Lexer, checked_type: &Type) -> &Type {
+@trace func _t(fn: &AST, lexer: &Lexer, checked_type: &Type) -> &Type {
     let func_info = get_func_info(fn);
     let is_pointer = eat(lexer, TokenData::AsteriskSingle);
     let (typ_tkn, typ_name, typ_loc) = _h(lexer);
@@ -277,7 +278,7 @@ func _t(fn: &AST, lexer: &Lexer, checked_type: &Type) -> &Type {
     return type;
 }
 
-func parse_bufo_ir_into_function_body(fn: &AST, register_map: &GAF_HashMap, lexer: &Lexer, checked_type: &Type, insert_op: bool) -> &Type {
+@trace func parse_bufo_ir_into_function_body(fn: &AST, register_map: &GAF_HashMap, lexer: &Lexer, checked_type: &Type, insert_op: bool) -> &Type {
     let func_info = get_func_info(fn);
 
     let (op_tkn, op_name, op_loc) = _h(lexer);
@@ -345,6 +346,9 @@ func parse_bufo_ir_into_function_body(fn: &AST, register_map: &GAF_HashMap, lexe
     } else if (equals(&op_name, &comptime newSubStr("sub"))) {
         let (dst_reg, src1_reg, src2_reg) = _3(lexer, func_info, register_map, type);
         op = Op::Sub(dst_reg, src1_reg, src2_reg);
+    } else if (equals(&op_name, &comptime newSubStr("neq"))) {
+        let (dst_reg, src1_reg, src2_reg) = _3(lexer, func_info, register_map, type);
+        op = Op::Neq(dst_reg, src1_reg, src2_reg);
     } else if (equals(&op_name, &comptime newSubStr("eq"))) {
         let (dst_reg, src1_reg, src2_reg) = _3(lexer, func_info, register_map, type);
         op = Op::Eq(dst_reg, src1_reg, src2_reg);
@@ -391,7 +395,7 @@ func parse_bufo_ir_into_function_body(fn: &AST, register_map: &GAF_HashMap, lexe
     return type;
 }
 
-func codegen_function_exit(fn: &AST) {
+@trace func codegen_function_exit(fn: &AST) {
     let &ASTData::Function(func_state) = &fn.data else {
         unreachable("codegen_function_exit: Node is not a function");
     };
@@ -419,7 +423,7 @@ func codegen_function_exit(fn: &AST) {
         }
     }
 }
-func codegen_function_entry(fn: &AST) {
+@trace func codegen_function_entry(fn: &AST) {
     let &ASTData::Function(func_state) = &fn.data else {
         unreachable("codegen_function_entry: Node is not a function");
     };
@@ -653,6 +657,9 @@ func codegen_function_entry(fn: &AST) {
         &ASTExpr::Noop => {
             return (blank, blank);
         }
+        &ASTExpr::VariantInit(lhs, variant_name, args) => {
+            return codegen_variant_init(fn, expr, lhs, variant_name, args);
+        }
         _ => {
             message(todo(expr.loc, "codegen_expr: Can't codegen expression %", actual_expr));
         }
@@ -660,7 +667,64 @@ func codegen_function_entry(fn: &AST) {
     unreachable("codegen_expr");
 }
 
-func codegen_unary(fn: &ASTFunction, expr: &AST, wants_ptr: bool) -> (Reg, Instr) {
+@trace func codegen_variant_init(fn: &ASTFunction, expr: &AST, lhs: &AST, variant_name: SubStr, args: GAF_List) -> (Reg, Instr) {
+    assert(lhs != null, "codegen_variant_init: LHS is null");
+    assert(lhs.type != null, "codegen_variant_init: LHS type is null");
+    assert(expr.type != null, "codegen_variant_init: Expr type is null");
+
+    let BaseType::TypeDecl(type_decl_node) = expr.type.base else {
+        unreachable("codegen_variant_init: LHS type is not a type decl");
+    };
+    let type_decl_info = get_type_decl_info(type_decl_node);
+
+    let tag_offset = get_tag_offset(type_decl_info);
+    let tag_size = type_decl_info.variants.length / 256 + 1;
+    let offset_type = create_base_type(PrimType::U64);
+    let ptr_type = into_pointer_type(offset_type);
+    let offset_reg = allocate_register(&fn.code, offset_type);
+    let offset_ptr = allocate_register(&fn.code, ptr_type);
+    create_instr(&fn.code, expr.loc, offset_type, Op::LoadNumber(offset_reg, tag_offset as u64));
+
+    let (found, variant, tag) = get_tag_of_variant(type_decl_info, variant_name);
+    assert(found, "codegen_variant_init: Could not find variant");
+
+    let tmp_name = format1("variant_init_%", expr);
+    let instance_ptr = allocate_variable(&fn.code, expr.loc, expr.type, asSubStr(&tmp_name));
+    let instance_reg = allocate_register(&fn.code, expr.type);
+    {
+        // Initialize with 0s
+        create_instr(&fn.code, expr.loc, expr.type, Op::LoadBlank(instance_reg));
+        create_instr(&fn.code, expr.loc, expr.type, Op::Store(instance_ptr, instance_reg));
+    }
+    {
+        // Set tag
+        let tag_type = create_base_type(PrimType::U8);
+        if (type_decl_info.variants.length >= 256) {
+            tag_type = create_base_type(PrimType::U16);
+        }
+
+        let tag_reg = allocate_register(&fn.code, tag_type);
+        create_instr(&fn.code, expr.loc, tag_type, Op::LoadNumber(tag_reg, tag as u64));
+        create_instr(&fn.code, expr.loc, ptr_type, Op::Add(offset_ptr, instance_ptr, offset_reg));
+        create_instr(&fn.code, expr.loc, tag_type, Op::Store(offset_ptr, tag_reg));
+    }
+
+    let _variant_start = next_multiple_of(tag_offset + tag_size, variant.align_in_bytes);
+    for (let i: usize = 0; i < args.length; i = i + 1) {
+        let arg = get_ref(&args, i) as &AST;
+        let field_offset = get_ref(&variant.field_offsets, i) as usize;
+        let offset_in_init = _variant_start + field_offset;
+        let (arg_reg, arg_instr) = codegen_expr(fn, arg, false);
+        create_instr(&fn.code, arg.loc, offset_type, Op::LoadNumber(offset_reg, offset_in_init as u64));
+        create_instr(&fn.code, arg.loc, ptr_type, Op::Add(offset_ptr, instance_ptr, offset_reg));
+        create_instr(&fn.code, arg.loc, arg.type, Op::Store(offset_ptr, arg_reg));
+    }
+
+    let instance = create_instr(&fn.code, expr.loc, expr.type, Op::Load(instance_reg, instance_ptr));
+    return (instance_reg, instance);
+}
+
+@trace func codegen_unary(fn: &ASTFunction, expr: &AST, wants_ptr: bool) -> (Reg, Instr) {
     let &ASTData::Expr(ASTExpr::Unary(unary)) = &expr.data else {
         unreachable("codegen_unary: Node is not a unary expression");
     };
@@ -675,7 +739,7 @@ func codegen_unary(fn: &ASTFunction, expr: &AST, wants_ptr: bool) -> (Reg, Instr
     unreachable("codegen_unary");
 }
 
-func codegen_pattern(fn: &ASTFunction, pat: &AST, expr: Reg, is_comptime: bool) -> Reg {
+@trace func codegen_pattern(fn: &ASTFunction, pat: &AST, expr: Reg, is_comptime: bool) -> Reg {
     let &ASTData::Pat(actual_pat) = &pat.data else {
         unreachable("codegen_pattern: Node is not a pattern");
     };

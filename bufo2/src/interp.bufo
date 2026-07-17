@@ -473,16 +473,16 @@ func create_interpreter(fn: &AST) -> Interp {
             assert(src1_size == src2_size, "evaluate_single: Eq operands don't match");
             let signed = is_signed_integer(instr.type);
             let eq = false;
-            if (dst_size == 1) {
+            if (src1_size == 1) {
                 if (signed) eq = *(src1 as &i8) == *(src2 as &i8);
                 else eq = *(src1 as &u8) == *(src2 as &u8);
-            } else if (dst_size == 2) {
+            } else if (src1_size == 2) {
                 if (signed) eq = *(src1 as &i16) == *(src2 as &i16);
                 else eq = *(src1 as &u16) == *(src2 as &u16);
-            } else if (dst_size == 4) {
+            } else if (src1_size == 4) {
                 if (signed) eq = *(src1 as &i32) == *(src2 as &i32);
                 else eq = *(src1 as &u32) == *(src2 as &u32);
-            } else if (dst_size == 8) {
+            } else if (src1_size == 8) {
                 if (signed) eq = *(src1 as &i64) == *(src2 as &i64);
                 else eq = *(src1 as &u64) == *(src2 as &u64);
             } else {
@@ -490,6 +490,34 @@ func create_interpreter(fn: &AST) -> Interp {
             }
             let r: u8 = 0;
             if (eq) r = 1;
+            *dst = r;
+            return Value::Reg(dst, dst_size);
+        }
+        &Op::Neq(_dst, _src1, _src2) => {
+            let (dst, dst_size) = get_register_pointer_and_size(interp, _dst);
+            let (src1, src1_size) = get_register_pointer_and_size(interp, _src1);
+            let (src2, src2_size) = get_register_pointer_and_size(interp, _src2);
+            assert(dst_size == 1, "evaluate_single: Eq dst is not 1 byte");
+            assert(src1_size == src2_size, "evaluate_single: Eq operands don't match");
+            let signed = is_signed_integer(instr.type);
+            let neq = false;
+            if (src1_size == 1) {
+                if (signed) neq = *(src1 as &i8) != *(src2 as &i8);
+                else neq = *(src1 as &u8) != *(src2 as &u8);
+            } else if (src1_size == 2) {
+                if (signed) neq = *(src1 as &i16) != *(src2 as &i16);
+                else neq = *(src1 as &u16) != *(src2 as &u16);
+            } else if (src1_size == 4) {
+                if (signed) neq = *(src1 as &i32) != *(src2 as &i32);
+                else neq = *(src1 as &u32) != *(src2 as &u32);
+            } else if (src1_size == 8) {
+                if (signed) neq = *(src1 as &i64) != *(src2 as &i64);
+                else neq = *(src1 as &u64) != *(src2 as &u64);
+            } else {
+                message(todo(instr.loc, "Op::Neq for %", to_string(instr.type)));
+            }
+            let r: u8 = 0;
+            if (neq) r = 1;
             *dst = r;
             return Value::Reg(dst, dst_size);
         }
@@ -501,16 +529,16 @@ func create_interpreter(fn: &AST) -> Interp {
             assert(src1_size == src2_size, "evaluate_single: Gte operands don't match");
             let signed = is_signed_integer(instr.type);
             let gte = false;
-            if (dst_size == 1) {
+            if (src1_size == 1) {
                 if (signed) gte = *(src1 as &i8) >= *(src2 as &i8);
                 else gte = *(src1 as &u8) >= *(src2 as &u8);
-            } else if (dst_size == 2) {
+            } else if (src1_size == 2) {
                 if (signed) gte = *(src1 as &i16) >= *(src2 as &i16);
                 else gte = *(src1 as &u16) >= *(src2 as &u16);
-            } else if (dst_size == 4) {
+            } else if (src1_size == 4) {
                 if (signed) gte = *(src1 as &i32) >= *(src2 as &i32);
                 else gte = *(src1 as &u32) >= *(src2 as &u32);
-            } else if (dst_size == 8) {
+            } else if (src1_size == 8) {
                 if (signed) gte = *(src1 as &i64) >= *(src2 as &i64);
                 else gte = *(src1 as &u64) >= *(src2 as &u64);
             } else {
@@ -529,16 +557,16 @@ func create_interpreter(fn: &AST) -> Interp {
             assert(src1_size == src2_size, "evaluate_single: Lte operands don't match");
             let signed = is_signed_integer(instr.type);
             let lte = false;
-            if (dst_size == 1) {
+            if (src1_size == 1) {
                 if (signed) lte = *(src1 as &i8) <= *(src2 as &i8);
                 else lte = *(src1 as &u8) <= *(src2 as &u8);
-            } else if (dst_size == 2) {
+            } else if (src1_size == 2) {
                 if (signed) lte = *(src1 as &i16) <= *(src2 as &i16);
                 else lte = *(src1 as &u16) <= *(src2 as &u16);
-            } else if (dst_size == 4) {
+            } else if (src1_size == 4) {
                 if (signed) lte = *(src1 as &i32) <= *(src2 as &i32);
                 else lte = *(src1 as &u32) <= *(src2 as &u32);
-            } else if (dst_size == 8) {
+            } else if (src1_size == 8) {
                 if (signed) lte = *(src1 as &i64) <= *(src2 as &i64);
                 else lte = *(src1 as &u64) <= *(src2 as &u64);
             } else {

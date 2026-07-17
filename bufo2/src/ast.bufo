@@ -121,6 +121,19 @@ import "../generated/ast.template.bufo";
     return (false, 0, 0, 0);
 }
 
+@trace func get_tag_of_variant(type_decl_info: &ASTTypeDecl, name: SubStr) -> (bool, &ASTTypeDeclVariant, usize) {
+    for (let i: usize = 0; i < type_decl_info.variants.length; i = i + 1) {
+        let variant: &ASTTypeDeclVariant = get_ref_raw(&type_decl_info.variants, i);
+        if (equals(&variant.name, &name)) {
+            return (true, variant, i);
+        }
+    }
+    return (false, null, 0);
+}
+@trace func get_variant_by_name(type_decl_info: &ASTTypeDecl, name: SubStr) -> (bool, &ASTTypeDeclVariant) {
+    let (f, v, t) = get_tag_of_variant(type_decl_info, name);
+    return (f, v);
+}
 @trace func get_field_by_name(type_decl_info: &ASTTypeDecl, name: SubStr) -> (bool, &ASTTypeDeclField) {
     for (let i: usize = 0; i < type_decl_info.fields.length; i = i + 1) {
         let field: &ASTTypeDeclField = get_ref_raw(&type_decl_info.fields, i);
@@ -155,6 +168,21 @@ import "../generated/ast.template.bufo";
     return type_decl_info.size_in_bytes;
 }
 
+@trace func get_tag_offset(info: &ASTTypeDecl) -> usize {
+    let (handler, result) = wait_for_monitor(&info.tag_offset);
+    let Corot_Result::Success = result else {
+        handle_corot_result(result,
+            error(info.loc, "Could not get tag offset of type declaration due to a cyclic dependency on %.", corot_str(handler)),
+            error(info.loc, "Could not get tag offset of type declaration. There were errors."));
+        unreachable(); // above terminates
+    };
+    if (info.variants.length == 0) {
+        message(fatal(info.loc, "get_tag_offset: Type Declaration doesn't have variants, so it doesn't have a tag."));
+    }
+    return info.tag_offset;
+}
+
+
 @trace func add_field(parent: &AST, type_decl_info: &ASTTypeDecl, loc: Loc, name: SubStr, type: &AST) {
     let field = ASTTypeDeclField {
         loc: loc,
@@ -169,7 +197,9 @@ import "../generated/ast.template.bufo";
         loc: loc,
         name: name,
         fields: variant_fields,
+        field_offsets: new_GAF_List(type_info(usize)),
     };
+    reserve_capacity(&variant.field_offsets, variant_fields.length);
     push(&type_decl_info.variants, variant);
 }
 
@@ -240,7 +270,7 @@ import "../generated/ast.template.bufo";
 }
 
 @trace func is_assignment(bin: ASTBinary) -> bool {
-    (comptime assert(tag(&ASTBinary::__count) == 14, "is_assignment: Added more Operands"));
+    (comptime assert(tag(&ASTBinary::__count) == 15, "is_assignment: Added more Operands"));
     match (bin) {
         ASTBinary::Assign(..)      => { return true; }
         ASTBinary::PlusAssign(..)  => { return true; }
@@ -253,14 +283,15 @@ import "../generated/ast.template.bufo";
 }
 
 @trace func binary_expr_to_function_name(bin: ASTBinary) -> SubStr {
-    (comptime assert(tag(&ASTBinary::__count) == 14, "binary_expr_to_function_name: Added more Operands"));
+    (comptime assert(tag(&ASTBinary::__count) == 15, "binary_expr_to_function_name: Added more Operands"));
     match (bin) {
         ASTBinary::Assign(..)       => { return comptime newSubStrOfStrLit("__assign__"); }
         ASTBinary::PlusAssign(..)   => { return comptime newSubStrOfStrLit("__plus_assign__"); }
         ASTBinary::MinusAssign(..)  => { return comptime newSubStrOfStrLit("__minus_assign__"); }
         ASTBinary::MultAssign(..)   => { return comptime newSubStrOfStrLit("__mult_assign__"); }
         ASTBinary::DivAssign(..)    => { return comptime newSubStrOfStrLit("__div_assign__"); }
-        ASTBinary::Equal(..)        => { return comptime newSubStrOfStrLit("__equals__"); }
+        ASTBinary::Equal(..)        => { return comptime newSubStrOfStrLit("__eq__"); }
+        ASTBinary::NotEqual(..)     => { return comptime newSubStrOfStrLit("__neq__"); }
         ASTBinary::Plus(..)         => { return comptime newSubStrOfStrLit("__add__"); }
         ASTBinary::Minus(..)        => { return comptime newSubStrOfStrLit("__sub__"); }
         ASTBinary::Mult(..)         => { return comptime newSubStrOfStrLit("__mul__"); }
@@ -275,7 +306,7 @@ import "../generated/ast.template.bufo";
 }
 
 @trace func binary_expr_from_op(op: Token, lhs: &AST, rhs: &AST) -> ASTExpr {
-    (comptime assert(tag(&ASTBinary::__count) == 14, "binary_expr_from_op: Added more Operands"));
+    (comptime assert(tag(&ASTBinary::__count) == 15, "binary_expr_from_op: Added more Operands"));
     let bin = ASTBinary::Equal;
     match (op.data) {
         TokenData::EqualSingle    => { bin = ASTBinary::Assign(lhs, rhs); }
@@ -284,6 +315,7 @@ import "../generated/ast.template.bufo";
         TokenData::AsteriskEqual  => { bin = ASTBinary::MultAssign(lhs, rhs); }
         TokenData::SlashEqual     => { bin = ASTBinary::DivAssign(lhs, rhs); }
         TokenData::EqualDouble    => { bin = ASTBinary::Equal(lhs, rhs); }
+        TokenData::NotEqual       => { bin = ASTBinary::NotEqual(lhs, rhs); }
         TokenData::PlusSingle     => { bin = ASTBinary::Plus(lhs, rhs); }
         TokenData::MinusSingle    => { bin = ASTBinary::Minus(lhs, rhs); }
         TokenData::AsteriskSingle => { bin = ASTBinary::Mult(lhs, rhs); }
@@ -292,13 +324,15 @@ import "../generated/ast.template.bufo";
         TokenData::LessEqual      => { bin = ASTBinary::LessEqual(lhs, rhs); }
         TokenData::GreaterThan    => { bin = ASTBinary::GreaterThan(lhs, rhs); }
         TokenData::GreaterEqual   => { bin = ASTBinary::GreaterEqual(lhs, rhs); }
-        _ => { }
+        _ => {
+            unreachable("binary_expr_from_op");
+        }
     }
     return ASTExpr::Binary(bin);
 }
 
 @trace func extract_operands(bin: ASTBinary, lhs: &&AST, rhs: &&AST) {
-    (comptime assert(tag(&ASTBinary::__count) == 14, "extract_operands: Added more Operands"));
+    (comptime assert(tag(&ASTBinary::__count) == 15, "extract_operands: Added more Operands"));
     match (bin) {
         ASTBinary::Assign      (_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
         ASTBinary::PlusAssign  (_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
@@ -306,6 +340,7 @@ import "../generated/ast.template.bufo";
         ASTBinary::MultAssign  (_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
         ASTBinary::DivAssign   (_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
         ASTBinary::Equal       (_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
+        ASTBinary::NotEqual    (_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
         ASTBinary::Plus        (_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
         ASTBinary::Minus       (_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }
         ASTBinary::Mult        (_lhs, _rhs) => { *lhs = _lhs; *rhs = _rhs; }

@@ -35,9 +35,10 @@
  *     - Implement Unions
  *       - Oh shit, binary operators are also userspace
  *         - Implement better metaprogramming
+ *           - Module support, again
  *       - Oh shit, bufo2 was supposed to have `type`
- *         - Compiler Refactoring (WE ARE HERE)
- *           - Refactoring is done, but we can't really use variants yet
+ *         - Compiler Refactoring
+ *           - Refactoring is done, but we can't really use variants yet (WE ARE HERE)
  */
 
 struct Foo {
@@ -46,8 +47,8 @@ struct Foo {
 }
 
 union Option($T) {
-    Some($T);
     None;
+    Some($T);
 }
 
 type Stuff {
@@ -74,23 +75,19 @@ func main() {
         let size = sizeof(stuff);
         #assert size == 16;
 
-        let some1 = Option.Some(n);
-        let some2: Option(i32) = Option.Some(n);
-        let some3: Option(i32) = .Some(n);
-        let some4 = .Some(n);
-        // none1 should fail, dont know $T
-        let none1: Option = .None;
-        let none2: Option(i32) = .None;
-        let none3: Option(i32) = Option.None;
-        some4 = .None;
+        let n: i32 = 69;
+        let some1 = Option(i32).Some(n);
+        let some2: Option(i32) = .Some(n);
+        let none1: Option(i32) = .None;
+        let none2: Option(i32) = Option(i32).None;
+        some2 = .None;
+        none2 = .Some(n);
 
-        #assert some1 == Option.Some;
         #assert some1 == .Some;
-        #assert some4 == Option.None;
-        #assert some4 == .None;
-        #assert none2 == .None;
-        #assert none3 != Option.None;
-        #assert none3 != .None;
+        #assert some2 == .None;
+        #assert none1 == .None;
+        #assert none2 != .None;
+        #debug;
 
         // Bonus:
         // let stuff1: Stuff = blank; // warning: Initializing type with variants with blank

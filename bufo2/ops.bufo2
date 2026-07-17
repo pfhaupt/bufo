@@ -56,13 +56,24 @@ func __plus_assign__(a: *$T, b: $T) -> $T @naked {
     };
 }
 
-func __equals__(a: $T, b: $T) -> bool @naked {
+func __eq__(a: $T, b: $T) -> bool @naked {
     comptime ty = $T;
     #bir {
         entry:
         param ty r0, 1;
         param ty r1, 0;
         eq   bool r2, r0, r1;
+        ret  bool r2;
+    };
+}
+
+func __neq__(a: $T, b: $T) -> bool @naked {
+    comptime ty = $T;
+    #bir {
+        entry:
+        param ty r0, 1;
+        param ty r1, 0;
+        neq  bool r2, r0, r1;
         ret  bool r2;
     };
 }

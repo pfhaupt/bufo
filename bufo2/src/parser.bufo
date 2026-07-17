@@ -231,6 +231,7 @@ let loaded_files: GAF_HashMap = blank;
 
     register_monitor(&type_decl_state.size_in_bytes);
     register_monitor(&type_decl_state.align_in_bytes);
+    register_monitor(&type_decl_state.tag_offset);
     register_monitor(&type_decl_state.state.did_parse_fields);
     register_monitor(&type_decl_state.state.did_parse_variants);
     register_monitor(&type_decl_state.state.did_check_fields);
@@ -685,7 +686,7 @@ union Assoc { Left, Right }
 }
 @trace func get_binary_precedence(tkn: TokenData) -> usize {
     (comptime assert(tag(&TokenData::EndOfFile) == 49, "Parser::get_binary_precedence: Added more tokens"));
-    (comptime assert(tag(&ASTBinary::__count) == 14, "get_binary_precedence: Added more Operands"));
+    (comptime assert(tag(&ASTBinary::__count) == 15, "get_binary_precedence: Added more Operands"));
     match (tkn) {
         TokenData::Dot            => { return 17; }
         TokenData::ParenOpen      => { return 16; }
@@ -709,7 +710,7 @@ union Assoc { Left, Right }
     unreachable("get_binary_precedence");
 }
 @trace func get_binary_associativity(tkn: Token) -> Assoc {
-    (comptime assert(tag(&ASTBinary::__count) == 14, "get_binary_associativity: Added more Operands"));
+    (comptime assert(tag(&ASTBinary::__count) == 15, "get_binary_associativity: Added more Operands"));
     match (tkn.data) {
         TokenData::EqualSingle    => { return Assoc::Right; }
         TokenData::PlusEqual      => { return Assoc::Right; }
@@ -808,6 +809,27 @@ union Assoc { Left, Right }
         }
         TokenData::CurlyOpen => {
             return parse_block(context);
+        }
+        TokenData::Dot => {
+            let name_tkn = expect(&context.lexer, TokenData::Ident);
+            let TokenData::Ident { name } = name_tkn.data else { unreachable(); };
+            let args = new_GAF_List(type_info(&AST));
+            let is_generic = false;
+            if (eat(&context.lexer, TokenData::ParenOpen)) {
+                while (!lexer_at(&context.lexer, TokenData::ParenClose)) {
+                    let (gen_arg, arg) = parse_expr(context);
+                    if (gen_arg) is_generic = true;
+                    push(&args, arg);
+                }
+                if (args.length == 0) {
+                    message(
+                        error(name_tkn.loc, "Unexpected parentheses in empty type variant initialization."),
+                        note(name_tkn.loc, "Tuple variants must always have at least one field, so an initialization like .%() is always incorrect.", name)
+                    );
+                }
+                expect(&context.lexer, TokenData::ParenClose);
+            }
+            return (is_generic, create_expr(context.parent, tkn.loc, name, ASTExpr::VariantInit(null, name, args)));
         }
         t => {
             message(error(tkn.loc, "Expected primary expression, but got %.", to_cstr(t)));
@@ -934,6 +956,8 @@ union Assoc { Left, Right }
     if let TokenData::ParenOpen = op.data {
         let args = new_GAF_List(type_info(&AST));
         let is_generic = false;
+        let old_parent = context.parent;
+        let call_expr = lhs.parent = context.parent = create_expr(context.parent, op.loc, blank, ASTExpr::Call);
         while (!lexer_at(&context.lexer, TokenData::ParenClose)) {
             let (gen_expr, _expr) = parse_expr(context);
             if (gen_expr) is_generic = gen_expr;
@@ -943,7 +967,9 @@ union Assoc { Left, Right }
             }
         }
         let end = expect(&context.lexer, TokenData::ParenClose);
-        return (is_generic, create_expr(context.parent, op.loc, blank, ASTExpr::Call(lhs, args)));
+        context.parent = old_parent;
+        call_expr.data = ASTData::Expr(ASTExpr::Call(lhs, args));
+        return (is_generic, call_expr);
     }
 
     let (generic, rhs) = __parse_expr(context, prec, assoc);
