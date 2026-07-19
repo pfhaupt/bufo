@@ -96,8 +96,8 @@ func is_signed_integer(pt: PrimType) -> bool {
     return false;
 }
 
-func is_number(pt: PrimType) -> bool {
-    (comptime assert(tag(&PrimType::__count) == 12, "PrimType::is_number: Added primitive type"));
+func is_integer(pt: PrimType) -> bool {
+    (comptime assert(tag(&PrimType::__count) == 12, "PrimType::is_integer: Added primitive type"));
     match (pt) {
         PrimType::I8    => { return true; }
         PrimType::I16   => { return true; }
@@ -248,8 +248,14 @@ func into_pointer_type(t: &Type) -> &Type {
     return create_meta_type(t.meta_level, BaseType::Ptr(t));
 }
 func get_underlying_type(pt: &Type) -> &Type {
+    return get_underlying_type(pt, -1);
+}
+func get_underlying_type(pt: &Type, max_unwrap: i64) -> &Type {
+    let count: i64 = 0;
     while let BaseType::Ptr(under) = pt.base {
         pt = under;
+        count = count + 1;
+        if (count >= max_unwrap) return pt;
     }
     return pt;
 }
@@ -352,6 +358,12 @@ func get_size(t: &Type) -> usize {
     unreachable();
 }
 
+func is_none(t: &Type) -> bool {
+    if let BaseType::Prim(PrimType::None) = t.base {
+        return true;
+    }
+    return false;
+}
 func is_unknown(t: &Type) -> bool {
     if let BaseType::Unknown = t.base {
         return true;
@@ -366,11 +378,11 @@ func is_signed_integer(t: &Type) -> bool {
     return is_signed_integer(pt);
 }
 
-func is_number(t: &Type) -> bool {
+func is_integer(t: &Type) -> bool {
     let BaseType::Prim(pt) = t.base else {
         return false;
     };
-    return is_number(pt);
+    return is_integer(pt);
 }
 
 func is_pointer(type: &Type) -> bool {

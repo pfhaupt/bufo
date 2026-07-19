@@ -12,10 +12,12 @@ import "flags.bufo";
 let flagParser = FlagParser {};
 struct Flags {
     opt: &bool;
+    debug: &bool;
 }
 
 func parse_flags(flags: &Flags, argc: i32, argv: &&char) -> bool {
     flags.opt = addBoolFlag(&flagParser, "--opt", "Build with optimizations");
+    flags.debug = addBoolFlag(&flagParser, "--debug", "Build with debug info");
     if (!runOn(&flagParser, argc, argv)) {
         showErrors(stderr, &flagParser);
         showUsage(stderr, &flagParser);
@@ -49,11 +51,13 @@ func build_bufo2(flags: &Flags) -> bool {
     @os(WINDOWS) let cmd = newCmdFromStrLit("bufo.exe src/main.bufo -o ./build/bufo2.exe");
     @os(LINUX) let cmd = newCmdFromStrLit("bufo_linux src/main.bufo -o ./build/bufo2.exe");
     if (*flags.opt) add(&cmd, comptime newSubStr("--opt"));
+    if (*flags.debug) add(&cmd, comptime newSubStr("--debug"));
     return runSync(&cmd);
 }
 
 func build_test_program(flags: &Flags, input: &char) -> bool {
     let cmd = newCmd();
+    if (*flags.debug) add(&cmd, comptime newSubStr("raddbg"));
     @os(WINDOWS) add(&cmd, comptime newSubStr(".\\build\\bufo2.exe"));
     @os(LINUX) add(&cmd, comptime newSubStr("./build/bufo2.exe"));
     add(&cmd, newSubStr(input));

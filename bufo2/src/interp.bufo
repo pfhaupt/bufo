@@ -300,29 +300,63 @@ func create_interpreter(fn: &AST) -> Interp {
             C::memcpy(dst, src, src_size);
             return Value::Reg(dst, dst_size);
         }
+        &Op::PtrToInt(_dst, _src) => {
+            let (dst, dst_size) = get_register_pointer_and_size(interp, _dst);
+            let (src, src_size) = get_register_pointer_and_size(interp, _src);
+            fassert(dst_size == src_size, "evaluate_single: Expected PtrToInt to have same size for source and destination, but got % and %.", src_size, dst_size);
+            C::memcpy(dst, src, src_size);
+            return Value::Reg(dst, dst_size);
+        }
+        &Op::IntToPtr(_dst, _src) => {
+            let (dst, dst_size) = get_register_pointer_and_size(interp, _dst);
+            let (src, src_size) = get_register_pointer_and_size(interp, _src);
+            fassert(dst_size == src_size, "evaluate_single: Expected IntToPtr to have same size for source and destination, but got % and %.", src_size, dst_size);
+            C::memcpy(dst, src, src_size);
+            return Value::Reg(dst, dst_size);
+        }
         &Op::LoadParameter(dst, _) => {
             let (reg, size) = get_register_pointer_and_size(interp, dst);
             pop_argument(interp, instr.loc, reg, size);
             return Value::Reg(reg, size);
         }
-        &Op::LoadNumber(dst, val) => {
+        &Op::LoadU8(dst, val) => {
             let (reg, size) = get_register_pointer_and_size(interp, dst);
-            let signed = is_signed_integer(instr.type);
-            if (size == 1) {
-                if (signed) *(reg as &i8) = val as i8;
-                else *(reg as &u8) = val as u8;
-            } else if (size == 2) {
-                if (signed) *(reg as &i16) = val as i16;
-                else *(reg as &u16) = val as u16;
-            } else if (size == 4) {
-                if (signed) *(reg as &i32) = val as i32;
-                else *(reg as &u32) = val as u32;
-            } else if (size == 8) {
-                if (signed) *(reg as &i64) = val as i64;
-                else *(reg as &u64) = val as u64;
-            } else {
-                message(todo(instr.loc, "Op::LoadNumber for %", to_string(instr.type)));
-            }
+            *(reg as &u8) = val;
+            return Value::Reg(reg, size);
+        }
+        &Op::LoadU16(dst, val) => {
+            let (reg, size) = get_register_pointer_and_size(interp, dst);
+            *(reg as &u16) = val;
+            return Value::Reg(reg, size);
+        }
+        &Op::LoadU32(dst, val) => {
+            let (reg, size) = get_register_pointer_and_size(interp, dst);
+            *(reg as &u32) = val;
+            return Value::Reg(reg, size);
+        }
+        &Op::LoadU64(dst, val) => {
+            let (reg, size) = get_register_pointer_and_size(interp, dst);
+            *(reg as &u64) = val;
+            return Value::Reg(reg, size);
+        }
+        &Op::LoadI8(dst, val) => {
+            let (reg, size) = get_register_pointer_and_size(interp, dst);
+            *(reg as &i8) = val;
+            return Value::Reg(reg, size);
+        }
+        &Op::LoadI16(dst, val) => {
+            let (reg, size) = get_register_pointer_and_size(interp, dst);
+            *(reg as &i16) = val;
+            return Value::Reg(reg, size);
+        }
+        &Op::LoadI32(dst, val) => {
+            let (reg, size) = get_register_pointer_and_size(interp, dst);
+            *(reg as &i32) = val;
+            return Value::Reg(reg, size);
+        }
+        &Op::LoadI64(dst, val) => {
+            let (reg, size) = get_register_pointer_and_size(interp, dst);
+            *(reg as &i64) = val;
             return Value::Reg(reg, size);
         }
         &Op::LoadBlank(dst) => {

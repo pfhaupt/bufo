@@ -403,7 +403,7 @@ import "../generated/ast.template.bufo";
             res_state = infer_type_onto_ident(scopes, type, _expr, value);
         }
         &ASTExpr::Number { value } => {
-            if (!is_number(type)) {
+            if (!is_integer(type)) {
                 message(error(_expr.loc, "Expected value of type %, but found a number literal.", to_string(type)));
             }
             let limits = [
@@ -732,27 +732,40 @@ import "../generated/ast.template.bufo";
             let _tmp1 = format1("_run_%", run_expr);
             let _tmp = asSubStr(&_tmp1);
 
-            start_comptime(&func_state.code);
-            let var_reg = allocate_variable(&func_state.code, run_expr.loc, run_expr.type, _tmp);
-            let (creg, _) = codegen_expr(func_state, run_expr, false);
-            let _ = create_instr(&func_state.code, run_expr.loc, run_expr.type, Op::Store(var_reg, creg));
-            end_comptime(&func_state.code);
+            let result = ASTExpr::Noop;
+            if (!is_none(run_expr.type)) {
+                start_comptime(&func_state.code);
+                let var_reg = build_alloca(&func_state.code, run_expr.loc, run_expr.type, _tmp);
+                let creg = codegen_expr(func_state, run_expr, false);
+                build_store(&func_state.code, run_expr.loc, var_reg, creg);
+                end_comptime(&func_state.code);
 
-            evaluate_comptime_variables(fn, &_tmp);
+                evaluate_comptime_variables(fn, &_tmp);
 
-            let ct = &func_state.code.komptime;
-            reset(ct);
+                let ct = &func_state.code.komptime;
+                reset(ct);
 
-            let (var, true) = get_comptime_variable(&func_state.code, _tmp) else {
-                unreachable();
-            };
+                let (var, true) = get_comptime_variable(&func_state.code, _tmp) else {
+                    unreachable();
+                };
+                result = ASTExpr::ComptimeValue(var);
+            } else {
+                start_comptime(&func_state.code);
+                let creg = codegen_expr(func_state, run_expr, false);
+                end_comptime(&func_state.code);
+
+                evaluate_comptime_variables(fn, &_tmp);
+
+                let ct = &func_state.code.komptime;
+                reset(ct);
+            }
 
             if let ASTData::Stmt(_) = parent.data {
-                let _expr = create_expr(parent, dir.loc, parent.origin, ASTExpr::ComptimeValue(var));
+                let _expr = create_expr(parent, dir.loc, parent.origin, result);
                 _expr.type = _type;
                 parent.data = ASTData::Stmt(ASTStmt::Expr(_expr));
             } else {
-                parent.data = ASTData::Expr(ASTExpr::ComptimeValue(var));
+                parent.data = ASTData::Expr(result);
             }
             parent.type = _type;
             return mktcs(true, true, false, false, _type);

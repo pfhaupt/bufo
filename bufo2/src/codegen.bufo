@@ -17,7 +17,7 @@ import "lookup.bufo";
 import "../generated/ast.template.bufo";
 
 struct BID { _i: usize; }
-struct Reg { _i: usize; offset: usize; size: usize; }
+struct Reg { _i: usize; offset: usize; size: usize; type: &Type; }
 
 struct Var {
     alloca_reg: Reg;
@@ -68,11 +68,11 @@ struct Code {
     let _b: &Block = get_ref_raw(&cc.blocks, id._i);
     set_current_block(cc, id);
 }
-@trace func allocate_register(code: &Code, type: &Type) -> Reg {
-    return allocate_register(get_context(code), type);
+@trace func __allocate_register(code: &Code, type: &Type) -> Reg {
+    return __allocate_register(get_context(code), type);
 }
-@trace func create_instr(code: &Code, loc: Loc, type: &Type, op: Op) -> Instr {
-    return create_instr(get_context(code), loc, type, op);
+@trace func __create_instr(code: &Code, loc: Loc, type: &Type, op: Op) -> Instr {
+    return __create_instr(get_context(code), loc, type, op);
 }
 @trace func create_block(code: &Code, name: String) -> Block {
     return create_block(get_context(code), name);
@@ -118,11 +118,9 @@ struct Code_Context {
     code.current_block = id;
 }
 
-@trace func allocate_register(cc: &Code_Context, type: &Type) -> Reg {
-    return allocate_register(cc, get_size(type));
-}
-@trace func allocate_register(cc: &Code_Context, size: usize) -> Reg {
-    let reg = Reg { _i: cc.register_count, offset: cc.total_register_size, size: size };
+@trace func __allocate_register(cc: &Code_Context, type: &Type) -> Reg {
+    let size = get_size(type);
+    let reg = Reg { _i: cc.register_count, offset: cc.total_register_size, size: size, type: type };
     cc.register_count = cc.register_count + 1;
     cc.total_register_size = cc.total_register_size + size;
     return reg;
@@ -133,8 +131,8 @@ struct Code_Context {
     let curr = get_current_block(cc);
     set_current_block(cc, cc.entry);
 
-    let _ptr = create_base_type(BaseType::Ptr(type));
-    let var = allocate_register(cc, comptime get_size(BaseType::Ptr));
+    let _ptr = into_pointer_type(type);
+    let var = __allocate_register(cc, _ptr);
     let alloca = Instr {
         id: cc.alloca_counter,
         loc: loc,
@@ -183,7 +181,7 @@ struct Instr {
     op: Op;
 }
 
-@trace func create_instr(cc: &Code_Context, loc: Loc, type: &Type, op: Op) -> Instr {
+@trace func __create_instr(cc: &Code_Context, loc: Loc, type: &Type, op: Op) -> Instr {
     let block = get_current_block(cc);
     let instr = Instr {
         id: block.ir.length,
@@ -195,23 +193,223 @@ struct Instr {
     return instr;
 }
 
-@trace func is_terminator(instr: &Instr) -> bool {
-    (comptime assert(tag(&Op::__count) == 26, "is_terminator: Op was added"));
-    match (instr.op) {
-        Op::ReturnVoid   => { return true; }
-        Op::Return(_)    => { return true; }
-        Op::Br(_)        => { return true; }
-        Op::CondBr(..)   => { return true; }
-        _                => { }
+@trace func build_directive_debug(code: &Code, loc: Loc) {
+    __create_instr(code, loc, null, Op::Debug);
+}
+@trace func build_directive_assert(code: &Code, loc: Loc, reg: Reg, msg: String) {
+    __create_instr(code, loc, null, Op::ComptimeAssert(reg, msg));
+}
+@trace func __build_move_unchecked(code: &Code, loc: Loc, dst: Reg, src: Reg) {
+    __create_instr(code, loc, src.type, Op::Move(dst, src));
+}
+@trace func build_move(code: &Code, loc: Loc, dst: Reg, src: Reg) {
+    assert(is_equal_to(dst.type, src.type), "build_move: Source and destination types dont match");
+    __build_move_unchecked(code, loc, dst, src);
+}
+@trace func build_alloca(code: &Code, loc: Loc, ty: &Type, name: SubStr) -> Reg {
+    return allocate_variable(code, loc, ty, name);
+}
+@trace func build_load(code: &Code, loc: Loc, ptr: Reg) -> Reg {
+    assert(is_pointer(ptr.type), "build_load: Source is not a pointer");
+    let under = get_underlying_type(ptr.type);
+    let dst = __allocate_register(code, under);
+    __create_instr(code, loc, under, Op::Load(dst, ptr));
+    return dst;
+}
+@trace func build_store(code: &Code, loc: Loc, dst: Reg, src: Reg) {
+    assert(is_pointer(dst.type), "build_store: Destination is not a pointer");
+    let under = get_underlying_type(dst.type, 1);
+    fassert(is_equal_to(under, src.type), "build_store: %: Destination type does not match source type: % vs %", loc, to_string(under), to_string(src.type));
+    __create_instr(code, loc, src.type, Op::Store(dst, src));
+}
+@trace func build_load_param(code: &Code, loc: Loc, ty: &Type, index: usize) -> Reg {
+    let reg = __allocate_register(code, ty);
+    __create_instr(code, loc, ty, Op::LoadParameter(reg, index));
+    return reg;
+}
+@trace func build_load_function(code: &Code, loc: Loc, fn: &AST) -> Reg {
+    let reg = __allocate_register(code, fn.type);
+    __create_instr(code, loc, fn.type, Op::LoadFunction(reg, fn));
+    return reg;
+}
+@trace func build_load_comptime_value(code: &Code, loc: Loc, ty: &Type, val: Value) -> Reg {
+    let ret = __allocate_register(code, ty);
+    __create_instr(code, loc, ty, Op::LoadComptimeValue(ret, val));
+    return ret;
+}
+@trace func build_load_number(code: &Code, loc: Loc, number: u8) -> Reg {
+    let ty = create_base_type(PrimType::U8);
+    let reg = __allocate_register(code, ty);
+    __create_instr(code, loc, ty, Op::LoadU8(reg, number));
+    return reg;
+}
+@trace func build_load_number(code: &Code, loc: Loc, number: u16) -> Reg {
+    let ty = create_base_type(PrimType::U16);
+    let reg = __allocate_register(code, ty);
+    __create_instr(code, loc, ty, Op::LoadU16(reg, number));
+    return reg;
+}
+@trace func build_load_number(code: &Code, loc: Loc, number: u32) -> Reg {
+    let ty = create_base_type(PrimType::U32);
+    let reg = __allocate_register(code, ty);
+    __create_instr(code, loc, ty, Op::LoadU32(reg, number));
+    return reg;
+}
+@trace func build_load_number(code: &Code, loc: Loc, number: u64) -> Reg {
+    let ty = create_base_type(PrimType::U64);
+    let reg = __allocate_register(code, ty);
+    __create_instr(code, loc, ty, Op::LoadU64(reg, number));
+    return reg;
+}
+@trace func build_load_number(code: &Code, loc: Loc, number: i8) -> Reg {
+    let ty = create_base_type(PrimType::I8);
+    let reg = __allocate_register(code, ty);
+    __create_instr(code, loc, ty, Op::LoadI8(reg, number));
+    return reg;
+}
+@trace func build_load_number(code: &Code, loc: Loc, number: i16) -> Reg {
+    let ty = create_base_type(PrimType::I16);
+    let reg = __allocate_register(code, ty);
+    __create_instr(code, loc, ty, Op::LoadI16(reg, number));
+    return reg;
+}
+@trace func build_load_number(code: &Code, loc: Loc, number: i32) -> Reg {
+    let ty = create_base_type(PrimType::I32);
+    let reg = __allocate_register(code, ty);
+    __create_instr(code, loc, ty, Op::LoadI32(reg, number));
+    return reg;
+}
+@trace func build_load_number(code: &Code, loc: Loc, number: i64) -> Reg {
+    let ty = create_base_type(PrimType::I64);
+    let reg = __allocate_register(code, ty);
+    __create_instr(code, loc, ty, Op::LoadI64(reg, number));
+    return reg;
+}
+@trace func build_load_number(code: &Code, loc: Loc, ty: &Type, _number: SubStr) -> Reg {
+    return build_load_number(code, loc, ty, toU64(&_number));
+}
+@trace func build_load_number(code: &Code, loc: Loc, ty: &Type, number: u64) -> Reg {
+    assert(is_integer(ty), "build_load_number: Input type is not an integer");
+    let size = get_size(ty);
+    let signed = is_signed_integer(ty);
+    if (size == 1) {
+        if (signed) return build_load_number(code, loc, number as i8);
+        return build_load_number(code, loc, number as u8);
     }
-    return false;
+    if (size == 2) {
+        if (signed) return build_load_number(code, loc, number as i16);
+        return build_load_number(code, loc, number as u16);
+    }
+    if (size == 4) {
+        if (signed) return build_load_number(code, loc, number as i32);
+        return build_load_number(code, loc, number as u32);
+    }
+    if (size == 8) {
+        if (signed) return build_load_number(code, loc, number as i64);
+        return build_load_number(code, loc, number as u64);
+    }
+    unreachable("build_load_number");
+}
+@trace func build_load_string(code: &Code, loc: Loc, str: String) -> Reg {
+    let ty = create_base_type(PrimType::Str);
+    let reg = __allocate_register(code, ty);
+    __create_instr(code, loc, ty, Op::LoadString(reg, str));
+    return reg;
+}
+@trace func build_load_blank(code: &Code, loc: Loc, ty: &Type) -> Reg {
+    let reg = __allocate_register(code, ty);
+    __create_instr(code, loc, ty, Op::LoadBlank(reg));
+    return reg;
+}
+@trace func build_load_bool(code: &Code, loc: Loc, b: bool) -> Reg {
+    let ty = create_base_type(PrimType::Bool);
+    let reg = __allocate_register(code, ty);
+    __create_instr(code, loc, ty, Op::LoadBool(reg, b));
+    return reg;
+}
+@trace func build_add(code: &Code, loc: Loc, lhs: Reg, rhs: Reg) -> Reg {
+    assert(!is_pointer(lhs.type) && !is_pointer(rhs.type), "build_add: Addition is not defined for pointers, explicit PtrToInt necessary");
+    assert(is_equal_to(lhs.type, rhs.type), "build_add: LHS and RHS types dont match!");
+    let dst = __allocate_register(code, lhs.type);
+    __create_instr(code, loc, dst.type, Op::Add(dst, lhs, rhs));
+    return dst;
+}
+@trace func build_add_ptr_u64(code: &Code, loc: Loc, lhs: Reg, rhs: Reg) -> Reg {
+    assert(is_pointer(lhs.type), "build_add_ptr_u64: LHS is not a pointer");
+    assert(is_equal_to(rhs.type, create_base_type(PrimType::U64)), "build_add_ptr_u64: RHS is not a u64");
+    let p2i = build_ptr_to_int(code, loc, lhs);
+    let add = build_add(code, loc, p2i, rhs);
+    return build_int_to_ptr(code, loc, lhs.type, add);
+}
+@trace func build_ptr_cast(code: &Code, loc: Loc, ty: &Type, src: Reg) -> Reg {
+    assert(is_pointer(ty), "build_ptr_cast: Target type is not a pointer");
+    assert(is_pointer(src.type), "build_ptr_cast: Source is not a pointer");
+    let dst = __allocate_register(code, ty);
+    // Shhhhhhh.... :^)
+    __build_move_unchecked(code, loc, dst, src);
+    return dst;
+}
+
+@trace func build_int_to_ptr(code: &Code, loc: Loc, ty: &Type, int: Reg) -> Reg {
+    assert(is_pointer(ty), "build_int_to_ptr: Target type is not a pointer");
+    assert(is_integer(int.type), "build_int_to_ptr: Operand is not an integer");
+    assert(get_size(int.type) == get_size(ty), "build_int_to_ptr: Operand is not pointer-sized");
+    let dst = __allocate_register(code, ty);
+    __create_instr(code, loc, dst.type, Op::IntToPtr(dst, int));
+    return dst;
+}
+@trace func build_ptr_to_int(code: &Code, loc: Loc, ptr: Reg) -> Reg {
+    assert(is_pointer(ptr.type), "build_ptr_to_int: Operand is not a pointer");
+    let dst: Reg = blank;
+    if (get_size(ptr.type) == 8) {
+        dst = __allocate_register(code, create_base_type(PrimType::U64));
+    } else {
+        assert(false, "build_ptr_to_int: Unhandled ptr size");
+    }
+    __create_instr(code, loc, dst.type, Op::PtrToInt(dst, ptr));
+    return dst;
+}
+
+@trace func build_call(code: &Code, loc: Loc, base: Reg, args: GAF_List) -> Reg {
+    let fn_ty = base.type;
+    let BaseType::Func(_, ret) = base.type.base else {
+        assert(false, "build_call: Base is not a function");
+        unreachable();
+    };
+    assert(ret.meta_level != 0, "build_call: Return type is not a meta type");
+    let dst = __allocate_register(code, unwrap_meta_type(ret, 1));
+    __create_instr(code, loc, dst.type, Op::Call(dst, base, args));
+    return dst;
+}
+
+@trace func build_return(code: &Code, loc: Loc) {
+    __create_instr(code, loc, null, Op::ReturnVoid);
+}
+@trace func build_return(code: &Code, loc: Loc, reg: Reg) {
+    __create_instr(code, loc, reg.type, Op::Return(reg));
+}
+@trace func build_cond_br(code: &Code, loc: Loc, cond: Reg, then: BID, elze: BID) {
+    __create_instr(code, loc, null, Op::CondBr(cond, then, elze));
+}
+@trace func build_br(cc: &Code_Context, loc: Loc, bid: BID) {
+    __create_instr(cc, loc, null, Op::Br(bid));
+}
+func build_br(code: &Code, loc: Loc, bid: BID) {
+    build_br(get_context(code), loc, bid);
 }
 
 union Op {
     LoadFunction(Reg, &AST),
     LoadParameter(Reg, usize),
     LoadString(Reg, String),
-    LoadNumber(Reg, u64),
+    LoadU8(Reg, u8),
+    LoadU16(Reg, u16),
+    LoadU32(Reg, u32),
+    LoadU64(Reg, u64),
+    LoadI8(Reg, i8),
+    LoadI16(Reg, i16),
+    LoadI32(Reg, i32),
+    LoadI64(Reg, i64),
     LoadBool(Reg, bool),
     LoadBlank(Reg),
     Alloca(Reg, SubStr), // associate Allocas with an identifier for later use
@@ -231,10 +429,377 @@ union Op {
     Neq(Reg, Reg, Reg), // eq  <dst>, <src1>, <src2>
     Gte(Reg, Reg, Reg), // gte <dst>, <src1>, <src2>
     Lte(Reg, Reg, Reg), // lte <dst>, <src1>, <src2>
+    PtrToInt(Reg, Reg),
+    IntToPtr(Reg, Reg),
     ComptimeAssert(Reg, String),
     Noop,
     Debug,
     __count,
+}
+
+@trace func is_terminator(instr: &Instr) -> bool {
+    (comptime assert(tag(&Op::__count) == 35, "is_terminator: Op was added"));
+    match (instr.op) {
+        Op::ReturnVoid   => { return true; }
+        Op::Return(_)    => { return true; }
+        Op::Br(_)        => { return true; }
+        Op::CondBr(..)   => { return true; }
+        _                => { }
+    }
+    return false;
+}
+@trace func codegen_function_exit(fn: &AST) {
+    let &ASTData::Function(func_state) = &fn.data else {
+        unreachable("codegen_function_exit: Node is not a function");
+    };
+
+    let rt = &func_state.code.runtime;
+    let curr = get_current_block(rt);
+    if (!is_terminated(curr)) {
+        let BaseType::Func(_, ret) = fn.type.base else {
+            unreachable("codegen_function_exit");
+        };
+        let loc = fn.loc;
+        let op = Op::Noop;
+        if (curr.ir.length > 0) {
+            let in = get_ref(&curr.ir, curr.ir.length - 1) as Instr;
+            loc = in.loc;
+            op = in.op;
+        }
+        if (is_equal_to(ret, create_meta_type(1, PrimType::None))) {
+            build_br(rt, loc, rt.return_block);
+        } else {
+            message(
+                error(loc, "Not all paths through this function return a value."),
+                note(loc, "last instruction: %", op),
+            );
+        }
+    }
+}
+
+@trace func codegen_function_entry(fn: &AST) {
+    let &ASTData::Function(func_state) = &fn.data else {
+        unreachable("codegen_function_entry: Node is not a function");
+    };
+
+    let rt = &func_state.code.runtime;
+    rt.entry = create_block(rt, comptime newReadonlyString("entry")).id;
+    set_current_block(rt, rt.entry);
+
+    let ct = &func_state.code.komptime;
+    ct.entry = create_block(ct, comptime newReadonlyString("entry")).id;
+    set_current_block(ct, ct.entry);
+
+    if (has_attribute(fn, ASTAttrData::Naked)) return;
+
+    rt.return_block = create_block(rt, comptime newReadonlyString("return")).id;
+    set_current_block(rt, rt.return_block);
+
+    let none = create_meta_type(1, PrimType::None);
+    if (is_equal_to(func_state.return_type.type, none)) {
+        build_return(&func_state.code, fn.loc);
+    } else {
+        let base_type = unwrap_meta_type(func_state.return_type.type, 1);
+        rt.return_register = __allocate_register(rt, base_type);
+        build_return(&func_state.code, fn.loc, rt.return_register);
+    }
+
+    set_current_block(rt, rt.entry);
+    set_current_block(ct, ct.entry);
+
+    for (let i: usize = func_state.params.length; i > 0; i = i - 1) {
+        let p = get_ref(&func_state.params, i - 1) as &AST;
+        let p_type = unwrap_meta_type(p.type, 1);
+        let reg = build_load_param(&func_state.code, p.loc, p_type, i - 1);
+        let var = build_alloca(&func_state.code, p.loc, p_type, p.origin);
+        build_store(&func_state.code, p.loc, var, reg);
+    }
+}
+
+@trace func codegen_stmt(fn: &ASTFunction, stmt: &AST) {
+    let &ASTData::Stmt(actual_stmt) = &stmt.data else {
+        unreachable("codegen_stmt: Node is not a statement");
+    };
+    let f = func (fn: &ASTFunction, stmt: &AST, pat: &AST, expr: &AST, trampoline: &AST, is_comptime: bool) {
+        if (is_comptime) start_comptime(&fn.code);
+        if (expr != null) {
+            let ereg = codegen_expr(fn, expr, false);
+            let preg = codegen_pattern(fn, pat, ereg, is_comptime);
+            if (trampoline != null) {
+                // let <pat> = <expr> else <trampoline>;
+                message(todo(stmt.loc, "codegen_stmt: Can't codegen pat-expr-trampoline yet"));
+            }
+        } else {
+            // let <pat>;
+            assert(trampoline == null);
+            message(todo(stmt.loc, "codegen_stmt: Can't codegen pat yet"));
+        }
+        if (is_comptime) end_comptime(&fn.code);
+    };
+    match (&actual_stmt) {
+        &ASTStmt::Let { pat, expr, trampoline } => {
+            assert(pat != null);
+            f(fn, stmt, pat, expr, trampoline, false);
+        }
+        &ASTStmt::Comptime { pat, expr, trampoline } => {
+            assert(expr != null, "codegen_stmt: `comptime` doesn't have expr");
+            if (expr.type.meta_level > 0) {
+                // `comptime foo = i32;` is not generated
+                return;
+            }
+            // Simply mark instructions as compile time. They will be evaluated next.
+            f(fn, stmt, pat, expr, trampoline, true);
+        }
+        &ASTStmt::ReturnVoid => {
+            assert(fn.code.comptime_level == 0, "Return in comptime context?");
+            build_br(&fn.code, stmt.loc, fn.code.runtime.return_block);
+        }
+        &ASTStmt::ReturnExpr(expr) => {
+            let register = codegen_expr(fn, expr, false);
+            assert(fn.code.comptime_level == 0, "Return in comptime context?");
+            build_move(&fn.code, stmt.loc, fn.code.runtime.return_register, register);
+            build_br(&fn.code, stmt.loc, fn.code.runtime.return_block);
+        }
+        &ASTStmt::Expr(expr) => {
+            let reg = codegen_expr(fn, expr, false);
+        }
+        &ASTStmt::Directive(dir) => {
+            match (&dir.data) {
+                &ASTData::Directive(Directive::Assert(expr, msg)) => {
+                    let reg = codegen_expr(fn, expr, false);
+                    build_directive_assert(&fn.code, stmt.loc, reg, msg);
+                }
+                &ASTData::Directive(Directive::Debug) => {
+                    build_directive_debug(&fn.code, stmt.loc);
+                }
+                &ASTData::Directive(Directive::CheckedBir(lexer, types)) => {
+                    let fn_node = get_parent_function(dir);
+                    assert(fn_node != null, "codegen_stmt: Directive parent is null");
+                    let start = expect(&lexer, TokenData::CurlyOpen);
+                    let register_map = new_hashmap_with_substr_key(type_info(Reg));
+                    let index: usize = 0;
+                    while (!lexer_at(&lexer, TokenData::CurlyClose)) {
+                        let type = get_ref(&types, index) as &Type;
+                        parse_bufo_ir_into_function_body(fn_node, &register_map, &lexer, type, true);
+                        index = index + 1;
+                    }
+                    let end = expect(&lexer, TokenData::CurlyClose);
+                }
+                _ => {
+                    message(todo(stmt.loc, "codegen_stmt: Can't generate directive yet: %", dir.data));
+                }
+            }
+        }
+        _ => {
+            message(todo(stmt.loc, "codegen_stmt: Can't generate stmt yet: %", stmt.data));
+        }
+    }
+}
+
+@trace func codegen_expr(fn: &ASTFunction, expr: &AST, wants_ptr: bool) -> Reg {
+    let &ASTData::Expr(actual_expr) = &expr.data else {
+        funreachable("% codegen_expr: Node is not an expression, got %", expr.loc, expr.data);
+    };
+    match (&actual_expr) {
+        &ASTExpr::Ident { name } => {
+            let _var = get(&get_context(&fn.code).variable_map, name);
+            assert(_var.ptr != null, "codegen_expr: Variable doesn't exist!");
+            let var = _var as Var;
+            if (wants_ptr) return var.alloca_reg;
+            return build_load(&fn.code, expr.loc, var.alloca_reg);
+        }
+        &ASTExpr::FnIdent { name, _fn } => {
+            let &ASTData::Function(func_state) = &_fn.data else {
+                unreachable("codegen_expr: FnIdent does not have a function");
+            };
+            assert(is_equal_to(expr.type, _fn.type), "codegen_expr: FnIdent type does not match Fn type");
+            return build_load_function(&fn.code, expr.loc, _fn);
+        }
+        &ASTExpr::Number { value } => {
+            return build_load_number(&fn.code, expr.loc, expr.type, value);
+        }
+        &ASTExpr::StringLiteral { value } => {
+            return build_load_string(&fn.code, expr.loc, value);
+        }
+        &ASTExpr::Blank => {
+            return build_load_blank(&fn.code, expr.loc, expr.type);
+        }
+        &ASTExpr::Dot(lhs, member) => {
+            let lhs_reg = codegen_expr(fn, lhs, !is_pointer(lhs.type));
+            assert(is_pointer(lhs_reg.type), "Expected pointer as LHS of dot");
+            assert(lhs_reg.size == 8, "Expected pointer sized register as LHS of dot");
+            let lhs_type = get_underlying_type(lhs.type);
+            if let BaseType::TypeDecl(type_decl_node) = lhs_type.base {
+                let type_decl_info = get_type_decl_info(type_decl_node);
+                let &ASTData::Expr(ASTExpr::Ident { field }) = &member.data else {
+                    unreachable("codegen_expr: check_member_expr should've prevented this");
+                };
+                let (true, offset, size, align) = get_field_offset_size_and_align(type_decl_info, field) else {
+                    unreachable("codegen_expr: Only fields are supported now, and methods will be handled differently later");
+                };
+                let offset_reg = build_load_number(&fn.code, expr.loc, offset as u64);
+                let cast       = build_ptr_cast(&fn.code, expr.loc, into_pointer_type(expr.type), lhs_reg);
+                let dst_ptr    = build_add_ptr_u64(&fn.code, expr.loc, cast, offset_reg);
+                if (wants_ptr) {
+                    return dst_ptr;
+                } else {
+                    return build_load(&fn.code, expr.loc, dst_ptr);
+                }
+            } else {
+                unreachable("codegen_expr: Only structs are allowed for the Dot operator");
+            }
+        }
+        &ASTExpr::Call(_base, _args) => {
+            let reg = codegen_expr(fn, _base, false);
+            let args = new_GAF_List(type_info(Reg));
+            for (let i: usize = 0; i < _args.length; i = i + 1) {
+                let arg = get_ref(&_args, i) as &AST;
+                let areg = codegen_expr(fn, arg, false);
+                push(&args, areg);
+            }
+            return build_call(&fn.code, expr.loc, reg, args);
+        }
+        &ASTExpr::Directive(dir) => {
+            message(todo(expr.loc, "codegen_expr: Can't codegen directive"));
+        }
+        &ASTExpr::ComptimeValue(val) => {
+            return build_load_comptime_value(&fn.code, expr.loc, expr.type, val);
+        }
+        &ASTExpr::Unary(unary) => {
+            return codegen_unary(fn, expr, wants_ptr);
+        }
+        &ASTExpr::BlockVoid(stmts) => {
+            for (let i: usize = 0; i < stmts.length; i = i + 1) {
+                let s = get_ref(&stmts, i) as &AST;
+                codegen_stmt(fn, s);
+            }
+           return blank;
+        }
+        &ASTExpr::BlockExpr(stmts, value) => {
+            for (let i: usize = 0; i < stmts.length; i = i + 1) {
+                let s = get_ref(&stmts, i) as &AST;
+                codegen_stmt(fn, s);
+            }
+            return codegen_expr(fn, value, wants_ptr);
+        }
+        &ASTExpr::If(cond, then) => {
+            let cond_reg = codegen_expr(fn, cond, false);
+            let then_block = create_block(&fn.code, format1("then.%", expr));
+            let cont_block = create_block(&fn.code, format1("cont.%", expr));
+            build_cond_br(&fn.code, expr.loc, cond_reg, then_block.id, cont_block.id);
+
+            set_current_block(&fn.code, then_block.id);
+            codegen_stmt(fn, then);
+            let curr = get_current_block(&fn.code);
+            if (!is_terminated(curr)) {
+                build_br(&fn.code, expr.loc, cont_block.id);
+            }
+
+            set_current_block(&fn.code, cont_block.id);
+            return blank;
+        }
+        &ASTExpr::Noop => {
+            return blank;
+        }
+        &ASTExpr::VariantInit(lhs, variant_name, args) => {
+            return codegen_variant_init(fn, expr, lhs, variant_name, args);
+        }
+        _ => {
+            message(todo(expr.loc, "codegen_expr: Can't codegen expression %", actual_expr));
+        }
+    }
+    unreachable("codegen_expr");
+}
+
+@trace func codegen_variant_init(fn: &ASTFunction, expr: &AST, lhs: &AST, variant_name: SubStr, args: GAF_List) -> Reg {
+    assert(lhs != null, "codegen_variant_init: LHS is null");
+    assert(lhs.type != null, "codegen_variant_init: LHS type is null");
+    assert(expr.type != null, "codegen_variant_init: Expr type is null");
+
+    let BaseType::TypeDecl(type_decl_node) = expr.type.base else {
+        unreachable("codegen_variant_init: LHS type is not a type decl");
+    };
+    let type_decl_info = get_type_decl_info(type_decl_node);
+
+    let tag_offset = get_tag_offset(type_decl_info);
+    let tag_size = type_decl_info.variants.length / 256 + 1;
+
+    let (found, variant, tag) = get_tag_of_variant(type_decl_info, variant_name);
+    assert(found, "codegen_variant_init: Could not find variant");
+
+    let tmp_name = format1("variant_init_%", expr);
+    let instance_ptr = build_alloca(&fn.code, expr.loc, expr.type, asSubStr(&tmp_name));
+    {
+        // Initialize with 0s
+        let bl = build_load_blank(&fn.code, expr.loc, expr.type);
+        build_store(&fn.code, expr.loc, instance_ptr, bl);
+    }
+    {
+        // Set tag
+        let tag_type: &Type = null;
+        if (type_decl_info.variants.length >= 256) {
+            tag_type = create_base_type(PrimType::U8);
+        } else {
+            tag_type = create_base_type(PrimType::U16);
+        }
+        let tag_reg = build_load_number(&fn.code, expr.loc, tag_type, tag as u64);
+
+        let offset_reg = build_load_number(&fn.code, expr.loc, tag_offset as u64);
+        let cast_reg   = build_ptr_cast(&fn.code, expr.loc, into_pointer_type(tag_type), instance_ptr);
+        let dst_ptr    = build_add_ptr_u64(&fn.code, expr.loc, cast_reg, offset_reg);
+        build_store(&fn.code, expr.loc, dst_ptr, tag_reg);
+    }
+
+    let _variant_start = next_multiple_of(tag_offset + tag_size, variant.align_in_bytes);
+    for (let i: usize = 0; i < args.length; i = i + 1) {
+        let arg = get_ref(&args, i) as &AST;
+        let field_offset = get_ref(&variant.field_offsets, i) as usize;
+        let offset_in_init = _variant_start + field_offset;
+        let arg_reg = codegen_expr(fn, arg, false);
+
+        let offset_reg = build_load_number(&fn.code, arg.loc, offset_in_init as u64);
+        let cast_reg   = build_ptr_cast(&fn.code, arg.loc, into_pointer_type(arg.type), instance_ptr);
+        let dst_ptr    = build_add_ptr_u64(&fn.code, arg.loc, cast_reg, offset_reg);
+        build_store(&fn.code, arg.loc, dst_ptr, arg_reg);
+    }
+
+    return build_load(&fn.code, expr.loc, instance_ptr);
+}
+
+@trace func codegen_unary(fn: &ASTFunction, expr: &AST, wants_ptr: bool) -> Reg {
+    let &ASTData::Expr(ASTExpr::Unary(unary)) = &expr.data else {
+        unreachable("codegen_unary: Node is not a unary expression");
+    };
+    match (unary) {
+        ASTUnary::AddressOf(sub) => {
+            return codegen_expr(fn, sub, true);
+        }
+        _ => {
+            message(todo(expr.loc, "codegen_unary: Can't codegen expression %", unary));
+        }
+    }
+    unreachable("codegen_unary");
+}
+
+@trace func codegen_pattern(fn: &ASTFunction, pat: &AST, expr: Reg, is_comptime: bool) -> Reg {
+    let &ASTData::Pat(actual_pat) = &pat.data else {
+        unreachable("codegen_pattern: Node is not a pattern");
+    };
+    match (&actual_pat) {
+        &ASTPat::Ident(ident) => {
+            let var = build_alloca(&fn.code, pat.loc, pat.type, ident);
+            build_store(&fn.code, pat.loc, var, expr);
+
+            return build_load_bool(&fn.code, pat.loc, true);
+        }
+        &ASTPat::PatWithType(subpat, type) => {
+            return codegen_pattern(fn, subpat, expr, is_comptime);
+        }
+        _ => {
+            message(todo(pat.loc, "codegen_pattern: Can't codegen pattern"));
+        }
+    }
+    unreachable("codegen_pattern");
 }
 
 @trace func _h(lexer: &Lexer) -> (Token, SubStr, Loc) {
@@ -250,7 +815,7 @@ union Op {
     if (existing_reg.ptr != null) {
         return existing_reg as Reg;
     } else {
-        let reg = allocate_register(&fi.code, type);
+        let reg = __allocate_register(&fi.code, type);
         add(register_map, name, reg);
         return reg;
     }
@@ -287,7 +852,7 @@ union Op {
         let curr = get_current_block(&func_info.code);
         let block = create_block(&func_info.code, toString(&op_name));
         if (insert_op) {
-            create_instr(&func_info.code, op_loc, null, Op::Br(block.id));
+            build_br(&func_info.code, op_loc, block.id);
             set_current_block(&func_info.code, block.id);
         }
         return create_base_type(PrimType::None);
@@ -321,7 +886,7 @@ union Op {
         let size = get_size(type);
         let _name = format1("bir_alloca_%", reg_name);
         let _ptr = create_base_type(BaseType::Ptr(type));
-        let var = allocate_register(&func_info.code, _ptr);
+        let var = __allocate_register(&func_info.code, _ptr);
         add(register_map, reg_name, var);
         op = Op::Alloca(var, asSubStr(&_name));
     } else if (equals(&op_name, &comptime newSubStr("store"))) {
@@ -390,375 +955,8 @@ union Op {
     } else {
         message(error(op_loc, "Unknown or unhandled instruction %", op_name));
     }
-    if (insert_op) create_instr(&func_info.code, op_loc, type, op);
+    if (insert_op) __create_instr(&func_info.code, op_loc, type, op);
     expect(lexer, TokenData::SemiColon);
     return type;
 }
 
-@trace func codegen_function_exit(fn: &AST) {
-    let &ASTData::Function(func_state) = &fn.data else {
-        unreachable("codegen_function_exit: Node is not a function");
-    };
-
-    let rt = &func_state.code.runtime;
-    let curr = get_current_block(rt);
-    if (!is_terminated(curr)) {
-        let BaseType::Func(_, ret) = fn.type.base else {
-            unreachable("codegen_function_exit");
-        };
-        let loc = fn.loc;
-        let op = Op::Noop;
-        if (curr.ir.length > 0) {
-            let in = get_ref(&curr.ir, curr.ir.length - 1) as Instr;
-            loc = in.loc;
-            op = in.op;
-        }
-        if (is_equal_to(ret, create_meta_type(1, PrimType::None))) {
-            create_instr(rt, loc, null, Op::Br(rt.return_block));
-        } else {
-            message(
-                error(loc, "Not all paths through this function return a value."),
-                note(loc, "last instruction: %", op),
-            );
-        }
-    }
-}
-@trace func codegen_function_entry(fn: &AST) {
-    let &ASTData::Function(func_state) = &fn.data else {
-        unreachable("codegen_function_entry: Node is not a function");
-    };
-
-    let rt = &func_state.code.runtime;
-    rt.entry = create_block(rt, comptime newReadonlyString("entry")).id;
-    set_current_block(rt, rt.entry);
-
-    let ct = &func_state.code.komptime;
-    ct.entry = create_block(ct, comptime newReadonlyString("entry")).id;
-    set_current_block(ct, ct.entry);
-
-    if (has_attribute(fn, ASTAttrData::Naked)) return;
-
-    rt.return_block = create_block(rt, comptime newReadonlyString("return")).id;
-    set_current_block(rt, rt.return_block);
-
-    let none = create_meta_type(1, PrimType::None);
-    if (is_equal_to(func_state.return_type.type, none)) {
-        create_instr(&func_state.code, fn.loc, fn.type, Op::ReturnVoid);
-    } else {
-        let base_type = unwrap_meta_type(func_state.return_type.type, 1);
-        rt.return_register = allocate_register(rt, base_type);
-        create_instr(&func_state.code, fn.loc, fn.type, Op::Return(rt.return_register));
-    }
-
-    set_current_block(rt, rt.entry);
-    set_current_block(ct, ct.entry);
-
-    for (let i: usize = func_state.params.length; i > 0; i = i - 1) {
-        let p = get_ref(&func_state.params, i - 1) as &AST;
-        let p_type = unwrap_meta_type(p.type, 1);
-        let reg = allocate_register(&func_state.code, p_type);
-        create_instr(&func_state.code, p.loc, p_type, Op::LoadParameter(reg, i - 1));
-        let var = allocate_variable(&func_state.code, p.loc, p_type, p.origin);
-        create_instr(&func_state.code, p.loc, p_type, Op::Store(var, reg));
-    }
-}
-
-@trace func codegen_stmt(fn: &ASTFunction, stmt: &AST) {
-    let &ASTData::Stmt(actual_stmt) = &stmt.data else {
-        unreachable("codegen_stmt: Node is not a statement");
-    };
-    let f = func (fn: &ASTFunction, stmt: &AST, pat: &AST, expr: &AST, trampoline: &AST, is_comptime: bool) {
-        if (is_comptime) start_comptime(&fn.code);
-        if (expr != null) {
-            let (ereg, _) = codegen_expr(fn, expr, false);
-            let preg = codegen_pattern(fn, pat, ereg, is_comptime);
-            if (trampoline != null) {
-                // let <pat> = <expr> else <trampoline>;
-                message(todo(stmt.loc, "codegen_stmt: Can't codegen pat-expr-trampoline yet"));
-            }
-        } else {
-            // let <pat>;
-            assert(trampoline == null);
-            message(todo(stmt.loc, "codegen_stmt: Can't codegen pat yet"));
-        }
-        if (is_comptime) end_comptime(&fn.code);
-    };
-    match (&actual_stmt) {
-        &ASTStmt::Let { pat, expr, trampoline } => {
-            assert(pat != null);
-            f(fn, stmt, pat, expr, trampoline, false);
-        }
-        &ASTStmt::Comptime { pat, expr, trampoline } => {
-            assert(expr != null, "codegen_stmt: `comptime` doesn't have expr");
-            if (expr.type.meta_level > 0) {
-                // `comptime foo = i32;` is not generated
-                return;
-            }
-            // Simply mark instructions as compile time. They will be evaluated next.
-            f(fn, stmt, pat, expr, trampoline, true);
-        }
-        &ASTStmt::ReturnVoid => {
-            assert(fn.code.comptime_level == 0, "Return in comptime context?");
-            create_instr(&fn.code, stmt.loc, stmt.type, Op::Br(fn.code.runtime.return_block));
-        }
-        &ASTStmt::ReturnExpr(expr) => {
-            let (register, _) = codegen_expr(fn, expr, false);
-            assert(fn.code.comptime_level == 0, "Return in comptime context?");
-            create_instr(&fn.code, stmt.loc, stmt.type, Op::Move(fn.code.runtime.return_register, register));
-            create_instr(&fn.code, stmt.loc, stmt.type, Op::Br(fn.code.runtime.return_block));
-        }
-        &ASTStmt::Expr(expr) => {
-            let (reg, _) = codegen_expr(fn, expr, false);
-        }
-        &ASTStmt::Directive(dir) => {
-            match (&dir.data) {
-                &ASTData::Directive(Directive::Assert(expr, msg)) => {
-                    let (reg, _) = codegen_expr(fn, expr, false);
-                    create_instr(&fn.code, stmt.loc, stmt.type, Op::ComptimeAssert(reg, msg));
-                }
-                &ASTData::Directive(Directive::Debug) => {
-                    create_instr(&fn.code, stmt.loc, stmt.type, Op::Debug);
-                }
-                &ASTData::Directive(Directive::CheckedBir(lexer, types)) => {
-                    let fn_node = get_parent_function(dir);
-                    assert(fn_node != null, "codegen_stmt: Directive parent is null");
-                    let start = expect(&lexer, TokenData::CurlyOpen);
-                    let register_map = new_hashmap_with_substr_key(type_info(Reg));
-                    let index: usize = 0;
-                    while (!lexer_at(&lexer, TokenData::CurlyClose)) {
-                        let type = get_ref(&types, index) as &Type;
-                        parse_bufo_ir_into_function_body(fn_node, &register_map, &lexer, type, true);
-                        index = index + 1;
-                    }
-                    let end = expect(&lexer, TokenData::CurlyClose);
-                }
-                _ => {
-                    message(todo(stmt.loc, "codegen_stmt: Can't generate directive yet: %", dir.data));
-                }
-            }
-        }
-        _ => {
-            message(todo(stmt.loc, "codegen_stmt: Can't generate stmt yet: %", stmt.data));
-        }
-    }
-}
-
-@trace func codegen_expr(fn: &ASTFunction, expr: &AST, wants_ptr: bool) -> (Reg, Instr) {
-    let &ASTData::Expr(actual_expr) = &expr.data else {
-        funreachable("% codegen_expr: Node is not an expression, got %", expr.loc, expr.data);
-    };
-    match (&actual_expr) {
-        &ASTExpr::Ident { name } => {
-            let _var = get(&get_context(&fn.code).variable_map, name);
-            assert(_var.ptr != null, "codegen_expr: Variable doesn't exist!");
-            let var = _var as Var;
-            if (wants_ptr) return (var.alloca_reg, Instr {});
-            let dst = allocate_register(&fn.code, expr.type);
-            return (dst, create_instr(&fn.code, expr.loc, expr.type, Op::Load(dst, var.alloca_reg)));
-        }
-        &ASTExpr::FnIdent { name, _fn } => {
-            let &ASTData::Function(func_state) = &_fn.data else {
-                unreachable("codegen_expr: FnIdent does not have a function");
-            };
-            let reg = allocate_register(&fn.code, expr.type);
-            return (reg, create_instr(&fn.code, expr.loc, expr.type, Op::LoadFunction(reg, _fn)));
-        }
-        &ASTExpr::Number { value } => {
-            let number = toU64(&value);
-            let reg = allocate_register(&fn.code, expr.type);
-            return (reg, create_instr(&fn.code, expr.loc, expr.type, Op::LoadNumber(reg, number)));
-        }
-        &ASTExpr::StringLiteral { value } => {
-            let reg = allocate_register(&fn.code, expr.type);
-            return (reg, create_instr(&fn.code, expr.loc, expr.type, Op::LoadString(reg, value)));
-        }
-        &ASTExpr::Blank => {
-            let reg = allocate_register(&fn.code, expr.type);
-            return (reg, create_instr(&fn.code, expr.loc, expr.type, Op::LoadBlank(reg)));
-        }
-        &ASTExpr::Dot(lhs, member) => {
-            let (lhs_reg, lhs_instr) = codegen_expr(fn, lhs, !is_pointer(lhs.type));
-            assert(lhs_reg.size == 8, "Expected pointer sized register as LHS of dot");
-            let lhs_type = get_underlying_type(lhs.type);
-            if let BaseType::TypeDecl(type_decl_node) = lhs_type.base {
-                let type_decl_info = get_type_decl_info(type_decl_node);
-                let &ASTData::Expr(ASTExpr::Ident { field }) = &member.data else {
-                    unreachable("codegen_expr: check_member_expr should've prevented this");
-                };
-                let (true, offset, size, align) = get_field_offset_size_and_align(type_decl_info, field) else {
-                    unreachable("codegen_expr: Only fields are supported now, and methods will be handled differently later");
-                };
-                let offset_reg = allocate_register(&fn.code, create_base_type(PrimType::Usize));
-                create_instr(&fn.code, expr.loc, expr.type, Op::LoadNumber(offset_reg, offset as u64));
-                let dst_ptr = allocate_register(&fn.code, into_pointer_type(expr.type));
-                let dst_inst = create_instr(&fn.code, expr.loc, expr.type, Op::Add(dst_ptr, lhs_reg, offset_reg));
-                if (wants_ptr) {
-                    return (dst_ptr, dst_inst);
-                } else {
-                    let dst_reg = allocate_register(&fn.code, expr.type);
-                    dst_inst = create_instr(&fn.code, expr.loc, expr.type, Op::Load(dst_reg, dst_ptr));
-                    return (dst_reg, dst_inst);
-                }
-            } else {
-                unreachable("codegen_expr: Only structs are allowed for the Dot operator");
-            }
-        }
-        &ASTExpr::Call(_base, _args) => {
-            let (reg, _) = codegen_expr(fn, _base, false);
-            let args = new_GAF_List(type_info(Reg));
-            for (let i: usize = 0; i < _args.length; i = i + 1) {
-                let arg = get_ref(&_args, i) as &AST;
-                let (areg, _) = codegen_expr(fn, arg, false);
-                push(&args, areg);
-            }
-            let ret = allocate_register(&fn.code, expr.type);
-            return (ret, create_instr(&fn.code, expr.loc, expr.type, Op::Call(ret, reg, args)));
-        }
-        &ASTExpr::Directive(dir) => {
-            message(todo(expr.loc, "codegen_expr: Can't codegen directive"));
-        }
-        &ASTExpr::ComptimeValue(val) => {
-            let ret = allocate_register(&fn.code, expr.type);
-            return (ret, create_instr(&fn.code, expr.loc, expr.type, Op::LoadComptimeValue(ret, val)));
-        }
-        &ASTExpr::Unary(unary) => {
-            return codegen_unary(fn, expr, wants_ptr);
-        }
-        &ASTExpr::BlockVoid(stmts) => {
-            for (let i: usize = 0; i < stmts.length; i = i + 1) {
-                let s = get_ref(&stmts, i) as &AST;
-                codegen_stmt(fn, s);
-            }
-           return blank;
-        }
-        &ASTExpr::BlockExpr(stmts, value) => {
-            for (let i: usize = 0; i < stmts.length; i = i + 1) {
-                let s = get_ref(&stmts, i) as &AST;
-                codegen_stmt(fn, s);
-            }
-            return codegen_expr(fn, value, wants_ptr);
-        }
-        &ASTExpr::If(cond, then) => {
-            let (cond_reg, cond_inst) = codegen_expr(fn, cond, false);
-            let then_block = create_block(&fn.code, format1("then.%", expr));
-            let cont_block = create_block(&fn.code, format1("cont.%", expr));
-            create_instr(&fn.code, expr.loc, null, Op::CondBr(cond_reg, then_block.id, cont_block.id));
-
-            set_current_block(&fn.code, then_block.id);
-            codegen_stmt(fn, then);
-            let curr = get_current_block(&fn.code);
-            if (!is_terminated(curr)) {
-                create_instr(&fn.code, expr.loc, null, Op::Br(cont_block.id));
-            }
-
-            set_current_block(&fn.code, cont_block.id);
-            return (blank, blank);
-        }
-        &ASTExpr::Noop => {
-            return (blank, blank);
-        }
-        &ASTExpr::VariantInit(lhs, variant_name, args) => {
-            return codegen_variant_init(fn, expr, lhs, variant_name, args);
-        }
-        _ => {
-            message(todo(expr.loc, "codegen_expr: Can't codegen expression %", actual_expr));
-        }
-    }
-    unreachable("codegen_expr");
-}
-
-@trace func codegen_variant_init(fn: &ASTFunction, expr: &AST, lhs: &AST, variant_name: SubStr, args: GAF_List) -> (Reg, Instr) {
-    assert(lhs != null, "codegen_variant_init: LHS is null");
-    assert(lhs.type != null, "codegen_variant_init: LHS type is null");
-    assert(expr.type != null, "codegen_variant_init: Expr type is null");
-
-    let BaseType::TypeDecl(type_decl_node) = expr.type.base else {
-        unreachable("codegen_variant_init: LHS type is not a type decl");
-    };
-    let type_decl_info = get_type_decl_info(type_decl_node);
-
-    let tag_offset = get_tag_offset(type_decl_info);
-    let tag_size = type_decl_info.variants.length / 256 + 1;
-    let offset_type = create_base_type(PrimType::U64);
-    let ptr_type = into_pointer_type(offset_type);
-    let offset_reg = allocate_register(&fn.code, offset_type);
-    let offset_ptr = allocate_register(&fn.code, ptr_type);
-    create_instr(&fn.code, expr.loc, offset_type, Op::LoadNumber(offset_reg, tag_offset as u64));
-
-    let (found, variant, tag) = get_tag_of_variant(type_decl_info, variant_name);
-    assert(found, "codegen_variant_init: Could not find variant");
-
-    let tmp_name = format1("variant_init_%", expr);
-    let instance_ptr = allocate_variable(&fn.code, expr.loc, expr.type, asSubStr(&tmp_name));
-    let instance_reg = allocate_register(&fn.code, expr.type);
-    {
-        // Initialize with 0s
-        create_instr(&fn.code, expr.loc, expr.type, Op::LoadBlank(instance_reg));
-        create_instr(&fn.code, expr.loc, expr.type, Op::Store(instance_ptr, instance_reg));
-    }
-    {
-        // Set tag
-        let tag_type = create_base_type(PrimType::U8);
-        if (type_decl_info.variants.length >= 256) {
-            tag_type = create_base_type(PrimType::U16);
-        }
-
-        let tag_reg = allocate_register(&fn.code, tag_type);
-        create_instr(&fn.code, expr.loc, tag_type, Op::LoadNumber(tag_reg, tag as u64));
-        create_instr(&fn.code, expr.loc, ptr_type, Op::Add(offset_ptr, instance_ptr, offset_reg));
-        create_instr(&fn.code, expr.loc, tag_type, Op::Store(offset_ptr, tag_reg));
-    }
-
-    let _variant_start = next_multiple_of(tag_offset + tag_size, variant.align_in_bytes);
-    for (let i: usize = 0; i < args.length; i = i + 1) {
-        let arg = get_ref(&args, i) as &AST;
-        let field_offset = get_ref(&variant.field_offsets, i) as usize;
-        let offset_in_init = _variant_start + field_offset;
-        let (arg_reg, arg_instr) = codegen_expr(fn, arg, false);
-        create_instr(&fn.code, arg.loc, offset_type, Op::LoadNumber(offset_reg, offset_in_init as u64));
-        create_instr(&fn.code, arg.loc, ptr_type, Op::Add(offset_ptr, instance_ptr, offset_reg));
-        create_instr(&fn.code, arg.loc, arg.type, Op::Store(offset_ptr, arg_reg));
-    }
-
-    let instance = create_instr(&fn.code, expr.loc, expr.type, Op::Load(instance_reg, instance_ptr));
-    return (instance_reg, instance);
-}
-
-@trace func codegen_unary(fn: &ASTFunction, expr: &AST, wants_ptr: bool) -> (Reg, Instr) {
-    let &ASTData::Expr(ASTExpr::Unary(unary)) = &expr.data else {
-        unreachable("codegen_unary: Node is not a unary expression");
-    };
-    match (unary) {
-        ASTUnary::AddressOf(sub) => {
-            return codegen_expr(fn, sub, true);
-        }
-        _ => {
-            message(todo(expr.loc, "codegen_unary: Can't codegen expression %", unary));
-        }
-    }
-    unreachable("codegen_unary");
-}
-
-@trace func codegen_pattern(fn: &ASTFunction, pat: &AST, expr: Reg, is_comptime: bool) -> Reg {
-    let &ASTData::Pat(actual_pat) = &pat.data else {
-        unreachable("codegen_pattern: Node is not a pattern");
-    };
-    match (&actual_pat) {
-        &ASTPat::Ident(ident) => {
-            let var = allocate_variable(&fn.code, pat.loc, pat.type, ident);
-            create_instr(&fn.code, pat.loc, pat.type, Op::Store(var, expr));
-
-            let b = create_base_type(PrimType::Bool);
-            let succ = allocate_register(&fn.code, b);
-            create_instr(&fn.code, pat.loc, pat.type, Op::LoadBool(succ, true));
-            return succ;
-        }
-        &ASTPat::PatWithType(subpat, type) => {
-            return codegen_pattern(fn, subpat, expr, is_comptime);
-        }
-        _ => {
-            message(todo(pat.loc, "codegen_pattern: Can't codegen pattern"));
-        }
-    }
-    unreachable("codegen_pattern");
-}
