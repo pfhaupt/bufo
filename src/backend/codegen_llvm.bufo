@@ -273,10 +273,11 @@ struct LLVMCodegen {
     let llvmFuncType = generateLLVMFunctionType(this, rt_type);
     let llvmFuncValue = addFunction(&this.llvmModule, asSubStr(&initRuntime.name), llvmFuncType);
     if (*flags.debug) {
+        let input_file_path = toAbsolutePath(flags.file);
         let file: &ParsedFile = null;
         for (let i: usize = 0; i < files.length; i = i + 1) {
             let f = at(&files, i);
-            if (endsWith(&f.origin, &asSubStr(flags.file))) {
+            if (equals(&f.origin, &asSubStr(&input_file_path))) {
                 file = f;
                 break;
             }
