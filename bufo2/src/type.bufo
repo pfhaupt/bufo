@@ -136,6 +136,7 @@ func to_string(out: &String, t: PrimType) {
 union BaseType {
     Unknown,
     TypeDecl(&AST),
+    Module(&AST),
     Func(GAF_List, &Type), // Params, RetType
     Prim(PrimType),
     Ptr(&Type),
@@ -157,18 +158,20 @@ func to_string(out: &String, bt: BaseType) {
             pushStr(out, ") -> ");
             to_string(out, ret);
         }
+        BaseType::Module(node) => {
+            let info = get_module_info(node);
+            pushSubStr(out, &info.name);
+        }
         BaseType::TypeDecl(node) => {
-            let &ASTData::TypeDecl(struct_info) = &node.data else {
-                unreachable("to_string(BaseType): Non-TypeDecl AST");
-            };
-            pushSubStr(out, &struct_info.name);
+            let info = get_type_decl_info(node);
+            pushSubStr(out, &info.name);
             if (node.parent == null) {
-                if (!struct_info.state.is_monomorphized && struct_info.parameters.length > 0) {
+                if (!info.state.is_monomorphized && info.parameters.length > 0) {
                     // Generic struct, print as List($T)
                     pushChar(out, '(');
-                    for (let i: usize = 0; i < struct_info.parameters.length; i = i + 1) {
+                    for (let i: usize = 0; i < info.parameters.length; i = i + 1) {
                         if (i > 0) pushStr(out, ", ");
-                        let _node = get_ref(&struct_info.parameters, i) as &AST;
+                        let _node = get_ref(&info.parameters, i) as &AST;
                         let ASTData::Expr(ASTExpr::Generic) = _node.data else {
                             unreachable();
                         };
@@ -193,7 +196,7 @@ func to_string(out: &String, bt: BaseType) {
 }
 
 func get_align(t: BaseType) -> usize {
-    (comptime assert(tag(&BaseType::__count) == 5, "BaseType::get_align: Added base type"));
+    (comptime assert(tag(&BaseType::__count) == 6, "BaseType::get_align: Added base type"));
     match (t) {
         BaseType::Ptr(_) => { return 8; }
         BaseType::Func(_, _) => { return get_align(BaseType::Ptr); }
@@ -206,7 +209,7 @@ func get_align(t: BaseType) -> usize {
     unreachable("get_align(BaseType)");
 }
 func get_size(t: BaseType) -> usize {
-    (comptime assert(tag(&BaseType::__count) == 5, "BaseType::get_size: Added base type"));
+    (comptime assert(tag(&BaseType::__count) == 6, "BaseType::get_size: Added base type"));
     match (t) {
         BaseType::Ptr(_) => { return 8; }
         BaseType::Func(_, _) => { return get_size(BaseType::Ptr); }

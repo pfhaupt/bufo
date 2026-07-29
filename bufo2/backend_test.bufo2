@@ -36,9 +36,12 @@
  *       - Oh shit, binary operators are also userspace
  *         - Implement better metaprogramming
  *           - Module support, again
- *       - Oh shit, bufo2 was supposed to have `type`
- *         - Compiler Refactoring
- *           - Refactoring is done, but we can't really use variants yet (WE ARE HERE)
+ *             - Declaring normal modules should be easy enough
+ *           - `#if` and variations of it (WE ARE HERE)
+ *           - Somehow allow users to get handles of $T and such at compile time
+ *             - Given that everything is a &AST or &Type, we may just pass the pointer?
+ *           - Somehow tell a function that it's an internal compiler function
+ *             and should call a bufo1 function
  */
 
 struct Foo {
@@ -68,6 +71,25 @@ func sizeof(t: $T) -> u64 @naked {
     };
 }
 
+module mod {
+    module mod1 {
+        type Foo {
+            n: u64;
+            m: u64;
+        }
+    }
+    func foo(t: $T) -> u64 {
+        let f: mod1.Foo = blank;
+        return sizeof(f);
+    }
+}
+
+module other {
+    func foo(t: $T) -> u64 {
+        return mod.foo(t);
+    }
+}
+
 func main() {
     #run {
         let some0: Option(i32) = blank;
@@ -83,11 +105,16 @@ func main() {
         some2 = .None;
         none2 = .Some(n);
 
-        #assert some1 == .Some;
-        #assert some2 == .None;
-        #assert none1 == .None;
-        #assert none2 != .None;
-        #debug;
+        // #assert some1 == .Some;
+        // #assert some2 == .None;
+        // #assert none1 == .None;
+        // #assert none2 != .None;
+        // #debug;
+
+        comptime o = other;
+        let f1 = o.foo(n);
+        let f2: mod.mod1.Foo = blank;
+        #assert f1 == sizeof(f2), "other.foo did not return sizeof(mod.mod1.Foo)";
 
         // Bonus:
         // let stuff1: Stuff = blank; // warning: Initializing type with variants with blank

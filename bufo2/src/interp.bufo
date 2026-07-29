@@ -51,21 +51,20 @@ struct Interp {
     variable_map: GAF_HashMap; // HashMap<SubStr, Value>
 }
 
-func align_pointer(ptr: &&u8) {
-    comptime ALIGN: usize = 8;
-    if (*ptr as usize % ALIGN != 0) {
-        let diff = ALIGN - (*ptr as usize % ALIGN);
+func align_pointer(ptr: &&u8, align: usize) {
+    if (*ptr as usize % align != 0) {
+        let diff = align - (*ptr as usize % align);
         *ptr = *ptr + diff;
     }
 }
 
-func allocate_comptime_variable(interp: &Interp, loc: Loc, var: Value) -> Value {
+func allocate_comptime_variable(interp: &Interp, loc: Loc, var: Value, align: usize) -> Value {
     let Value::Var { reg, size } = var else {
         unreachable("allocate_comptime_variable: Expected Value::Var");
     };
     let ptr = interp.var_stack_pointer;
+    align_pointer(&interp.var_stack_pointer, align);
     interp.var_stack_pointer = interp.var_stack_pointer + size;
-    align_pointer(&interp.var_stack_pointer);
     if (interp.var_stack_pointer >= interp.var_stack_base + interp.var_stack_size) {
         message(fatal(loc, "Variable Stack Overflow during compile time execution. Attempted to allocate % byte(s).", size));
     }
@@ -73,24 +72,24 @@ func allocate_comptime_variable(interp: &Interp, loc: Loc, var: Value) -> Value 
     return Value::Var { reg: ptr, size: size };
 }
 func allocate_stack(interp: &Interp, loc: Loc, type: &Type) -> &u8 {
-    return allocate_stack(interp, loc, get_size(type));
+    return allocate_stack(interp, loc, get_size(type), get_align(type));
 }
-func allocate_stack(interp: &Interp, loc: Loc, bytes: usize) -> &u8 {
+func allocate_stack(interp: &Interp, loc: Loc, bytes: usize, align: usize) -> &u8 {
     let ptr = interp.stack_pointer;
+    align_pointer(&interp.stack_pointer, align);
     interp.stack_pointer = interp.stack_pointer + bytes;
-    align_pointer(&interp.stack_pointer);
     if (interp.stack_pointer >= interp.stack_base + interp.stack_size) {
         message(fatal(loc, "Stack Overflow during compile time execution. Attempted to allocate % byte(s).", bytes));
     }
     return ptr;
 }
 func allocate_register(interp: &Interp, loc: Loc, type: &Type) -> &u8 {
-    return allocate_register(interp, loc, get_size(type));
+    return allocate_register(interp, loc, get_size(type), get_align(type));
 }
-func allocate_register(interp: &Interp, loc: Loc, bytes: usize) -> &u8 {
+func allocate_register(interp: &Interp, loc: Loc, bytes: usize, align: usize) -> &u8 {
     let ptr = interp.register_stack_pointer;
+    align_pointer(&interp.register_stack_pointer, align);
     interp.register_stack_pointer = interp.register_stack_pointer + bytes;
-    align_pointer(&interp.register_stack_pointer);
     if (interp.register_stack_pointer >= interp.register_stack_base + interp.register_stack_size) {
         message(fatal(loc, "Register Stack Overflow during compile time execution. Attempted to allocate % byte(s).", bytes));
     }
@@ -169,7 +168,7 @@ func create_interpreter(fn: &AST) -> Interp {
     reset_interpreter(interp, fn);
 
     let ptr = interp.register_stack_pointer;
-    allocate_register(interp, fn.loc, ct.total_register_size);
+    allocate_register(interp, fn.loc, ct.total_register_size, 8);
 
     while (evaluate_block(interp, fn, block, &curr_block, true)) {
         block = get_ref_raw(&ct.blocks, curr_block._i);
@@ -188,7 +187,8 @@ func create_interpreter(fn: &AST) -> Interp {
         if (_var.ptr != null) {
             var = _var as Value;
         } else {
-            var = allocate_comptime_variable(interp, fn.loc, v);
+            // TODO(2026-07-29): Proper alignment here
+            var = allocate_comptime_variable(interp, fn.loc, v, 8);
         }
         add(&func_state.code.comptime_variables, k, var);
     }
@@ -215,7 +215,7 @@ func create_interpreter(fn: &AST) -> Interp {
     let rt = &func_state.code.runtime;
 
     let ptr = interp.register_stack_pointer;
-    allocate_register(interp, fn.loc, rt.total_register_size);
+    allocate_register(interp, fn.loc, rt.total_register_size, 8);
 
     let curr_block = rt.entry;
     let block: &Block = get_ref_raw(&rt.blocks, curr_block._i);
@@ -272,7 +272,8 @@ func create_interpreter(fn: &AST) -> Interp {
             let (dst, dst_size) = get_register_pointer_and_size(interp, _dst);
             assert(dst_size == 8, "Alloca expected pointer sized destination");
             let size = get_size(instr.type);
-            let stack_pointer = allocate_stack(interp, instr.loc, size);
+            let align = get_align(instr.type);
+            let stack_pointer = allocate_stack(interp, instr.loc, size, align);
             *(dst as &usize) = stack_pointer as usize;
             add(&interp.variable_map, name, Value::Var { reg: stack_pointer, size: size });
             return Value::Reg(dst, dst_size);

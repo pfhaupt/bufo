@@ -222,6 +222,18 @@ struct Instr {
     fassert(is_equal_to(under, src.type), "build_store: %: Destination type does not match source type: % vs %", loc, to_string(under), to_string(src.type));
     __create_instr(code, loc, src.type, Op::Store(dst, src));
 }
+@trace func build_get_ptr_offset(code: &Code, loc: Loc, ty: &Type, src: Reg, offset: usize) -> Reg {
+    assert(is_pointer(src.type), "build_get_ptr_offset: Source is not a pointer");
+    assert(is_pointer(ty), "build_get_ptr_offset: Element type is not a pointer");
+    let cast = src;
+    if (!is_equal_to(ty, src.type)) {
+        cast = build_ptr_cast(code, loc, ty, src);
+    }
+    if (offset == 0) return cast;
+    let offset_reg = build_load_number(code, loc, offset as u64);
+    let dst_ptr    = build_add_ptr_u64(code, loc, cast, offset_reg);
+    return dst_ptr;
+}
 @trace func build_load_param(code: &Code, loc: Loc, ty: &Type, index: usize) -> Reg {
     let reg = __allocate_register(code, ty);
     __create_instr(code, loc, ty, Op::LoadParameter(reg, index));
@@ -637,9 +649,7 @@ union Op {
                 let (true, offset, size, align) = get_field_offset_size_and_align(type_decl_info, field) else {
                     unreachable("codegen_expr: Only fields are supported now, and methods will be handled differently later");
                 };
-                let offset_reg = build_load_number(&fn.code, expr.loc, offset as u64);
-                let cast       = build_ptr_cast(&fn.code, expr.loc, into_pointer_type(expr.type), lhs_reg);
-                let dst_ptr    = build_add_ptr_u64(&fn.code, expr.loc, cast, offset_reg);
+                let dst_ptr = build_get_ptr_offset(&fn.code, expr.loc, into_pointer_type(expr.type), lhs_reg, offset);
                 if (wants_ptr) {
                     return dst_ptr;
                 } else {
@@ -744,9 +754,7 @@ union Op {
         }
         let tag_reg = build_load_number(&fn.code, expr.loc, tag_type, tag as u64);
 
-        let offset_reg = build_load_number(&fn.code, expr.loc, tag_offset as u64);
-        let cast_reg   = build_ptr_cast(&fn.code, expr.loc, into_pointer_type(tag_type), instance_ptr);
-        let dst_ptr    = build_add_ptr_u64(&fn.code, expr.loc, cast_reg, offset_reg);
+        let dst_ptr = build_get_ptr_offset(&fn.code, expr.loc, into_pointer_type(tag_type), instance_ptr, tag_offset);
         build_store(&fn.code, expr.loc, dst_ptr, tag_reg);
     }
 
@@ -757,9 +765,7 @@ union Op {
         let offset_in_init = _variant_start + field_offset;
         let arg_reg = codegen_expr(fn, arg, false);
 
-        let offset_reg = build_load_number(&fn.code, arg.loc, offset_in_init as u64);
-        let cast_reg   = build_ptr_cast(&fn.code, arg.loc, into_pointer_type(arg.type), instance_ptr);
-        let dst_ptr    = build_add_ptr_u64(&fn.code, arg.loc, cast_reg, offset_reg);
+        let dst_ptr = build_get_ptr_offset(&fn.code, arg.loc, into_pointer_type(arg.type), instance_ptr, offset_in_init);
         build_store(&fn.code, arg.loc, dst_ptr, arg_reg);
     }
 

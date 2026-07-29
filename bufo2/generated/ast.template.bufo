@@ -2,7 +2,7 @@
 
 // Command line: .\build\share_template.exe ./templates/ast.template ./generated/ast.template.bufo
 
-// Generated 8 structure(s)
+// Generated 10 structure(s)
 // Generated 8 union(s)
 // Generated 5 share(s)
 
@@ -12,6 +12,7 @@ import "hashmap.bufo";
 import "substr.bufo";
 import "string.bufo";
 import "common.bufo";
+import "lookup.bufo";
 import "lexer.bufo";
 import "type.bufo";
 import "codegen.bufo";
@@ -31,6 +32,15 @@ struct AST {
     // Structure fields
     data: ASTData;
 } // End of AST
+
+struct ASTModule {
+    // Fields from Share `Common_Fields`
+    loc: Loc;
+    name: SubStr;
+    // Structure fields
+    state: ModuleState;
+    lookup: SymbolLookup;
+} // End of ASTModule
 
 struct ASTTypeDeclField {
     // Fields from Share `Common_Fields`
@@ -86,6 +96,11 @@ struct ASTFunction {
     code: Code;
 } // End of ASTFunction
 
+struct ModuleState {
+    // Structure fields
+    did_parse_everything: bool;
+} // End of ModuleState
+
 struct FunctionState {
     // Fields from Share `State`
     is_monomorphized: bool;
@@ -120,6 +135,7 @@ struct ASTAttr {
 // -- UNIONS BEGIN --
 union ASTData {
     // Union variants
+    Module(ASTModule),
     TypeDecl(ASTTypeDecl),
     Function(ASTFunction),
     Stmt(ASTStmt),

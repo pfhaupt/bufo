@@ -39,8 +39,10 @@ struct Parse_Context {
 }
 
 struct Load_Context {
+    current_module: &AST;
     file_name: SubStr;
     loc: Loc;
+    main_file: bool;
 }
 
 let loaded_files: GAF_HashMap = blank;
@@ -61,12 +63,21 @@ let loaded_files: GAF_HashMap = blank;
         message(error(context.loc, "Could not read file %", file_name));
     }
     add(&loaded_files, full_path, true);
-    let file = spawn(parse_file, wrap((source, file_name)));
+    if (context.current_module == null) {
+        assert(context.main_file, "load_file: Current Module is null but we're also not in the main file");
+        context.current_module = create_module(null, new_loc(file_name, 0), asSubStr(&source), comptime newSubStr("__global__"));
+        context.current_module.super_node = context.current_module;
+    }
+    // REVIEW(2026-07-28): To make life easier for ourselves this should not spawn
+    //                     Otherwise we can't know later on, when we encounter symbols,
+    //                     if we can take *that* symbol or should wait for potential loads.
+    let file = spawn(parse_file, wrap((context.current_module, source, file_name)));
 }
 
-@trace func parse_file(arg: &(String, SubStr)) {
-    let src = arg.0;
-    let file_name = arg.1;
+@trace func parse_file(arg: &(&AST, String, SubStr)) {
+    let parent = arg.0;
+    let src = arg.1;
+    let file_name = arg.2;
     let slice = asSubStr(&src);
     assert(slice.len != 0, "Empty source");
     let lexer = Lexer {
@@ -74,18 +85,34 @@ let loaded_files: GAF_HashMap = blank;
         offset_in_file: 0,
         source: slice,
     };
-    let __parse_type_decl = func (file_name: SubStr, tkn: Token, lexer: &Lexer, slice: SubStr) {
-        let _name = expect(lexer, TokenData::Ident);
-        if (lexer_at(lexer, TokenData::ParenOpen)) {
-            skip_until_matching(lexer, TokenData::ParenOpen, TokenData::ParenClose);
+    let context = Parse_Context {
+        parent: parent,
+        lexer: lexer,
+        generic_type_mapping: blank,
+    };
+    let _ = spawn(__parse_module_body, wrap(context));
+}
+
+@trace func __parse_module_body(ctx: &Parse_Context) {
+    let mod = get_module_info(ctx.parent);
+    register_monitor(&mod.state.did_parse_everything);
+
+    let module_source = ctx.lexer.source;
+    let __parse_type_decl = func (ctx: &Parse_Context, tkn: Token) {
+        let slice = ctx.lexer.source;
+        let offset_in_file = ctx.lexer.offset_in_file;
+        let start = expect(&ctx.lexer, TokenData::KeywordType, TokenData::KeywordStruct, TokenData::KeywordUnion);
+        let _name = expect(&ctx.lexer, TokenData::Ident);
+        if (lexer_at(&ctx.lexer, TokenData::ParenOpen)) {
+            skip_until_matching(&ctx.lexer, TokenData::ParenOpen, TokenData::ParenClose);
         }
-        let end = skip_until_matching(lexer, TokenData::CurlyOpen, TokenData::CurlyClose);
-        let source = substring(&slice, tkn.loc.offset, end.loc.offset + 1);
-        let type_decl_node = create_type_decl(null, _name.loc, source, get_name(&_name));
+        let end = skip_until_matching(&ctx.lexer, TokenData::CurlyOpen, TokenData::CurlyClose);
+        let source = substring(&slice, start.loc.offset - offset_in_file, end.loc.offset - offset_in_file + 1);
+        let type_decl_node = create_type_decl(ctx.parent, _name.loc, source, get_name(&_name));
         type_decl_node.super_node = type_decl_node;
         let _lexer = Lexer {
             offset_in_file: tkn.loc.offset,
-            file_name: file_name,
+            file_name: tkn.loc.file,
             source: source,
         };
         let context = Parse_Context {
@@ -95,22 +122,23 @@ let loaded_files: GAF_HashMap = blank;
         };
         let _ = spawn(parse_type_decl, wrap(context));
     };
-    while (!is_empty(&lexer)) {
-        let tkn = next(&lexer);
+    while (!lexer_at(&ctx.lexer, TokenData::CurlyClose, TokenData::EndOfFile)) {
+        let leftover_source = ctx.lexer.source;
+        let offset_in_file = ctx.lexer.offset_in_file;
+        let tkn = peek(&ctx.lexer);
         match (tkn.data) {
-            TokenData::EndOfFile => {
-                return;
-            }
             TokenData::Hash => {
-                let _name = expect(&lexer, TokenData::Ident);
+                expect(&ctx.lexer, TokenData::Hash);
+                let _name = expect(&ctx.lexer, TokenData::Ident);
                 let dir_name = get_name(&_name);
                 if (equals(&dir_name, &comptime newSubStrOfStrLit("load"))) {
-                    let _file = expect(&lexer, TokenData::StringLiteral);
+                    let _file = expect(&ctx.lexer, TokenData::StringLiteral);
                     let TokenData::StringLiteral { origin, value } = _file.data else {
                         unreachable();
                     };
-                    expect(&lexer, TokenData::SemiColon);
+                    expect(&ctx.lexer, TokenData::SemiColon);
                     load_file(wrap(Load_Context {
+                        current_module: ctx.parent,
                         file_name: asSubStr(&value),
                         loc: _file.loc,
                     }));
@@ -119,29 +147,49 @@ let loaded_files: GAF_HashMap = blank;
                 }
             }
             TokenData::KeywordType => {
-                __parse_type_decl(file_name, tkn, &lexer, slice);
+                __parse_type_decl(ctx, tkn);
             }
             TokenData::KeywordStruct => {
-                __parse_type_decl(file_name, tkn, &lexer, slice);
+                __parse_type_decl(ctx, tkn);
             }
             TokenData::KeywordUnion => {
-                __parse_type_decl(file_name, tkn, &lexer, slice);
+                __parse_type_decl(ctx, tkn);
+            }
+            TokenData::KeywordModule => {
+                expect(&ctx.lexer, TokenData::KeywordModule);
+                let _name = expect(&ctx.lexer, TokenData::Ident);
+                let end = skip_until_matching(&ctx.lexer, TokenData::CurlyOpen, TokenData::CurlyClose);
+                let source = substring(&leftover_source, tkn.loc.offset - offset_in_file, end.loc.offset - offset_in_file + 1);
+                let mod_node = create_module(ctx.parent, _name.loc, source, get_name(&_name));
+                mod_node.super_node = mod_node;
+                let _lexer = Lexer {
+                    offset_in_file: tkn.loc.offset,
+                    file_name: tkn.loc.file,
+                    source: source,
+                };
+                let context = Parse_Context {
+                    parent: mod_node,
+                    lexer: _lexer,
+                    generic_type_mapping: blank,
+                };
+                let _ = spawn(parse_module, wrap(context));
             }
             TokenData::KeywordFunc => {
-                let _name = expect(&lexer, TokenData::Ident);
-                skip_until_matching(&lexer, TokenData::ParenOpen, TokenData::ParenClose);
-                while (!lexer_at(&lexer, TokenData::CurlyOpen)) next(&lexer);
-                let end = skip_until_matching(&lexer, TokenData::CurlyOpen, TokenData::CurlyClose);
+                expect(&ctx.lexer, TokenData::KeywordFunc);
+                let _name = expect(&ctx.lexer, TokenData::Ident);
+                skip_until_matching(&ctx.lexer, TokenData::ParenOpen, TokenData::ParenClose);
+                while (!lexer_at(&ctx.lexer, TokenData::CurlyOpen)) next(&ctx.lexer);
+                let end = skip_until_matching(&ctx.lexer, TokenData::CurlyOpen, TokenData::CurlyClose);
                 // func foo ( ) { } .......
                 // ^offset_in_file
                 //                ^end.offset_in_file
                 // + 1 because the curly bracket is also contained
-                let source = substring(&slice, tkn.loc.offset, end.loc.offset + 1);
-                let func_node = create_function(null, _name.loc, source, get_name(&_name));
+                let source = substring(&leftover_source, tkn.loc.offset - offset_in_file, end.loc.offset - offset_in_file + 1);
+                let func_node = create_function(ctx.parent, _name.loc, source, get_name(&_name));
                 func_node.super_node = func_node;
                 let _lexer = Lexer {
                     offset_in_file: tkn.loc.offset,
-                    file_name: file_name,
+                    file_name: tkn.loc.file,
                     source: source,
                 };
                 let context = Parse_Context {
@@ -152,10 +200,21 @@ let loaded_files: GAF_HashMap = blank;
                 let _ = spawn(parse_function_signature, wrap(context));
             }
             t => {
-                message(todo(new_loc(lexer.file_name, lexer.offset_in_file), "unhandled TLI %", t));
+                // TODO(2026-07-28): Error recovery.
+                message(error(tkn.loc, "Unexpected top level token %.", to_cstr(t)));
             }
         }
     }
+    mod.state.did_parse_everything = true;
+    unregister_monitor(&mod.state.did_parse_everything);
+}
+
+@trace func parse_module(ctx: &Parse_Context) {
+    expect(&ctx.lexer, TokenData::KeywordModule);
+    let _name = expect(&ctx.lexer, TokenData::Ident);
+    expect(&ctx.lexer, TokenData::CurlyOpen);
+    __parse_module_body(ctx);
+    let end = expect(&ctx.lexer, TokenData::CurlyClose);
 }
 
 @trace func parse_type_decl_with_mapping(ast: &AST, mapping: GAF_HashMap) -> &AST {
@@ -212,7 +271,7 @@ let loaded_files: GAF_HashMap = blank;
 
     if (!is_generic(&type_decl_state)) {
         let cid = spawn(parse_type_decl_body, wrap(Parse_Context {
-            parent: context.parent,
+            parent: type_decl_node,
             lexer: *lexer,
             generic_type_mapping: blank,
         }));
@@ -225,9 +284,9 @@ let loaded_files: GAF_HashMap = blank;
 @trace func parse_type_decl_body(context: &Parse_Context) {
     let lexer = &context.lexer;
     let type_decl_node = context.parent;
-    let &ASTData::TypeDecl(type_decl_state) = &type_decl_node.data else {
-        unreachable("parse_type_decl_body got non-type_decl AST");
-    };
+    let type_decl_state = get_type_decl_info(type_decl_node);
+    let parent_module = type_decl_node.parent;
+    assert(parent_module != null, "parse_type_decl_body: Parent is null");
 
     register_monitor(&type_decl_state.size_in_bytes);
     register_monitor(&type_decl_state.align_in_bytes);
@@ -244,7 +303,7 @@ let loaded_files: GAF_HashMap = blank;
         if (eat(lexer, TokenData::ColonSingle)) {
             let (generic, type) = parse_type(context);
             assert(!generic, "parse_type_decl_body: Expected resolved generics at this point");
-            add_field(type_decl_node, &type_decl_state, name.loc, _name, type);
+            add_field(type_decl_node, type_decl_state, name.loc, _name, type);
         } else if (eat(lexer, TokenData::ParenOpen)) {
             let variant_fields = new_GAF_List(type_info(&AST));
             while (!lexer_at(lexer, TokenData::ParenClose)) {
@@ -259,9 +318,9 @@ let loaded_files: GAF_HashMap = blank;
             if (variant_fields.length == 0) {
                 message(error(name.loc, "Unexpected parentheses in empty type variant."));
             }
-            add_variant(type_decl_node, &type_decl_state, name.loc, _name, variant_fields);
+            add_variant(type_decl_node, type_decl_state, name.loc, _name, variant_fields);
         } else if (lexer_at(lexer, TokenData::SemiColon)) {
-            add_variant(type_decl_node, &type_decl_state, name.loc, _name, blank);
+            add_variant(type_decl_node, type_decl_state, name.loc, _name, blank);
         } else {
             message(todo(name.loc, "unexpected token"));
         }
@@ -280,7 +339,7 @@ let loaded_files: GAF_HashMap = blank;
         register_monitor(&variant.align_in_bytes);
     }
 
-    check_type_decl(type_decl_node);
+    check_type_decl(parent_module, type_decl_node);
 }
 
 @trace func parse_generic_parameters(context: &Parse_Context) -> GAF_List {
@@ -422,8 +481,11 @@ let loaded_files: GAF_HashMap = blank;
 }
 
 @trace func parse_function_body(context: &Parse_Context) {
-    let func_state = get_func_info(context.parent);
-    register_monitor(&context.parent.type);
+    let func_node = context.parent;
+    let func_state = get_func_info(func_node);
+    let parent_module = func_node.parent;
+    assert(parent_module != null, "parse_function_body: Parent is null");
+    register_monitor(&func_node.type);
     register_monitor(&func_state.block);
     register_monitor(&func_state.state.did_parse_body);
     register_monitor(&func_state.state.did_check_body);
@@ -433,13 +495,13 @@ let loaded_files: GAF_HashMap = blank;
     assert(func_state.scopes.length == 0, "Function already has scopes");
     push(&func_state.scopes, new_stack());
 
-    check_function_parameters(func_state);
-    check_function_return_type(func_state);
+    check_function_parameters(parent_module, func_state);
+    check_function_return_type(parent_module, func_state);
     func_state.state.did_check_signature = true;
     unregister_monitor(&func_state.state.did_check_signature);
-    finalize_function_type(context.parent, func_state);
+    finalize_function_type(func_node, func_state);
 
-    codegen_function_entry(context.parent);
+    codegen_function_entry(func_node);
 
     expect(&context.lexer, TokenData::CurlyOpen);
     let (is_generic, block) = parse_block(context);
@@ -449,7 +511,7 @@ let loaded_files: GAF_HashMap = blank;
     func_state.state.did_parse_body = true;
     unregister_monitor(&func_state.state.did_parse_body);
 
-    check_block(block);
+    check_block(parent_module, block);
     func_state.state.did_check_body = true;
     unregister_monitor(&func_state.state.did_check_body);
 
@@ -457,12 +519,12 @@ let loaded_files: GAF_HashMap = blank;
     func_state.state.did_codegen_body = true;
     unregister_monitor(&func_state.state.did_codegen_body);
 
-    codegen_function_exit(context.parent);
+    codegen_function_exit(func_node);
 
     pop(&func_state.scopes);
     assert(func_state.scopes.length == 0, "parse_function_body: Stack not empty");
 
-    message(dbg(context.parent.loc, "Parsed, type checked and generated function %", func_state.name));
+    message(dbg(func_node.loc, "Parsed, type checked and generated function %", func_state.name));
 }
 
 @trace func parse_block(context: &Parse_Context) -> (bool, &AST) {
@@ -648,7 +710,7 @@ let loaded_files: GAF_HashMap = blank;
 union Assoc { Left, Right }
 
 @trace func matches_unary_expr(context: &Parse_Context) -> bool {
-    (comptime assert(tag(&TokenData::EndOfFile) == 49, "Parser::matches_unary_expr: Added more tokens"));
+    (comptime assert(tag(&TokenData::EndOfFile) == 50, "Parser::matches_unary_expr: Added more tokens"));
     match (peek(&context.lexer).data) {
         TokenData::MinusSingle     => { return true; }
         TokenData::AmpersandSingle => { return true; }
@@ -661,7 +723,7 @@ union Assoc { Left, Right }
     unreachable("matches_unary_expr");
 }
 @trace func matches_binary_expr(context: &Parse_Context) -> bool {
-    (comptime assert(tag(&TokenData::EndOfFile) == 49, "Parser::matches_binary_expr: Added more tokens"));
+    (comptime assert(tag(&TokenData::EndOfFile) == 50, "Parser::matches_binary_expr: Added more tokens"));
     match (peek(&context.lexer).data) {
         TokenData::ParenOpen      => { return true; }
         TokenData::KeywordAs      => { return true; }
@@ -685,7 +747,7 @@ union Assoc { Left, Right }
     unreachable("matches_binary_expr");
 }
 @trace func get_binary_precedence(tkn: TokenData) -> usize {
-    (comptime assert(tag(&TokenData::EndOfFile) == 49, "Parser::get_binary_precedence: Added more tokens"));
+    (comptime assert(tag(&TokenData::EndOfFile) == 50, "Parser::get_binary_precedence: Added more tokens"));
     (comptime assert(tag(&ASTBinary::__count) == 15, "get_binary_precedence: Added more Operands"));
     match (tkn) {
         TokenData::Dot            => { return 17; }
@@ -723,7 +785,7 @@ union Assoc { Left, Right }
 }
 
 @trace func get_unary_precedence(tkn: TokenData) -> usize {
-    (comptime assert(tag(&TokenData::EndOfFile) == 49, "Parser::get_unary_precedence: Added more tokens"));
+    (comptime assert(tag(&TokenData::EndOfFile) == 50, "Parser::get_unary_precedence: Added more tokens"));
     (comptime assert(tag(&ASTUnary::__count) == 3, "Parser::get_unary_precedence: Added more Operands"));
     match (tkn) {
         TokenData::AsteriskSingle  => { return 14; }

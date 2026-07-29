@@ -49,13 +49,13 @@ import "lookup.bufo";
     let start = get_high_resolution_timestamp();
 
     init_corot_engine();
-    init_global_lookup();
     @if_tracing tracy::fiber_enter("main_fiber");
 
     let file_name = newSubStrOfStrLit(argv[1]);
     let file = spawn(load_file, wrap(Load_Context {
         file_name: file_name,
         loc: new_loc(file_name, 0),
+        main_file: true,
     }));
 
     // The main function only switches between scheduled coroutines

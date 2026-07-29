@@ -5,6 +5,7 @@ import "substr.bufo";
 import "string.bufo";
 
 import "common.bufo";
+import "lookup.bufo";
 import "lexer.bufo";
 import "type.bufo";
 import "codegen.bufo";
@@ -25,6 +26,7 @@ struct AST : ASTCommon {
 }
 
 union ASTData {
+    Module(ASTModule),
     TypeDecl(ASTTypeDecl),
     Function(ASTFunction),
     Stmt(ASTStmt),
@@ -47,6 +49,11 @@ shared Data_Structure_Fields {
     size_in_bytes: usize;
     align_in_bytes: usize;
     tag_offset: usize;
+}
+
+struct ASTModule : Common_Fields {
+	state: ModuleState;
+    lookup: SymbolLookup;
 }
 
 struct ASTTypeDeclField : Common_Fields {
@@ -78,6 +85,10 @@ struct ASTFunction : Common_Fields, Generic_Fields {
 shared State {
     is_monomorphized: bool;
     did_parse_signature: bool;
+}
+
+struct ModuleState {
+    did_parse_everything: bool;
 }
 
 struct FunctionState : State {

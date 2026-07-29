@@ -203,6 +203,13 @@ import "../generated/ast.template.bufo";
     push(&type_decl_info.variants, variant);
 }
 
+@trace func get_module_info(mod: &AST) -> &ASTModule {
+    assert(mod != null, "get_module_info: Node is null");
+    let &ASTData::Module(module_info) = &mod.data else {
+        unreachable("get_module_info: Node is not a module");
+    };
+    return &module_info;
+}
 @trace func get_type_decl_info(fn: &AST) -> &ASTTypeDecl {
     let &ASTData::TypeDecl(type_decl_info) = &fn.data else {
         unreachable("get_type_decl_info: Node is not a type declaration");
@@ -379,7 +386,38 @@ let node_counter: usize = 0;
     return ptr;
 }
 
+@trace func create_module(parent: &AST, loc: Loc, origin: SubStr, name: SubStr) -> &AST {
+    assert(parent != null || equals(&name, &comptime newSubStr("__global__")), "create_module: Parent is null");
+    let ptr = create_node(parent, loc, origin);
+    ptr.data = ASTData::Module(ASTModule {
+        state: blank,
+        loc: loc,
+        name: name,
+        lookup: new_symbol_lookup(ptr),
+    });
+    if (parent != null) {
+        let &ASTData::Module(parent_module) = &parent.data else {
+            // TODO(2026-07-29): Support non-module module parents
+            unreachable("create_module: Parent is not a module");
+        };
+        let lookup = get_module_by_name(&parent_module.lookup, name);
+        if (lookup != null) {
+            message(
+                error(loc, "Redeclaration of module %.", name),
+                note(lookup.original.loc, "Module already declared here."),
+            );
+        }
+        add(&parent_module.lookup.modules, name, new_module_lookup(ptr));
+    }
+    return ptr;
+}
+
 @trace func create_type_decl(parent: &AST, loc: Loc, origin: SubStr, name: SubStr) -> &AST {
+    assert(parent != null, "create_type_decl: Parent is null");
+    let &ASTData::Module(parent_module) = &parent.data else {
+        // TODO(2026-07-29): Support non-module TypeDecl parents
+        unreachable("create_type_decl: Parent is not a module");
+    };
     let ptr = create_node(parent, loc, origin);
     ptr.data = ASTData::TypeDecl(ASTTypeDecl {
         state: blank,
@@ -390,14 +428,65 @@ let node_counter: usize = 0;
         parameters: new_GAF_List(type_info(&AST)),
         monomorphized_instances: new_hashmap_with_string_key(type_info(&AST)),
     });
-    let lookup = get_type_decl_by_name(&global_lookup, name);
+    let lookup = get_type_decl_by_name(&parent_module.lookup, name);
     if (lookup != null) {
         message(
             error(loc, "Redeclaration of type %.", name),
             note(lookup.node.loc, "Type already declared here."),
         );
     }
-    add(&global_lookup.type_decls, name, new_type_decl_lookup(ptr));
+    add(&parent_module.lookup.type_decls, name, new_type_decl_lookup(ptr));
+    return ptr;
+}
+
+@trace func create_function(parent: &AST, loc: Loc, origin: SubStr, name: SubStr) -> &AST {
+    assert(parent != null, "create_function: Parent is null");
+    let &ASTData::Module(parent_module) = &parent.data else {
+        // TODO(2026-07-29): Support non-module function parents
+        unreachable("create_function: Parent is not a module");
+    };
+    let ptr = create_node(parent, loc, origin);
+    let scopes = new_GAF_List(type_info(Scope_Info));
+    reserve_capacity(&scopes, 16);
+    ptr.data = ASTData::Function(ASTFunction {
+        state: blank,
+        loc: loc,
+        name: name,
+        scopes: scopes,
+        params: new_GAF_List(type_info(&AST)),
+        code: create_code(ptr),
+        monomorphized_instances: new_hashmap_with_string_key(type_info(&AST)),
+    });
+    let lookup = get_functions_by_name(&parent_module.lookup, name);
+    if (lookup == null) {
+        add(&parent_module.lookup.functions, name, new_function_lookup(ptr));
+    } else {
+        push(&lookup.overloads, ptr);
+    }
+    return ptr;
+}
+
+@trace func create_stmt(parent: &AST, loc: Loc, origin: SubStr, stmt: ASTStmt) -> &AST {
+    let ptr = create_node(parent, loc, origin);
+    ptr.data = ASTData::Stmt(stmt);
+    return ptr;
+}
+
+@trace func create_pattern(parent: &AST, loc: Loc, origin: SubStr, pat: ASTPat) -> &AST {
+    let ptr = create_node(parent, loc, origin);
+    ptr.data = ASTData::Pat(pat);
+    return ptr;
+}
+
+@trace func create_expr(parent: &AST, loc: Loc, origin: SubStr, expr: ASTExpr) -> &AST {
+    let ptr = create_node(parent, loc, origin);
+    ptr.data = ASTData::Expr(expr);
+    return ptr;
+}
+
+@trace func create_directive(parent: &AST, loc: Loc, origin: SubStr, dir: Directive) -> &AST {
+    let ptr = create_node(parent, loc, origin);
+    ptr.data = ASTData::Directive(dir);
     return ptr;
 }
 
@@ -414,7 +503,7 @@ func monomorphize_function_node(ast: &AST, mapping: GAF_HashMap) -> &AST {
         return child as &AST;
     }
 
-    let ptr = create_node(null, ast.loc, ast.origin);
+    let ptr = create_node(ast.parent, ast.loc, ast.origin);
     let name: String = blank;
     format(&name, "%(%)", parent.name, key);
     ptr.data = ASTData::Function(ASTFunction {
@@ -447,7 +536,7 @@ func monomorphize_type_decl_node(ast: &AST, mapping: GAF_HashMap) -> &AST {
         return child as &AST;
     }
 
-    let ptr = create_node(null, ast.loc, ast.origin);
+    let ptr = create_node(ast.parent, ast.loc, ast.origin);
     let name: String = blank;
     format(&name, "%(%)", parent.name, key);
     ptr.data = ASTData::TypeDecl(ASTTypeDecl {
@@ -590,48 +679,3 @@ func collect_generic_type_mapping(fn: &AST, type: &Type) -> (GAF_HashMap, bool, 
     return (mapping, success, false);
 }
 
-@trace func create_function(parent: &AST, loc: Loc, origin: SubStr, name: SubStr) -> &AST {
-    let ptr = create_node(parent, loc, origin);
-    let scopes = new_GAF_List(type_info(Scope_Info));
-    reserve_capacity(&scopes, 16);
-    ptr.data = ASTData::Function(ASTFunction {
-        state: blank,
-        loc: loc,
-        name: name,
-        scopes: scopes,
-        params: new_GAF_List(type_info(&AST)),
-        code: create_code(ptr),
-        monomorphized_instances: new_hashmap_with_string_key(type_info(&AST)),
-    });
-    let lookup = get_functions_by_name(&global_lookup, name);
-    if (lookup == null) {
-        add(&global_lookup.functions, name, new_function_lookup(ptr));
-    } else {
-        push(&lookup.overloads, ptr);
-    }
-    return ptr;
-}
-
-@trace func create_stmt(parent: &AST, loc: Loc, origin: SubStr, stmt: ASTStmt) -> &AST {
-    let ptr = create_node(parent, loc, origin);
-    ptr.data = ASTData::Stmt(stmt);
-    return ptr;
-}
-
-@trace func create_pattern(parent: &AST, loc: Loc, origin: SubStr, pat: ASTPat) -> &AST {
-    let ptr = create_node(parent, loc, origin);
-    ptr.data = ASTData::Pat(pat);
-    return ptr;
-}
-
-@trace func create_expr(parent: &AST, loc: Loc, origin: SubStr, expr: ASTExpr) -> &AST {
-    let ptr = create_node(parent, loc, origin);
-    ptr.data = ASTData::Expr(expr);
-    return ptr;
-}
-
-@trace func create_directive(parent: &AST, loc: Loc, origin: SubStr, dir: Directive) -> &AST {
-    let ptr = create_node(parent, loc, origin);
-    ptr.data = ASTData::Directive(dir);
-    return ptr;
-}

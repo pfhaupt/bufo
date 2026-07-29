@@ -39,6 +39,7 @@ func get_variable_by_name(scopes: &GAF_List, name: SubStr) -> (Variable, bool) {
 union Lookup {
     TypeDecl(TypeDeclLookup),
     Function(FunctionLookup),
+    Module(SymbolLookup),
 }
 
 func new_type_decl_lookup(node: &AST) -> Lookup {
@@ -55,6 +56,11 @@ func new_function_lookup(node: &AST) -> Lookup {
     });
 }
 
+func new_module_lookup(node: &AST) -> Lookup {
+    let lookup = new_symbol_lookup(node);
+    return Lookup::Module(lookup);
+}
+
 struct TypeDeclLookup {
     node: &AST;
 }
@@ -64,51 +70,19 @@ struct FunctionLookup {
 }
 
 struct SymbolLookup {
+    original: &AST; // &ASTModule
     type_decls: GAF_HashMap; // HashMap<SubStr, Lookup>
     functions: GAF_HashMap; // HashMap<SubStr, Lookup>
+    modules: GAF_HashMap; // HashMap<SubStr, Lookup>
 }
 
-let global_lookup: SymbolLookup = blank;
-func init_global_lookup() {
-    global_lookup = SymbolLookup {
+func new_symbol_lookup(original: &AST) -> SymbolLookup {
+    return SymbolLookup {
+        original: original,
         type_decls: new_hashmap_with_substr_key(type_info(Lookup)),
         functions: new_hashmap_with_substr_key(type_info(Lookup)),
+        modules: new_hashmap_with_substr_key(type_info(Lookup)),
     };
-}
-
-func print_global_lookup() {
-    foreach(&global_lookup.type_decls, func (key: Data, value: Data) {
-        let name = key as SubStr;
-        let type_decl_lookup = get_type_decl_by_name(&global_lookup, name);
-        let &ASTData::TypeDecl(type_decl_info) = &type_decl_lookup.node.data else {
-            unreachable();
-        };
-        message(dbg(type_decl_lookup.node.loc, "Type `%` defined here.", name));
-        foreach(&type_decl_info.monomorphized_instances, func (key: Data, value: Data) {
-            let _key = key as String;
-            let node = value as &AST;
-            message(dbg(node.loc, "  Monomorphized with key `%`", _key));
-        });
-    });
-
-    foreach(&global_lookup.functions, func (key: Data, value: Data) {
-        let name = key as SubStr;
-        let fn_lookup = get_functions_by_name(&global_lookup, name);
-        foreach(&fn_lookup.overloads, func (elem: Data, name: &SubStr) {
-            let node = elem as &AST;
-            message(dbg(node.loc, "Function `%` defined here.", *name));
-            let ASTData::Function(function) = node.data else {
-                unreachable("func node is not a function");
-            };
-            if (function.state.is_generic) {
-                foreach(&function.monomorphized_instances, func (key: Data, value: Data) {
-                    let _key = key as String;
-                    let node = value as &AST;
-                    message(dbg(node.loc, "  Monomorphized with key `%`", _key));
-                });
-            }
-        }, &name);
-    });
 }
 
 func get_type_decl_by_name(lookup: &SymbolLookup, name: SubStr) -> &TypeDeclLookup {
@@ -127,10 +101,19 @@ func get_functions_by_name(lookup: &SymbolLookup, name: SubStr) -> &FunctionLook
     };
     return &fl;
 }
+func get_module_by_name(lookup: &SymbolLookup, name: SubStr) -> &SymbolLookup {
+    let node = get(&lookup.modules, name).ptr as &Lookup;
+    if (node == null) return null;
+    let &Lookup::Module(ml) = node else {
+        return null;
+    };
+    return &ml;
+}
 
-func get_global_identifier(name: SubStr) -> (&TypeDeclLookup, &FunctionLookup) {
+func get_identifier_by_name(mod: &ASTModule, name: SubStr) -> (&TypeDeclLookup, &FunctionLookup, &SymbolLookup) {
     return (
-        get_type_decl_by_name(&global_lookup, name),
-        get_functions_by_name(&global_lookup, name),
+        get_type_decl_by_name(&mod.lookup, name),
+        get_functions_by_name(&mod.lookup, name),
+        get_module_by_name(&mod.lookup, name),
     );
 }
