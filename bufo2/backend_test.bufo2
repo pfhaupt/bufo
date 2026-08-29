@@ -1,4 +1,3 @@
-
 #load "ops.bufo2";
 
 // @backend module LLVM_Backend {
@@ -71,26 +70,21 @@ func sizeof(t: $T) -> u64 @naked {
     };
 }
 
-module mod {
-    module mod1 {
-        type Foo {
-            n: u64;
-            m: u64;
-        }
+func foo(t: $T) {
+    comptime true  = 1 as i32 == 1;
+    comptime false = 1 as i32 != 1;
+    comptime _t: $T = blank;
+    #if #run sizeof(_t) != 4 {
+    #assert false, "foo only accepts types that are 4 bytes";
     }
-    func foo(t: $T) -> u64 {
-        let f: mod1.Foo = blank;
-        return sizeof(f);
-    }
-}
-
-module other {
-    func foo(t: $T) -> u64 {
-        return mod.foo(t);
-    }
+    return;
 }
 
 func main() {
+    #run {
+        let n: i32 = 1;
+        foo(n);
+    };
     #run {
         let some0: Option(i32) = blank;
         let stuff: Stuff = blank;
@@ -110,11 +104,6 @@ func main() {
         // #assert none1 == .None;
         // #assert none2 != .None;
         // #debug;
-
-        comptime o = other;
-        let f1 = o.foo(n);
-        let f2: mod.mod1.Foo = blank;
-        #assert f1 == sizeof(f2), "other.foo did not return sizeof(mod.mod1.Foo)";
 
         // Bonus:
         // let stuff1: Stuff = blank; // warning: Initializing type with variants with blank

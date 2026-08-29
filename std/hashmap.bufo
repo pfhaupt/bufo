@@ -121,6 +121,18 @@ func foreach(this: &GAF_HashMap, fn: func (Data, Data, Any), arg: Any) {
     }
 }
 
+func copy(this: &GAF_HashMap) -> GAF_HashMap {
+    let new = new_GAF_HashMap(this.key_type, this.value_type, this.key_hash_fn, this.key_equals_fn);
+    for (let i: usize = 0; i < this.capacity; i = i + 1) {
+        if (!this.set_elements[i]) continue;
+        let (key_ptr, val_ptr) = getAtIndex(this, i);
+        let key = Data { ptr: key_ptr, info: this.key_type };
+        let value = Data { ptr: val_ptr, info: this.value_type };
+        add(&new, key, value);
+    }
+    return new;
+}
+
 func needsResize(this: &GAF_HashMap) -> bool {
     if (this.capacity == 0) return true;
 

@@ -62,8 +62,8 @@ func allocate_comptime_variable(interp: &Interp, loc: Loc, var: Value, align: us
     let Value::Var { reg, size } = var else {
         unreachable("allocate_comptime_variable: Expected Value::Var");
     };
-    let ptr = interp.var_stack_pointer;
     align_pointer(&interp.var_stack_pointer, align);
+    let ptr = interp.var_stack_pointer;
     interp.var_stack_pointer = interp.var_stack_pointer + size;
     if (interp.var_stack_pointer >= interp.var_stack_base + interp.var_stack_size) {
         message(fatal(loc, "Variable Stack Overflow during compile time execution. Attempted to allocate % byte(s).", size));
@@ -75,8 +75,8 @@ func allocate_stack(interp: &Interp, loc: Loc, type: &Type) -> &u8 {
     return allocate_stack(interp, loc, get_size(type), get_align(type));
 }
 func allocate_stack(interp: &Interp, loc: Loc, bytes: usize, align: usize) -> &u8 {
-    let ptr = interp.stack_pointer;
     align_pointer(&interp.stack_pointer, align);
+    let ptr = interp.stack_pointer;
     interp.stack_pointer = interp.stack_pointer + bytes;
     if (interp.stack_pointer >= interp.stack_base + interp.stack_size) {
         message(fatal(loc, "Stack Overflow during compile time execution. Attempted to allocate % byte(s).", bytes));
@@ -87,8 +87,8 @@ func allocate_register(interp: &Interp, loc: Loc, type: &Type) -> &u8 {
     return allocate_register(interp, loc, get_size(type), get_align(type));
 }
 func allocate_register(interp: &Interp, loc: Loc, bytes: usize, align: usize) -> &u8 {
-    let ptr = interp.register_stack_pointer;
     align_pointer(&interp.register_stack_pointer, align);
+    let ptr = interp.register_stack_pointer;
     interp.register_stack_pointer = interp.register_stack_pointer + bytes;
     if (interp.register_stack_pointer >= interp.register_stack_base + interp.register_stack_size) {
         message(fatal(loc, "Register Stack Overflow during compile time execution. Attempted to allocate % byte(s).", bytes));

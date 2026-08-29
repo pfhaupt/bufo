@@ -75,6 +75,20 @@ union TokenData {
     EndOfFile,
 }
 
+func to_substr(t: TokenData) -> SubStr {
+    (comptime assert(tag(&TokenData::EndOfFile) == 50, "TokenData::to_substr: Added more tokens"));
+    if let TokenData::Ident { name } = t {
+        return name;
+    }
+    if let TokenData::Number { name } = t {
+        return name;
+    }
+    if let TokenData::KeywordIf = t {
+        return comptime newSubStr("if");
+    }
+    unreachable("to_substr(TokenData)");
+}
+
 func to_cstr(t: TokenData) -> &char {
     (comptime assert(tag(&TokenData::EndOfFile) == 50, "TokenData::to_cstr: Added more tokens"));
     return [

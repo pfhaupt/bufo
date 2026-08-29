@@ -76,6 +76,19 @@ func pop(list: &GAF_List) {
     pop(list, null);
 }
 
+func copy(list: &GAF_List) -> GAF_List {
+    let new = new_GAF_List(list.type);
+    for (let i: usize = 0; i < list.length; i = i + 1) {
+        let elem = get_ref(list, i);
+        push(&new, elem);
+    }
+    return new;
+}
+
+func last_ref(list: &GAF_List) -> Any {
+    return get_ref_raw(list, list.length - 1);
+}
+
 func pop(list: &GAF_List, dst: Any) {
     assert(list.length > 0, "GAF_List.pop: Attempted to pop from empty list");
     list.length = list.length - 1;

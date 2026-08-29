@@ -63,17 +63,27 @@ import "../generated/ast.template.bufo";
     }
     return false;
 }
-@trace func is_if(node: &AST) -> bool {
+@trace func node_requires_semicolon(node: &AST) -> bool {
     if let ASTData::Stmt(ASTStmt::Expr(expr)) = node.data {
-        return is_if(expr);
+        return node_requires_semicolon(expr);
+    }
+    if let ASTData::Stmt(ASTStmt::Directive(dir)) = node.data {
+        return node_requires_semicolon(dir);
+    }
+    if let ASTData::Directive(Directive::If(_, then, elze)) = node.data {
+        if (elze != null) {
+            return node_requires_semicolon(elze);
+        } else {
+            return node_requires_semicolon(then);
+        }
     }
     if let ASTData::Expr(ASTExpr::If(_, _)) = node.data {
-        return true;
+        return false;
     }
     if let ASTData::Expr(ASTExpr::IfElse(_, _, _)) = node.data {
-        return true;
+        return false;
     }
-    return false;
+    return !is_block(node);
 }
 @trace func is_block(node: &AST) -> bool {
     if let ASTData::Stmt(ASTStmt::Expr(expr)) = node.data {

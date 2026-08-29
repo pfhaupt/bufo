@@ -209,6 +209,7 @@ union ASTExpr {
     // second argument is name of variant
     // if list is empty, it's an empty variant, otherwise a tuple variant
     VariantInit(&AST, SubStr, GAF_List), // List<&AST>
+    Paren(&AST),
 } // End of ASTExpr
 
 union ASTBinary {
@@ -242,12 +243,15 @@ union ASTUnary {
 union Directive {
     // Union variants
     Run(&AST),
-    Insert(&AST, Insert_Context),
+    Insert(&AST, Parse_Context),
     Assert(&AST, String),
     // FIXME(2026-06-05): Ideally we dont wanna have a CheckedBir,
     //                    but the code around #bir is kinda sloppy rn
     Bir(Lexer),
     CheckedBir(Lexer, GAF_List), // List<Type>
+    If(&AST, &AST, &AST), // Condition, True, False
+                          // `#if <cond> { <True> } => False == nullptr
+                          // `#if <cond> { <True> } else { <False> }
     Debug,
 } // End of Directive
 // -- UNIONS END --

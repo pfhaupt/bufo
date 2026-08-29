@@ -613,9 +613,12 @@ union Op {
         funreachable("% codegen_expr: Node is not an expression, got %", expr.loc, expr.data);
     };
     match (&actual_expr) {
+        &ASTExpr::Paren(sub) => {
+            return codegen_expr(fn, sub, wants_ptr);
+        }
         &ASTExpr::Ident { name } => {
             let _var = get(&get_context(&fn.code).variable_map, name);
-            assert(_var.ptr != null, "codegen_expr: Variable doesn't exist!");
+            fassert(_var.ptr != null, "codegen_expr: Variable % doesn't exist!", name);
             let var = _var as Var;
             if (wants_ptr) return var.alloca_reg;
             return build_load(&fn.code, expr.loc, var.alloca_reg);
@@ -714,11 +717,46 @@ union Op {
         &ASTExpr::VariantInit(lhs, variant_name, args) => {
             return codegen_variant_init(fn, expr, lhs, variant_name, args);
         }
+        &ASTExpr::As(sub_expr, type) => {
+            return codegen_type_cast(fn, expr, sub_expr, type);
+        }
         _ => {
             message(todo(expr.loc, "codegen_expr: Can't codegen expression %", actual_expr));
         }
     }
     unreachable("codegen_expr");
+}
+
+@trace func codegen_type_cast(fn: &ASTFunction, expr: &AST, subexpr: &AST, type: &AST) -> Reg {
+    let sub_type = subexpr.type;
+    let type_type = type.type;
+
+    assert(sub_type != null, "codegen_type_cast: Subexpr type is null");
+    assert(type_type != null, "codegen_type_cast: Type type is null");
+    assert(sub_type.meta_level == type_type.meta_level - 1, "codegen_type_cast: Meta level does not match");
+
+    if (type_type.meta_level != 1) {
+        message(todo(expr.loc, "codegen_type_cast: Casting of meta types"));
+    }
+    let as_type = unwrap_meta_type(type_type, 1);
+
+    let sub_reg = codegen_expr(fn, subexpr, false);
+    if (is_equal_to(sub_type, as_type)) {
+        // stuff like `1 as i32` falls into this category :^)
+        return sub_reg;
+    }
+
+    let orig_size = get_size(sub_type);
+    let new_size = get_size(as_type);
+
+    if (is_integer(sub_type) && is_pointer(as_type)) {
+        return build_int_to_ptr(&fn.code, expr.loc, as_type, sub_reg);
+    } else if (is_pointer(sub_type) && is_integer(as_type)) {
+        return build_ptr_to_int(&fn.code, expr.loc, sub_reg);
+    } else {
+        message(todo(expr.loc, "codegen_type_cast: % -> %", to_string(sub_type), to_string(as_type)));
+    }
+    unreachable("codegen_type_cast");
 }
 
 @trace func codegen_variant_init(fn: &ASTFunction, expr: &AST, lhs: &AST, variant_name: SubStr, args: GAF_List) -> Reg {

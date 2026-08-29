@@ -100,6 +100,7 @@ import "../generated/ast.template.bufo";
             if (va > max_va) max_va = va;
         }
 
+        if (max_va > align) align = max_va;
         size = next_multiple_of(size, max_va);
         size = size + max_vs;
     }
@@ -568,6 +569,17 @@ import "../generated/ast.template.bufo";
             if (sl != null) ctr = ctr + 1;
             if (fl != null) ctr = ctr + 1;
             if (ml != null) ctr = ctr + 1;
+            // FIXME(2026-08-01): other.foo still calls infer_type_onto_ident(__global__) even
+            //                    though it shouldn't
+            // module other {
+            //     func foo(t: $T) -> u64 {
+            //         return mod.foo(t);
+            //     }
+            // }
+            // func foo(t: u32) -> u32 { return t; }
+            // func main() {
+            //     let i: i32 = other.foo(10);
+            // }
             if (ctr == 0 && current_module.parent != null) {
                 return infer_type_onto_ident(current_module.parent, scopes, infer_type, ast, ident);
             } else if (ctr > 1) {
@@ -788,7 +800,7 @@ import "../generated/ast.template.bufo";
             parent.type = _type;
             return mktcs(true, true, false, false, _type);
         }
-        Directive::Insert(insert_expr, insert_context) => {
+        Directive::Insert(insert_expr, parse_context) => {
             let _type_state = check_expr(current_module, scopes, insert_expr);
             let str = create_base_type(PrimType::Str);
             if (_type_state.please_infer) {
@@ -814,24 +826,21 @@ import "../generated/ast.template.bufo";
                 offset_in_file: dir.loc.offset,
                 source: source,
             };
-            let parse_context = Parse_Context {
-                parent: insert_context.parent,
-                lexer: lexer,
-                generic_type_mapping: insert_context.generic_type_mapping,
-            };
+            parse_context.lexer = lexer;
 
-            let (gen, res) = insert_context.parse_fn(&parse_context);
+            let parse_fn = (last_ref(&parse_context.parse_fns) as &Parse_Fn)._fn;
+            let (gen, res) = parse_fn(&parse_context);
             assert(res != null, "#insert failed to insert new node");
             assert(!gen, "#insert-ed blob should never be generic. The mapping has already happened");
 
-            if (insert_context.parse_fn as Any == parse_stmt as Any) {
+            if (parse_fn as Any == parse_stmt as func (&Parse_Context) -> (bool, &AST) as Any) {
                 let ASTData::Stmt(_) = res.data else {
                     message(error(dir.loc, "Expected a statement in this #insert context, but got an expression instead."));
                     unreachable(); // error terminates
                 };
                 let res_state = check_stmt(current_module, scopes, res);
                 res.type = assert_is_valid(res_state, "check_directive: #insert-ed stmt type is invalid");
-            } else if (insert_context.parse_fn as Any == parse_expr as Any) {
+            } else if (parse_fn as Any == parse_expr as func (&Parse_Context) -> (bool, &AST) as Any) {
                 let ASTData::Expr(_) = res.data else {
                     message(error(dir.loc, "Expected an expression in this #insert context, but got a statement instead."));
                     unreachable(); // error terminates
@@ -874,6 +883,50 @@ import "../generated/ast.template.bufo";
         Directive::Debug => {
             let t = create_base_type(PrimType::None);
             return mktcs(t);
+        }
+        Directive::If(cond, then, elze) => {
+            let bool_type = create_base_type(PrimType::Bool);
+
+            let _type_state = check_expr(current_module, scopes, cond);
+            if (_type_state.please_infer) {
+                _type_state = infer_type_onto_expr(current_module, scopes, bool_type, cond);
+            }
+            let _type = assert_is_valid(_type_state, "check_directive: #if cond type is invalid");
+
+            if (!is_equal_to(_type, bool_type)) {
+                message(error(dir.loc, "#if condition must be a boolean value, but got a value of type % instead.", to_string(_type)));
+            }
+
+            let (ct_value, true) = convert_to_comptime_value_if_possible(current_module, scopes, cond) else {
+                message(error(dir.loc, "#if condition must be a comptime value. Did you forget a #run?"));
+                unreachable(); // error terminates
+            };
+            let Value::Var { ptr, size } = ct_value else {
+                funreachable("Directive::If: Expected Value::Var, got %", ct_value);
+            };
+            assert(size == 1, "Directive::If: Expected condition to be 1 byte");
+            let valid = *(ptr as &bool);
+
+            if (valid) {
+                *parent = *then;
+            } else if (elze != null) {
+                *parent = *elze;
+            } else {
+                let new_expr = create_expr(parent.parent, parent.loc, parent.origin, ASTExpr::Noop);
+                if let ASTData::Stmt(_) = parent.data {
+                    new_expr = create_stmt(parent.parent, parent.loc, parent.origin, ASTStmt::Expr(new_expr));
+                }
+                *parent = *new_expr;
+                return mktcs(create_base_type(PrimType::None));
+            }
+
+            let check_fn: func (&AST, &GAF_List, &AST) -> TCState = blank;
+            match (parent.data) {
+                ASTData::Stmt(_) => { check_fn = check_stmt; }
+                ASTData::Expr(_) => { check_fn = check_expr; }
+                _ => { unreachable("Directive::If"); }
+            }
+            return check_fn(current_module, scopes, parent);
         }
         _ => {
             message(todo(dir.loc, "check_directive: Exhaustive handling of Directives"));
@@ -1093,6 +1146,9 @@ struct TCState {
     };
     let type_state: TCState = blank;
     match (&expr) {
+        &ASTExpr::Paren(sub) => {
+            type_state = check_expr(current_module, scopes, sub);
+        }
         &ASTExpr::ResolvedGeneric(gen) => {
             type_state = mktcs(gen);
         }
@@ -1254,6 +1310,29 @@ struct TCState {
         }
         &ASTExpr::Noop => {
             type_state = mktcs(create_base_type(PrimType::None));
+        }
+        &ASTExpr::As(expr, type) => {
+            let _type_state = check_expr(current_module, scopes, type);
+            if (!_type_state.is_complete) {
+                message(todo(type.loc, "<expr> as <type> with incomplete type"));
+            }
+            let type_type = assert_is_valid(_type_state, "check_expr: As type is invalid");
+            if (type_type.meta_level == 0) {
+                message(todo(type.loc, "check_expr: As type is not a meta type"));
+            }
+            let as_type = unwrap_meta_type(type_type, 1);
+
+            let expr_state = check_expr(current_module, scopes, expr);
+            if (expr_state.please_infer) {
+                expr_state = infer_type_onto_expr(current_module, scopes, as_type, expr);
+            }
+
+            let expr_type = assert_is_valid(expr_state, "check_expr: As expr type is invalid");
+            if (expr_type.meta_level != type_type.meta_level - 1) {
+                message(todo(expr.loc, "check_expr: <expr> as <type> with non-matching meta level"));
+            }
+
+            type_state = mktcs(as_type);
         }
         _ => {
             message(todo(_expr.loc, "check_expr: Can't check expression %", expr));
