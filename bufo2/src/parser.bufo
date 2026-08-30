@@ -452,6 +452,7 @@ let loaded_files: GAF_HashMap = blank;
         }
     }
     expect(lexer, TokenData::ParenClose);
+
     if (eat(lexer, TokenData::Arrow)) {
         let (has_generic, return_type) = parse_type(&context);
         if (has_generic) {
@@ -462,7 +463,9 @@ let loaded_files: GAF_HashMap = blank;
         comptime name = newSubStrOfStrLit("none");
         func_state.return_type = create_expr(context.parent, func_node.loc, name, ASTExpr::BuiltinType { name: name });
     }
+
     parse_function_attributes(&context);
+
     func_state.state.did_parse_signature = true;
     unregister_monitor(&func_state.state.did_parse_signature);
 
@@ -492,6 +495,7 @@ let loaded_files: GAF_HashMap = blank;
     let func_state = get_func_info(func_node);
     let parent_module = func_node.parent;
     assert(parent_module != null, "parse_function_body: Parent is null");
+
     register_monitor(&func_node.type);
     register_monitor(&func_state.block);
     register_monitor(&func_state.state.did_parse_body);
@@ -538,7 +542,7 @@ let loaded_files: GAF_HashMap = blank;
     let old_parent = context.parent;
     let loc = new_loc(context.lexer.file_name, context.lexer.offset_in_file);
 
-    let block_expr = context.parent = create_expr(context.parent, loc, blank, ASTExpr::BlockExpr); // dummy block
+    let block_expr = context.parent = create_noop(context.parent, loc); // dummy block
     let block = new_GAF_List(type_info(&AST));
     let value: &AST = null;
 
@@ -552,17 +556,7 @@ let loaded_files: GAF_HashMap = blank;
         let (gen_stmt, stmt) = parse_stmt(context);
         if (gen_stmt) is_generic = true;
         if (lexer_at(&context.lexer, TokenData::CurlyClose)) {
-            match (&stmt.data) {
-                &ASTData::Stmt(ASTStmt::Expr(expr)) => { value = expr; }
-                &ASTData::Stmt(ASTStmt::Directive(dir)) => {
-                    value = create_expr(context.parent, stmt.loc, blank, ASTExpr::Directive(dir));
-                }
-                _ => {
-                    expect(&context.lexer, TokenData::SemiColon);
-                    unreachable(); // We know that we're lexer_at a {
-                }
-            }
-            value.parent = context.parent;
+            value = stmt;
         } else {
             if (node_requires_semicolon(stmt)) expect(&context.lexer, TokenData::SemiColon);
             push(&block, stmt);
@@ -570,12 +564,8 @@ let loaded_files: GAF_HashMap = blank;
     }
     expect(&context.lexer, TokenData::CurlyClose);
 
-    if (value != null) {
-        block_expr.data = ASTData::Expr(ASTExpr::BlockExpr(block, value));
-    } else {
-        block_expr.data = ASTData::Expr(ASTExpr::BlockVoid(block));
-    }
-
+    if (value == null) value = create_expr(context.parent, loc, blank, ASTExpr::Noop);
+    block_expr.data   = ASTData::Expr(ASTExpr::Block(block, value));
     block_expr.parent = context.parent = old_parent;
 
     pop(&func_state.scopes);
@@ -610,14 +600,14 @@ let loaded_files: GAF_HashMap = blank;
         origin.len = end - origin.start;
         return (origin, pat, expr, trampoline, is_generic);
     };
-    let stmt = context.parent = create_stmt(context.parent, tkn.loc, blank, ASTStmt::Let); // dummy statement
+    let stmt = context.parent = create_noop(context.parent, tkn.loc); // dummy statement
     let is_generic = false;
     match (tkn.data) {
         TokenData::KeywordLet => {
             next(&context.lexer);
             let (origin, pat, expr, trampoline, gen_decl) = __parse_var_decl(context);
             is_generic = gen_decl;
-            stmt.data = ASTData::Stmt(ASTStmt::Let {
+            stmt.data = ASTData::Expr(ASTExpr::Let {
                 pat: pat,
                 expr: expr,
                 trampoline: trampoline
@@ -627,7 +617,7 @@ let loaded_files: GAF_HashMap = blank;
             next(&context.lexer);
             let (origin, pat, expr, trampoline, gen_decl) = __parse_var_decl(context);
             is_generic = gen_decl;
-            stmt.data = ASTData::Stmt(ASTStmt::Comptime {
+            stmt.data = ASTData::Expr(ASTExpr::Comptime {
                 pat: pat,
                 expr: expr,
                 trampoline: trampoline
@@ -638,21 +628,21 @@ let loaded_files: GAF_HashMap = blank;
             if (!lexer_at(&context.lexer, TokenData::SemiColon)) {
                 let (gen_expr, expr) = parse_expr(context);
                 is_generic = gen_expr;
-                stmt.data = ASTData::Stmt(ASTStmt::ReturnExpr(expr));
+                stmt.data = ASTData::Expr(ASTExpr::ReturnExpr(expr));
             } else {
-                stmt.data = ASTData::Stmt(ASTStmt::ReturnVoid);
+                stmt.data = ASTData::Expr(ASTExpr::ReturnVoid);
             }
         }
         TokenData::Hash => {
             next(&context.lexer);
             let (gen_dir, dir) = parse_directive(context, true);
             is_generic = gen_dir;
-            stmt.data = ASTData::Stmt(ASTStmt::Directive(dir));
+            stmt = dir;
         }
         _ => {
             let (gen_expr, expr) = parse_expr(context);
             is_generic = gen_expr;
-            stmt.data = ASTData::Stmt(ASTStmt::Expr(expr));
+            stmt = expr;
         }
     }
     stmt.parent = context.parent = old_parent;
@@ -859,7 +849,6 @@ union Assoc { Left, Right }
         TokenData::KeywordIf => {
             let (gen_cond, cond) = parse_expr(context, false);
             let (gen_body, body) = parse_stmt(context);
-            if (node_requires_semicolon(body)) expect(&context.lexer, TokenData::SemiColon);
             let is_generic = gen_cond || gen_body;
             if (eat(&context.lexer, TokenData::KeywordElse)) {
                 let (gen_else, elze) = parse_stmt(context);
@@ -914,7 +903,7 @@ union Assoc { Left, Right }
     let tkn = expect(&context.lexer, TokenData::Ident, TokenData::KeywordIf);
     let directive = to_substr(tkn.data);
     let dirs = [
-        (comptime newSubStrOfStrLit("insert"), func (context: &Parse_Context, dir: Token, name: SubStr, struct_init_allowed: bool) -> (bool, &AST) {
+        (comptime newSubStrOfStrLit("insert"), func (context: &Parse_Context, dir: Token, name: SubStr, struct_init_allowed: bool) -> (bool, Directive) {
             let parse_fn = *(last_ref(&context.parse_fns) as &Parse_Fn);
             if (eat(&context.lexer, TokenData::Comma)) {
                 let mod = expect(&context.lexer, TokenData::Ident);
@@ -929,15 +918,15 @@ union Assoc { Left, Right }
             }
             push_parse_fn(context, parse_fn._fn);
             let (gen_expr, expr) = parse_expr(context, struct_init_allowed);
-            let dir = create_directive(context.parent, dir.loc, name, Directive::Insert(expr, copy(context)));
+            let dir = Directive::Insert(expr, copy(context));
             pop_parse_fn(context);
             return (gen_expr, dir);
         }),
-        (comptime newSubStrOfStrLit("run"), func (context: &Parse_Context, dir: Token, name: SubStr, struct_init_allowed: bool) -> (bool, &AST) {
+        (comptime newSubStrOfStrLit("run"), func (context: &Parse_Context, dir: Token, name: SubStr, struct_init_allowed: bool) -> (bool, Directive) {
             let (gen_expr, expr) = parse_expr(context, struct_init_allowed);
-            return (gen_expr, create_directive(context.parent, dir.loc, name, Directive::Run(expr)));
+            return (gen_expr, Directive::Run(expr));
         }),
-        (comptime newSubStrOfStrLit("assert"), func (context: &Parse_Context, dir: Token, name: SubStr, struct_init_allowed: bool) -> (bool, &AST) {
+        (comptime newSubStrOfStrLit("assert"), func (context: &Parse_Context, dir: Token, name: SubStr, struct_init_allowed: bool) -> (bool, Directive) {
             let (gen_expr, expr) = parse_expr(context, struct_init_allowed);
             let msg: String = blank;
             if (eat(&context.lexer, TokenData::Comma)) {
@@ -949,17 +938,17 @@ union Assoc { Left, Right }
             } else {
                 msg = comptime newReadonlyString("Compile time #assert failed!");
             }
-            return (gen_expr, create_directive(context.parent, dir.loc, name, Directive::Assert(expr, msg)));
+            return (gen_expr, Directive::Assert(expr, msg));
         }),
-        (comptime newSubStrOfStrLit("bir"), func (context: &Parse_Context, dir: Token, name: SubStr, struct_init_allowed: bool) -> (bool, &AST) {
+        (comptime newSubStrOfStrLit("bir"), func (context: &Parse_Context, dir: Token, name: SubStr, struct_init_allowed: bool) -> (bool, Directive) {
             let lexer = context.lexer;
             skip_until_matching(&context.lexer, TokenData::CurlyOpen, TokenData::CurlyClose);
-            return (false, create_directive(context.parent, dir.loc, name, Directive::Bir(lexer)));
+            return (false, Directive::Bir(lexer));
         }),
-        (comptime newSubStrOfStrLit("debug"), func (context: &Parse_Context, dir: Token, name: SubStr, struct_init_allowed: bool) -> (bool, &AST) {
-            return (false, create_directive(context.parent, dir.loc, name, Directive::Debug));
+        (comptime newSubStrOfStrLit("debug"), func (context: &Parse_Context, dir: Token, name: SubStr, struct_init_allowed: bool) -> (bool, Directive) {
+            return (false, Directive::Debug);
         }),
-        (comptime newSubStrOfStrLit("if"), func (context: &Parse_Context, dir: Token, name: SubStr, struct_init_allowed: bool) -> (bool, &AST) {
+        (comptime newSubStrOfStrLit("if"), func (context: &Parse_Context, dir: Token, name: SubStr, struct_init_allowed: bool) -> (bool, Directive) {
             let parse_fn = *(last_ref(&context.parse_fns) as &Parse_Fn);
             let (gen_cond, cond) = parse_expr(context, false);
             let (gen_then, then) = parse_fn._fn(context);
@@ -970,12 +959,13 @@ union Assoc { Left, Right }
                 elze = _elze;
                 gen_expr = gen_expr || gen_else;
             }
-            return (gen_expr, create_directive(context.parent, dir.loc, name, Directive::If(cond, then, elze)));
+            return (gen_expr, Directive::If(cond, then, elze));
         }),
     ];
     for (let i: usize = 0; i < dirs.length; i = i + 1) {
         if (equals(&directive, &dirs[i].0)) {
-            return dirs[i].1(context, tkn, directive, struct_init_allowed);
+            let (gen, dir) = dirs[i].1(context, tkn, directive, struct_init_allowed);
+            return (gen, create_expr(context.parent, tkn.loc, directive, ASTExpr::Directive(dir)));
         }
     }
     message(error(tkn.loc, "Use of unknown directive `%`.", directive));
@@ -987,7 +977,7 @@ union Assoc { Left, Right }
     let un: ASTUnary = ASTUnary::LogicalNot;
 
     let old_parent = context.parent;
-    let unary = context.parent = create_expr(context.parent, tkn.loc, blank, ASTExpr::Unary); // dummy node
+    let unary = context.parent = create_noop(context.parent, tkn.loc); // dummy node
 
     let precedence = get_unary_precedence(tkn.data);
 
@@ -996,7 +986,7 @@ union Assoc { Left, Right }
         TokenData::Hash => {
             let (gen, dir) = parse_directive(context, struct_init_allowed);
             is_generic = gen;
-            unary.data = ASTData::Expr(ASTExpr::Directive(dir));
+            unary = dir;
         }
         TokenData::AmpersandSingle => {
             let (gen, sub) = __parse_expr(context, precedence, Assoc::Left, struct_init_allowed);

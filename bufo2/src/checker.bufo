@@ -184,24 +184,9 @@ import "../generated/ast.template.bufo";
     //                   BlockVoid into one block in the parser, so we don't have to pass
     //                   null as value here. BlockVoid would simply have an implicit
     //                   `#value_of(none)`.
-    let &ASTData::Expr(actual_block) = &block.data else {
+    let &ASTData::Expr(ASTExpr::Block(stmts, block_value)) = &block.data else {
         unreachable("check_block: Node is not a block");
     };
-
-    let value: &AST = null;
-    let stmts: &GAF_List = null;
-    match (&actual_block) {
-        &ASTExpr::BlockVoid(_stmts) => {
-            stmts = &_stmts;
-        }
-        &ASTExpr::BlockExpr(_stmts, _value) => {
-            stmts = &_stmts;
-            value = _value;
-        }
-        _ => {
-            unreachable("check_block: Node is not a block");
-        }
-    }
 
     let fn = get_parent_function(block);
     let func_state = get_func_info(fn);
@@ -209,138 +194,27 @@ import "../generated/ast.template.bufo";
     push(&func_state.scopes, new_stack());
 
     for (let i: usize = 0; i < stmts.length; i = i + 1) {
-        let stmt = get_ref(stmts, i) as &AST;
+        let expr = get_ref(&stmts, i) as &AST;
 
-        let _ = check_stmt(current_module, &func_state.scopes, stmt);
+        let warn_unused = node_requires_unused_warning(expr);
+
+        let expr_state = check_expr(current_module, &func_state.scopes, expr);
+        let expr_type = assert_is_valid(expr_state, "check_block: Stmt is incomplete");
+
+        let none = create_base_type(PrimType::None);
+        if (warn_unused && !is_equal_to(expr_type, none)) {
+            message(warn(expr.loc, "Unused expression."));
+        }
+
         evaluate_comptime_variables(fn, null);
     }
 
-    let type = create_base_type(PrimType::None);
-    if (value != null) {
-        let value_state = check_expr(current_module, &func_state.scopes, value);
-        if (value_state.please_infer) return value_state;
-        type = assert_is_valid(value_state, "check_block: Value type is invalid");
-    }
+    let value_state = check_expr(current_module, &func_state.scopes, block_value);
+    if (value_state.please_infer) return value_state;
+    let type = assert_is_valid(value_state, "check_block: Value type is invalid");
 
     pop(&func_state.scopes);
 
-    return mktcs(type);
-}
-
-@trace func check_stmt(current_module: &AST, scopes: &GAF_List, stmt: &AST) -> TCState {
-    let &ASTData::Stmt(actual_stmt) = &stmt.data else {
-        message(fatal(stmt.loc, "check_stmt: Node is not a statement"));
-        unreachable();
-    };
-    if (stmt.type != null) return mktcs(stmt.type);
-
-    let type: &Type = create_base_type(PrimType::None);
-    let f = func (current_module: &AST, stmt: &AST, scopes: &GAF_List, pat: &AST, expr: &AST, trampoline: &AST) {
-        if (expr != null) {
-            let (needs_trampoline, _) = check_and_bind_pattern(current_module, scopes, pat, expr);
-            if (trampoline != null) {
-                // let <pat> = <expr> else <trampoline>;
-                message(todo(stmt.loc, "check_stmt: Can't check pat-expr-trampoline yet"));
-                if (!needs_trampoline) {
-                    message(todo(stmt.loc, "check_stmt: pat-expr doesn't need trampoline"));
-                } else {
-                }
-            } else if (needs_trampoline) {
-                message(todo(stmt.loc, "check_stmt: pat-expr needs trampoline"));
-            }
-        } else {
-            // let <pat>;
-            assert(trampoline == null);
-            message(todo(stmt.loc, "check_stmt: Can't check pat yet"));
-        }
-    };
-    match (&actual_stmt) {
-        &ASTStmt::Let { pat, expr, trampoline } => {
-            f(current_module, stmt, scopes, pat, expr, trampoline);
-            if (expr.type == null) {
-                message(error(expr.loc, "Could not infer type of variable."));
-            }
-            if (expr.type.meta_level != 0) {
-                message(error(expr.loc, "The type of a variable defined with `let` cannot be a meta-type, but got %.", to_string(expr.type)));
-            }
-        }
-        &ASTStmt::Comptime { pat, expr, trampoline } => {
-            f(current_module, stmt, scopes, pat, expr, trampoline);
-            let fn = get_parent_function(stmt);
-            let func_state = get_func_info(fn);
-            codegen_stmt(func_state, stmt);
-            evaluate_comptime_variables(fn, null);
-            let noop = create_expr(stmt.parent, stmt.loc, stmt.origin, ASTExpr::Noop);
-            actual_stmt = ASTStmt::Expr(noop);
-        }
-        &ASTStmt::ReturnVoid => {
-            let fn = get_parent_function(stmt);
-            let func_info = get_func_info(fn);
-            let &BaseType::Func(_, ret_type) = &fn.type.base else {
-                unreachable("check_stmt: Function has unexpected type");
-            };
-            assert(ret_type != null, "check_stmt: Function doesn't have return type set");
-            if (!is_equal_to(ret_type, create_meta_type(1, PrimType::None))) {
-                message(
-                    error(stmt.loc, "Missing return value for function."),
-                    note(fn.loc, "Function % is declared to return %.", func_info.name, to_string(ret_type)));
-            }
-            type = create_base_type(PrimType::None);
-        }
-        &ASTStmt::ReturnExpr(expr) => {
-            let fn = get_parent_function(stmt);
-            let &BaseType::Func(_, ret_type) = &fn.type.base else {
-                unreachable("check_stmt: Function has unexpected type");
-            };
-            assert(ret_type != null, "check_stmt: Function doesn't have return type set");
-            assert(ret_type.meta_level > 0, "check_stmt: Function doesn't have meta return type");
-            let instance_of_ret_type = unwrap_meta_type(ret_type, 1);
-            let expr_state = check_expr(current_module, scopes, expr);
-            if (expr_state.please_infer) {
-                expr_state = infer_type_onto_expr(current_module, scopes, instance_of_ret_type, expr);
-                assert(!expr_state.please_infer, "check_stmt: Could not infer return type onto expression");
-            }
-            let etype: &Type = assert_is_valid(expr_state, "check_stmt: Return Expr type is invalid");
-            if (!is_equal_to(etype, instance_of_ret_type)) {
-                let t1 = to_string(instance_of_ret_type);
-                let t2 = to_string(etype);
-                if (is_convertible_to(etype, instance_of_ret_type)) {
-                    message(todo(stmt.loc, "Function was declared to return %, but we got %. However, the type system could allow conversion.", t1, t2));
-                } else {
-                    message(error(stmt.loc, "Function was declared to return %, but we got %.", t1, t2));
-                }
-            }
-        }
-        &ASTStmt::Expr(expr) => {
-            let is_assignment = is_assignment(expr);
-            let expr_state = check_expr(current_module, scopes, expr);
-            let none = create_base_type(PrimType::None);
-            if (expr_state.please_infer) {
-                expr_state = infer_type_onto_expr(current_module, scopes, none, expr);
-                if (expr_state.please_infer) {
-                    message(error(stmt.loc, "Couldn't infer type of expression."));
-                }
-            }
-            let _type = assert_is_valid(expr_state, "check_stmt: Expr type is invalid");
-            if (!is_equal_to(_type, none) && !is_assignment) {
-                message(warn(stmt.loc, "Unused expression."));
-            }
-            type = _type;
-        }
-        &ASTStmt::Directive(dir) => {
-            let _type = check_directive(current_module, scopes, stmt, dir);
-            if (_type.replaced_node) return check_stmt(current_module, scopes, stmt);
-            if (_type.please_infer) return _type;
-            type = assert_is_valid(_type, "check_stmt: Directive type is invalid");
-        }
-        _ => {
-            message(todo(stmt.loc, "check_stmt: Can't check stmt % yet", stmt));
-        }
-    }
-
-    assert(type != null, "check_stmt: Type is null");
-
-    stmt.type = type;
     return mktcs(type);
 }
 
@@ -735,20 +609,16 @@ import "../generated/ast.template.bufo";
         _ => { return (Value::Invalid, false); }
     }
 
-    let new = create_directive(expr.parent, expr.loc, expr.origin, Directive::Run(expr));
-    let _ = check_directive(current_module, scopes, expr, new);
+    let _ = check_directive(current_module, scopes, expr, &Directive::Run(expr));
     let &ASTData::Expr(ASTExpr::ComptimeValue(ct_value)) = &expr.data else {
         unreachable("#run failed to convert expr to ComptimeValue");
     };
     return (ct_value, true);
 }
 
-@trace func check_directive(current_module: &AST, scopes: &GAF_List, parent: &AST, dir: &AST) -> TCState {
-    let &ASTData::Directive(directive) = &dir.data else {
-        unreachable("check_directive: Node is not a directive");
-    };
+@trace func check_directive(current_module: &AST, scopes: &GAF_List, parent: &AST, directive: &Directive) -> TCState {
     match (directive) {
-        Directive::Run(run_expr) => {
+        &Directive::Run(run_expr) => {
             let _type_state = check_expr(current_module, scopes, run_expr);
             // We don't know what `#run <expr>` should return. Must infer.
             if (_type_state.please_infer) return _type_state;
@@ -790,17 +660,11 @@ import "../generated/ast.template.bufo";
                 reset(ct);
             }
 
-            if let ASTData::Stmt(_) = parent.data {
-                let _expr = create_expr(parent, dir.loc, parent.origin, result);
-                _expr.type = _type;
-                parent.data = ASTData::Stmt(ASTStmt::Expr(_expr));
-            } else {
-                parent.data = ASTData::Expr(result);
-            }
+            parent.data = ASTData::Expr(result);
             parent.type = _type;
             return mktcs(true, true, false, false, _type);
         }
-        Directive::Insert(insert_expr, parse_context) => {
+        &Directive::Insert(insert_expr, parse_context) => {
             let _type_state = check_expr(current_module, scopes, insert_expr);
             let str = create_base_type(PrimType::Str);
             if (_type_state.please_infer) {
@@ -808,11 +672,11 @@ import "../generated/ast.template.bufo";
             }
             let _type = assert_is_valid(_type_state, "check_directive: #insert expr type is invalid");
             if (!is_equal_to(_type, str)) {
-                message(error(dir.loc, "#insert sub-expression must be a value of type %, but got %.", to_string(str), to_string(_type)));
+                message(error(parent.loc, "#insert sub-expression must be a value of type %, but got %.", to_string(str), to_string(_type)));
             }
 
             let (ct_value, true) = convert_to_comptime_value_if_possible(current_module, scopes, insert_expr) else {
-                message(error(dir.loc, "#insert sub-expression must be a comptime value. Did you forget a #run?"));
+                message(error(parent.loc, "#insert sub-expression must be a comptime value. Did you forget a #run?"));
                 unreachable(); // error terminates
             };
             let Value::Var { ptr, size } = ct_value else {
@@ -822,8 +686,8 @@ import "../generated/ast.template.bufo";
 
             let source = *(ptr as &SubStr);
             let lexer = Lexer {
-                file_name: dir.loc.file,
-                offset_in_file: dir.loc.offset,
+                file_name: parent.loc.file,
+                offset_in_file: parent.loc.offset,
                 source: source,
             };
             parse_context.lexer = lexer;
@@ -833,26 +697,17 @@ import "../generated/ast.template.bufo";
             assert(res != null, "#insert failed to insert new node");
             assert(!gen, "#insert-ed blob should never be generic. The mapping has already happened");
 
-            if (parse_fn as Any == parse_stmt as func (&Parse_Context) -> (bool, &AST) as Any) {
-                let ASTData::Stmt(_) = res.data else {
-                    message(error(dir.loc, "Expected a statement in this #insert context, but got an expression instead."));
-                    unreachable(); // error terminates
-                };
-                let res_state = check_stmt(current_module, scopes, res);
-                res.type = assert_is_valid(res_state, "check_directive: #insert-ed stmt type is invalid");
-            } else if (parse_fn as Any == parse_expr as func (&Parse_Context) -> (bool, &AST) as Any) {
-                let ASTData::Expr(_) = res.data else {
-                    message(error(dir.loc, "Expected an expression in this #insert context, but got a statement instead."));
-                    unreachable(); // error terminates
-                };
-                let res_state = check_expr(current_module, scopes, res);
-                res.type = assert_is_valid(res_state, "check_directive: #insert-ed expr type is invalid");
-            }
+            let ASTData::Expr(_) = res.data else {
+                message(error(parent.loc, "Expected an expression in this #insert context, but got something else instead."));
+                unreachable(); // error terminates
+            };
+            let res_state = check_expr(current_module, scopes, res);
+            res.type = assert_is_valid(res_state, "check_directive: #insert-ed expr type is invalid");
 
             *parent = *res;
             return mktcs(true, true, false, false, res.type);
         }
-        Directive::Assert(assert_expr, _msg) => {
+        &Directive::Assert(assert_expr, _msg) => {
             let _type_state = check_expr(current_module, scopes, assert_expr);
             let b = create_base_type(PrimType::Bool);
             if (_type_state.please_infer) {
@@ -860,31 +715,33 @@ import "../generated/ast.template.bufo";
             }
             let _type = assert_is_valid(_type_state, "check_directive: #assert expr type is invalid");
             if (!is_equal_to(_type, b)) {
-                message(error(dir.loc, "#assert sub-expression must be a value of type %, but got %.", to_string(b), to_string(_type)));
+                message(error(parent.loc, "#assert sub-expression must be a value of type %, but got %.", to_string(b), to_string(_type)));
             }
             let t = create_base_type(PrimType::None);
             return mktcs(t);
         }
-        Directive::Bir(lexer) => {
+        &Directive::Bir(lexer) => {
             let checked_lexer = lexer;
-            let fn_node = get_parent_function(dir);
+            let fn_node = get_parent_function(parent);
             assert(fn_node != null, "codegen_stmt: Directive parent is null");
             let start = expect(&lexer, TokenData::CurlyOpen);
             let register_map = new_hashmap_with_substr_key(type_info(Reg));
             let type_list = new_GAF_List(type_info(&Type));
             let type: &Type = null;
             while (!lexer_at(&lexer, TokenData::CurlyClose)) {
-                type = parse_bufo_ir_into_function_body(fn_node, &register_map, &lexer, null, false);
+                let (_type, _) = parse_bufo_ir_into_function_body(fn_node, &register_map, &lexer, null, false);
+                type = _type;
                 push(&type_list, type);
             }
-            directive = Directive::CheckedBir(checked_lexer, type_list);
+            expect(&lexer, TokenData::CurlyClose);
+            *directive = Directive::CheckedBir(checked_lexer, type_list);
             return mktcs(type);
         }
-        Directive::Debug => {
+        &Directive::Debug => {
             let t = create_base_type(PrimType::None);
             return mktcs(t);
         }
-        Directive::If(cond, then, elze) => {
+        &Directive::If(cond, then, elze) => {
             let bool_type = create_base_type(PrimType::Bool);
 
             let _type_state = check_expr(current_module, scopes, cond);
@@ -894,11 +751,11 @@ import "../generated/ast.template.bufo";
             let _type = assert_is_valid(_type_state, "check_directive: #if cond type is invalid");
 
             if (!is_equal_to(_type, bool_type)) {
-                message(error(dir.loc, "#if condition must be a boolean value, but got a value of type % instead.", to_string(_type)));
+                message(error(parent.loc, "#if condition must be a boolean value, but got a value of type % instead.", to_string(_type)));
             }
 
             let (ct_value, true) = convert_to_comptime_value_if_possible(current_module, scopes, cond) else {
-                message(error(dir.loc, "#if condition must be a comptime value. Did you forget a #run?"));
+                message(error(parent.loc, "#if condition must be a comptime value. Did you forget a #run?"));
                 unreachable(); // error terminates
             };
             let Value::Var { ptr, size } = ct_value else {
@@ -912,24 +769,19 @@ import "../generated/ast.template.bufo";
             } else if (elze != null) {
                 *parent = *elze;
             } else {
-                let new_expr = create_expr(parent.parent, parent.loc, parent.origin, ASTExpr::Noop);
-                if let ASTData::Stmt(_) = parent.data {
-                    new_expr = create_stmt(parent.parent, parent.loc, parent.origin, ASTStmt::Expr(new_expr));
-                }
-                *parent = *new_expr;
+                parent.data = ASTData::Expr(ASTExpr::Noop);
                 return mktcs(create_base_type(PrimType::None));
             }
 
             let check_fn: func (&AST, &GAF_List, &AST) -> TCState = blank;
             match (parent.data) {
-                ASTData::Stmt(_) => { check_fn = check_stmt; }
                 ASTData::Expr(_) => { check_fn = check_expr; }
                 _ => { unreachable("Directive::If"); }
             }
             return check_fn(current_module, scopes, parent);
         }
         _ => {
-            message(todo(dir.loc, "check_directive: Exhaustive handling of Directives"));
+            message(todo(parent.loc, "check_directive: Exhaustive handling of Directives"));
         }
     }
     unreachable("check_directive");
@@ -938,30 +790,27 @@ import "../generated/ast.template.bufo";
 @trace func __expand_helper(loc: Loc, parent: &AST, node: &AST, mapping: &GAF_HashMap, scopes: &GAF_List) -> &AST {
     match (node.data) {
         // Statements
-        ASTData::Stmt(ASTStmt::Let { pat, expr, trampoline }) => {
+        ASTData::Expr(ASTExpr::Let { pat, expr, trampoline }) => {
             let new_pat = __expand_helper(loc, node, pat, mapping, scopes);
             let new_expr: &AST = null;
             if (expr != null) new_expr = __expand_helper(loc, node, expr, mapping, scopes);
             let new_trampoline: &AST = null;
             if (trampoline != null) new_trampoline = __expand_helper(loc, node, trampoline, mapping, scopes);
-            return create_stmt(parent, loc, node.origin, ASTStmt::Let { pat: pat, expr: expr, trampoline: trampoline });
-        }
-        ASTData::Stmt(ASTStmt::Expr(expr)) => {
-            let new_expr = __expand_helper(loc, node, expr, mapping, scopes);
-            return create_stmt(parent, loc, node.origin, ASTStmt::Expr(new_expr));
+            return create_expr(parent, loc, node.origin, ASTExpr::Let { pat: pat, expr: expr, trampoline: trampoline });
         }
         // Expressions
-        ASTData::Expr(ASTExpr::BlockVoid(stmts)) => {
+        ASTData::Expr(ASTExpr::Block(stmts, value)) => {
             let block = new_GAF_List(type_info(&AST));
-            let bl = create_expr(parent, loc, node.origin, ASTExpr::BlockVoid);
+            let bl = create_expr(parent, loc, node.origin, ASTExpr::Block);
             push(scopes, new_stack());
             for (let i: usize = 0; i < stmts.length; i = i + 1) {
                 let s = get_ref(&stmts, i) as &AST;
                 let new_stmt = __expand_helper(loc, bl, s, mapping, scopes);
                 push(&block, new_stmt);
             }
+            let new_value = __expand_helper(value.loc, bl, value, mapping, scopes);
             pop(scopes);
-            bl.data = ASTData::Expr(ASTExpr::BlockVoid(block));
+            bl.data = ASTData::Expr(ASTExpr::Block(block, new_value));
             return bl;
         }
         ASTData::Expr(ASTExpr::Call(base, args)) => {
@@ -1056,7 +905,7 @@ import "../generated/ast.template.bufo";
     assert(func_info.block != null, "expand_function_if_necessary: monitor failed");
 
     let new_block = new_GAF_List(type_info(&AST));
-    let new_block_ast = create_expr(expr.parent, expr.loc, expr.origin, ASTExpr::BlockExpr); // dummy node
+    let new_block_ast = create_noop(expr.parent, expr.loc); // dummy node
 
     let mapping = new_hashmap_with_substr_key(type_info(String));
     for (let i: usize = 0; i < args.length; i = i + 1) {
@@ -1068,7 +917,7 @@ import "../generated/ast.template.bufo";
         let new_name = format1(".expanded.%.%", par_name, arg);
         let _n = asSubStr(&new_name);
         let pat_id = create_pattern(new_block_ast, expr.loc, blank, ASTPat::Ident(_n));
-        let assign = create_stmt(new_block_ast, expr.loc, blank, ASTStmt::Let {
+        let assign = create_expr(new_block_ast, expr.loc, blank, ASTExpr::Let {
             pat: pat_id,
             expr: arg,
             trampoline: null
@@ -1089,12 +938,23 @@ import "../generated/ast.template.bufo";
 
         // Apply the expansion.
         let scopes = new_GAF_List(type_info(Scope_Info));
-        let _block = __expand_helper(call.loc, call.parent, func_info.block, mapping, &scopes);
-        let block = create_stmt(call.parent, call.loc, blank, ASTStmt::Expr(_block));
+        let block = __expand_helper(call.loc, call.parent, func_info.block, mapping, &scopes);
         push(&new_block, block);
 
         // Update the call site.
-        call.data = ASTData::Expr(ASTExpr::BlockVoid(new_block));
+        // TODO(2026-08-29): Functions that return a value should be rewritten to instead let this
+        //                   block return this value, for example
+        //                   func foo() -> i32 { return 1; }
+        //                   func bar() {
+        //                       let a = foo();
+        //                   }
+        //                   should turn into
+        //                   func bar() {
+        //                       let a = {
+        //                           1
+        //                       };
+        //                   }
+        call.data = ASTData::Expr(ASTExpr::Block(new_block, create_noop(call.parent, call.loc)));
         call.type = null;
         let _ = check_block(current_module, call);
     }, &(current_module, expr, fn, func_info, &mapping, new_block));
@@ -1145,7 +1005,87 @@ struct TCState {
         unreachable();
     };
     let type_state: TCState = blank;
+
+    let f = func (current_module: &AST, stmt: &AST, scopes: &GAF_List, pat: &AST, expr: &AST, trampoline: &AST) {
+        if (expr != null) {
+            let (needs_trampoline, _) = check_and_bind_pattern(current_module, scopes, pat, expr);
+            if (trampoline != null) {
+                // let <pat> = <expr> else <trampoline>;
+                message(todo(stmt.loc, "check_expr: Can't check pat-expr-trampoline yet"));
+                if (!needs_trampoline) {
+                    message(todo(stmt.loc, "check_expr: pat-expr doesn't need trampoline"));
+                } else {
+                }
+            } else if (needs_trampoline) {
+                message(todo(stmt.loc, "check_expr: pat-expr needs trampoline"));
+            }
+        } else {
+            // let <pat>;
+            assert(trampoline == null);
+            message(todo(stmt.loc, "check_expr: Can't check pat yet"));
+        }
+    };
+
     match (&expr) {
+        &ASTExpr::Let { pat, subexpr, trampoline } => {
+            f(current_module, _expr, scopes, pat, subexpr, trampoline);
+            if (subexpr.type == null) {
+                message(error(subexpr.loc, "Could not infer type of variable."));
+            }
+            if (subexpr.type.meta_level != 0) {
+                message(error(subexpr.loc, "The type of a variable defined with `let` cannot be a meta-type, but got %.", to_string(subexpr.type)));
+            }
+            type_state = mktcs(create_base_type(PrimType::None));
+        }
+        &ASTExpr::Comptime { pat, subexpr, trampoline } => {
+            f(current_module, _expr, scopes, pat, subexpr, trampoline);
+            let fn = get_parent_function(_expr);
+            let func_state = get_func_info(fn);
+            codegen_expr(func_state, _expr, false);
+            evaluate_comptime_variables(fn, null);
+            expr = ASTExpr::Noop;
+            type_state = mktcs(create_base_type(PrimType::None));
+        }
+        &ASTExpr::ReturnVoid => {
+            let fn = get_parent_function(_expr);
+            let func_info = get_func_info(fn);
+            let &BaseType::Func(_, ret_type) = &fn.type.base else {
+                unreachable("check_expr: Function has unexpected type");
+            };
+            assert(ret_type != null, "check_expr: Function doesn't have return type set");
+            if (!is_equal_to(ret_type, create_meta_type(1, PrimType::None))) {
+                message(
+                    error(_expr.loc, "Missing return value for function."),
+                    note(fn.loc, "Function % is declared to return %.", func_info.name, to_string(ret_type)));
+            }
+            type_state = mktcs(create_base_type(PrimType::None));
+        }
+        &ASTExpr::ReturnExpr(subexpr) => {
+            let fn = get_parent_function(_expr);
+            let &BaseType::Func(_, ret_type) = &fn.type.base else {
+                unreachable("check_expr: Function has unexpected type");
+            };
+            assert(ret_type != null, "check_expr: Function doesn't have return type set");
+            assert(ret_type.meta_level > 0, "check_expr: Function doesn't have meta return type");
+            let instance_of_ret_type = unwrap_meta_type(ret_type, 1);
+            let subexpr_state = check_expr(current_module, scopes, subexpr);
+            if (subexpr_state.please_infer) {
+                subexpr_state = infer_type_onto_expr(current_module, scopes, instance_of_ret_type, subexpr);
+                assert(!subexpr_state.please_infer, "check_expr: Could not infer return type onto subexpression");
+            }
+            let etype: &Type = assert_is_valid(subexpr_state, "check_expr: Return Expr type is invalid");
+            if (!is_equal_to(etype, instance_of_ret_type)) {
+                let t1 = to_string(instance_of_ret_type);
+                let t2 = to_string(etype);
+                if (is_convertible_to(etype, instance_of_ret_type)) {
+                    message(todo(_expr.loc, "Function was declared to return %, but we got %. However, the type system could allow conversion.", t1, t2));
+                } else {
+                    message(error(_expr.loc, "Function was declared to return %, but we got %.", t1, t2));
+                }
+            }
+            type_state = mktcs(create_base_type(PrimType::None));
+        }
+
         &ASTExpr::Paren(sub) => {
             type_state = check_expr(current_module, scopes, sub);
         }
@@ -1188,7 +1128,7 @@ struct TCState {
                 let t2 = to_string(cond_type);
                 message(error(cond.loc, "Expected expression of type %, but got %.", t1, t2));
             }
-            let then_state = check_stmt(current_module, scopes, then);
+            let then_state = check_expr(current_module, scopes, then);
             if (then_state.please_infer) {
                 message(todo(then.loc, "then needs infer?"));
             }
@@ -1298,14 +1238,11 @@ struct TCState {
         &ASTExpr::Blank => { type_state = mktcs(false, false, false, true, null); }
         &ASTExpr::Null  => { type_state = mktcs(false, false, false, true, null); }
         &ASTExpr::Directive(dir) => {
-            let _type = check_directive(current_module, scopes, _expr, dir);
+            let _type = check_directive(current_module, scopes, _expr, &dir);
             if (_type.replaced_node) type_state = check_expr(current_module, scopes, _expr);
             else type_state = _type;
         }
-        &ASTExpr::BlockVoid(stmts) => {
-            type_state = check_block(current_module, _expr);
-        }
-        &ASTExpr::BlockExpr(stmts, value) => {
+        &ASTExpr::Block(stmts, value) => {
             type_state = check_block(current_module, _expr);
         }
         &ASTExpr::Noop => {

@@ -528,10 +528,11 @@ union Op {
     }
 }
 
-@trace func codegen_stmt(fn: &ASTFunction, stmt: &AST) {
-    let &ASTData::Stmt(actual_stmt) = &stmt.data else {
-        unreachable("codegen_stmt: Node is not a statement");
+@trace func codegen_expr(fn: &ASTFunction, expr: &AST, wants_ptr: bool) -> Reg {
+    let &ASTData::Expr(actual_expr) = &expr.data else {
+        funreachable("% codegen_expr: Node is not an expression, got %", expr.loc, expr.data);
     };
+
     let f = func (fn: &ASTFunction, stmt: &AST, pat: &AST, expr: &AST, trampoline: &AST, is_comptime: bool) {
         if (is_comptime) start_comptime(&fn.code);
         if (expr != null) {
@@ -539,80 +540,44 @@ union Op {
             let preg = codegen_pattern(fn, pat, ereg, is_comptime);
             if (trampoline != null) {
                 // let <pat> = <expr> else <trampoline>;
-                message(todo(stmt.loc, "codegen_stmt: Can't codegen pat-expr-trampoline yet"));
+                message(todo(stmt.loc, "codegen_expr: Can't codegen pat-expr-trampoline yet"));
             }
         } else {
             // let <pat>;
             assert(trampoline == null);
-            message(todo(stmt.loc, "codegen_stmt: Can't codegen pat yet"));
+            message(todo(stmt.loc, "codegen_expr: Can't codegen pat yet"));
         }
         if (is_comptime) end_comptime(&fn.code);
     };
-    match (&actual_stmt) {
-        &ASTStmt::Let { pat, expr, trampoline } => {
+
+    match (&actual_expr) {
+        &ASTExpr::Let { pat, subexpr, trampoline } => {
             assert(pat != null);
-            f(fn, stmt, pat, expr, trampoline, false);
+            f(fn, expr, pat, subexpr, trampoline, false);
+            return blank;
         }
-        &ASTStmt::Comptime { pat, expr, trampoline } => {
-            assert(expr != null, "codegen_stmt: `comptime` doesn't have expr");
-            if (expr.type.meta_level > 0) {
+        &ASTExpr::Comptime { pat, subexpr, trampoline } => {
+            assert(subexpr != null, "codegen_expr: `comptime` doesn't have expr");
+            if (subexpr.type.meta_level > 0) {
                 // `comptime foo = i32;` is not generated
-                return;
+                return blank;
             }
             // Simply mark instructions as compile time. They will be evaluated next.
-            f(fn, stmt, pat, expr, trampoline, true);
+            f(fn, expr, pat, subexpr, trampoline, true);
+            return blank;
         }
-        &ASTStmt::ReturnVoid => {
+        &ASTExpr::ReturnVoid => {
             assert(fn.code.comptime_level == 0, "Return in comptime context?");
-            build_br(&fn.code, stmt.loc, fn.code.runtime.return_block);
+            build_br(&fn.code, expr.loc, fn.code.runtime.return_block);
+            return blank;
         }
-        &ASTStmt::ReturnExpr(expr) => {
-            let register = codegen_expr(fn, expr, false);
+        &ASTExpr::ReturnExpr(subexpr) => {
             assert(fn.code.comptime_level == 0, "Return in comptime context?");
-            build_move(&fn.code, stmt.loc, fn.code.runtime.return_register, register);
-            build_br(&fn.code, stmt.loc, fn.code.runtime.return_block);
+            let register = codegen_expr(fn, subexpr, false);
+            build_move(&fn.code, expr.loc, fn.code.runtime.return_register, register);
+            build_br(&fn.code, expr.loc, fn.code.runtime.return_block);
+            return blank;
         }
-        &ASTStmt::Expr(expr) => {
-            let reg = codegen_expr(fn, expr, false);
-        }
-        &ASTStmt::Directive(dir) => {
-            match (&dir.data) {
-                &ASTData::Directive(Directive::Assert(expr, msg)) => {
-                    let reg = codegen_expr(fn, expr, false);
-                    build_directive_assert(&fn.code, stmt.loc, reg, msg);
-                }
-                &ASTData::Directive(Directive::Debug) => {
-                    build_directive_debug(&fn.code, stmt.loc);
-                }
-                &ASTData::Directive(Directive::CheckedBir(lexer, types)) => {
-                    let fn_node = get_parent_function(dir);
-                    assert(fn_node != null, "codegen_stmt: Directive parent is null");
-                    let start = expect(&lexer, TokenData::CurlyOpen);
-                    let register_map = new_hashmap_with_substr_key(type_info(Reg));
-                    let index: usize = 0;
-                    while (!lexer_at(&lexer, TokenData::CurlyClose)) {
-                        let type = get_ref(&types, index) as &Type;
-                        parse_bufo_ir_into_function_body(fn_node, &register_map, &lexer, type, true);
-                        index = index + 1;
-                    }
-                    let end = expect(&lexer, TokenData::CurlyClose);
-                }
-                _ => {
-                    message(todo(stmt.loc, "codegen_stmt: Can't generate directive yet: %", dir.data));
-                }
-            }
-        }
-        _ => {
-            message(todo(stmt.loc, "codegen_stmt: Can't generate stmt yet: %", stmt.data));
-        }
-    }
-}
-
-@trace func codegen_expr(fn: &ASTFunction, expr: &AST, wants_ptr: bool) -> Reg {
-    let &ASTData::Expr(actual_expr) = &expr.data else {
-        funreachable("% codegen_expr: Node is not an expression, got %", expr.loc, expr.data);
-    };
-    match (&actual_expr) {
         &ASTExpr::Paren(sub) => {
             return codegen_expr(fn, sub, wants_ptr);
         }
@@ -673,7 +638,36 @@ union Op {
             return build_call(&fn.code, expr.loc, reg, args);
         }
         &ASTExpr::Directive(dir) => {
-            message(todo(expr.loc, "codegen_expr: Can't codegen directive"));
+            match (&dir) {
+                &Directive::Assert(subexpr, msg) => {
+                    let reg = codegen_expr(fn, subexpr, false);
+                    build_directive_assert(&fn.code, expr.loc, reg, msg);
+                    return blank;
+                }
+                &Directive::Debug => {
+                    build_directive_debug(&fn.code, expr.loc);
+                    return blank;
+                }
+                &Directive::CheckedBir(lexer, types) => {
+                    let fn_node = get_parent_function(expr);
+                    assert(fn_node != null, "codegen_expr: Directive parent is null");
+                    let start = expect(&lexer, TokenData::CurlyOpen);
+                    let register_map = new_hashmap_with_substr_key(type_info(Reg));
+                    let index: usize = 0;
+                    let ret_reg: Reg = blank;
+                    while (!lexer_at(&lexer, TokenData::CurlyClose)) {
+                        let type = get_ref(&types, index) as &Type;
+                        let (_, reg) = parse_bufo_ir_into_function_body(fn_node, &register_map, &lexer, type, true);
+                        ret_reg = reg;
+                        index = index + 1;
+                    }
+                    let end = expect(&lexer, TokenData::CurlyClose);
+                    return ret_reg;
+                }
+                _ => {
+                    message(todo(expr.loc, "codegen_expr: Can't generate directive yet: %", dir));
+                }
+            }
         }
         &ASTExpr::ComptimeValue(val) => {
             return build_load_comptime_value(&fn.code, expr.loc, expr.type, val);
@@ -681,17 +675,10 @@ union Op {
         &ASTExpr::Unary(unary) => {
             return codegen_unary(fn, expr, wants_ptr);
         }
-        &ASTExpr::BlockVoid(stmts) => {
+        &ASTExpr::Block(stmts, value) => {
             for (let i: usize = 0; i < stmts.length; i = i + 1) {
                 let s = get_ref(&stmts, i) as &AST;
-                codegen_stmt(fn, s);
-            }
-           return blank;
-        }
-        &ASTExpr::BlockExpr(stmts, value) => {
-            for (let i: usize = 0; i < stmts.length; i = i + 1) {
-                let s = get_ref(&stmts, i) as &AST;
-                codegen_stmt(fn, s);
+                codegen_expr(fn, s, false);
             }
             return codegen_expr(fn, value, wants_ptr);
         }
@@ -702,7 +689,8 @@ union Op {
             build_cond_br(&fn.code, expr.loc, cond_reg, then_block.id, cont_block.id);
 
             set_current_block(&fn.code, then_block.id);
-            codegen_stmt(fn, then);
+            codegen_expr(fn, then, false);
+
             let curr = get_current_block(&fn.code);
             if (!is_terminated(curr)) {
                 build_br(&fn.code, expr.loc, cont_block.id);
@@ -887,7 +875,7 @@ union Op {
     return type;
 }
 
-@trace func parse_bufo_ir_into_function_body(fn: &AST, register_map: &GAF_HashMap, lexer: &Lexer, checked_type: &Type, insert_op: bool) -> &Type {
+@trace func parse_bufo_ir_into_function_body(fn: &AST, register_map: &GAF_HashMap, lexer: &Lexer, checked_type: &Type, insert_op: bool) -> (&Type, Reg) {
     let func_info = get_func_info(fn);
 
     let (op_tkn, op_name, op_loc) = _h(lexer);
@@ -899,7 +887,7 @@ union Op {
             build_br(&func_info.code, op_loc, block.id);
             set_current_block(&func_info.code, block.id);
         }
-        return create_base_type(PrimType::None);
+        return (create_base_type(PrimType::None), blank);
     }
 
     let type = _t(fn, lexer, checked_type);
@@ -925,6 +913,7 @@ union Op {
     };
 
     let op = Op::Noop;
+    let op_reg: Reg = blank;
     if (equals(&op_name, &comptime newSubStr("alloca"))) {
         let (reg_tkn, reg_name, reg_loc) = _h(lexer);
         let size = get_size(type);
@@ -933,12 +922,15 @@ union Op {
         let var = __allocate_register(&func_info.code, _ptr);
         add(register_map, reg_name, var);
         op = Op::Alloca(var, asSubStr(&_name));
+        op_reg = var;
     } else if (equals(&op_name, &comptime newSubStr("store"))) {
         let (dst_reg, src_reg) = _2(lexer, func_info, register_map, type);
         op = Op::Store(dst_reg, src_reg);
+        op_reg = dst_reg;
     } else if (equals(&op_name, &comptime newSubStr("load"))) {
         let (dst_reg, src_reg) = _2(lexer, func_info, register_map, type);
         op = Op::Load(dst_reg, src_reg);
+        op_reg = dst_reg;
     } else if (equals(&op_name, &comptime newSubStr("param"))) {
         let (reg_tkn, reg_name, reg_loc) = _h(lexer);
         expect(lexer, TokenData::Comma);
@@ -946,27 +938,35 @@ union Op {
         let reg = _r(func_info, register_map, reg_loc, type, reg_name);
         let index = toU64(&index_name);
         op = Op::LoadParameter(reg, index as usize);
+        op_reg = reg;
     } else if (equals(&op_name, &comptime newSubStr("add"))) {
         let (dst_reg, src1_reg, src2_reg) = _3(lexer, func_info, register_map, type);
         op = Op::Add(dst_reg, src1_reg, src2_reg);
+        op_reg = dst_reg;
     } else if (equals(&op_name, &comptime newSubStr("mul"))) {
         let (dst_reg, src1_reg, src2_reg) = _3(lexer, func_info, register_map, type);
         op = Op::Mul(dst_reg, src1_reg, src2_reg);
+        op_reg = dst_reg;
     } else if (equals(&op_name, &comptime newSubStr("sub"))) {
         let (dst_reg, src1_reg, src2_reg) = _3(lexer, func_info, register_map, type);
         op = Op::Sub(dst_reg, src1_reg, src2_reg);
+        op_reg = dst_reg;
     } else if (equals(&op_name, &comptime newSubStr("neq"))) {
         let (dst_reg, src1_reg, src2_reg) = _3(lexer, func_info, register_map, type);
         op = Op::Neq(dst_reg, src1_reg, src2_reg);
+        op_reg = dst_reg;
     } else if (equals(&op_name, &comptime newSubStr("eq"))) {
         let (dst_reg, src1_reg, src2_reg) = _3(lexer, func_info, register_map, type);
         op = Op::Eq(dst_reg, src1_reg, src2_reg);
+        op_reg = dst_reg;
     } else if (equals(&op_name, &comptime newSubStr("gte"))) {
         let (dst_reg, src1_reg, src2_reg) = _3(lexer, func_info, register_map, type);
         op = Op::Gte(dst_reg, src1_reg, src2_reg);
+        op_reg = dst_reg;
     } else if (equals(&op_name, &comptime newSubStr("lte"))) {
         let (dst_reg, src1_reg, src2_reg) = _3(lexer, func_info, register_map, type);
         op = Op::Lte(dst_reg, src1_reg, src2_reg);
+        op_reg = dst_reg;
     } else if (equals(&op_name, &comptime newSubStr("ret"))) {
         assert(func_info.code.comptime_level == 0, "Return in comptime context?");
         if (lexer_at(lexer, TokenData::Ident)) {
@@ -1001,6 +1001,6 @@ union Op {
     }
     if (insert_op) __create_instr(&func_info.code, op_loc, type, op);
     expect(lexer, TokenData::SemiColon);
-    return type;
+    return (type, op_reg);
 }
 

@@ -51,48 +51,56 @@ import "../generated/ast.template.bufo";
     unreachable("get_parent_function: Node is not inside a function");
 }
 
-@trace func is_assignment(node: &AST) -> bool {
-    let ASTData::Expr(ASTExpr::Binary(bin)) = node.data else {
-        return false;
-    };
-    return is_assignment(bin);
+@trace func node_requires_unused_warning(node: &AST) -> bool {
+    if (is_assignment(node)) return false;
+    if (is_inline_ir(node))  return false;
+    return true;
 }
-@trace func is_statement(node: &AST) -> bool {
-    if let ASTData::Stmt(_) = node.data {
+@trace func is_inline_ir(dir: Directive) -> bool {
+    if let Directive::Bir(_) = dir {
+        return true;
+    }
+    if let Directive::CheckedBir(_, _) = dir {
         return true;
     }
     return false;
 }
-@trace func node_requires_semicolon(node: &AST) -> bool {
-    if let ASTData::Stmt(ASTStmt::Expr(expr)) = node.data {
-        return node_requires_semicolon(expr);
+@trace func is_inline_ir(node: &AST) -> bool {
+    if let ASTData::Expr(ASTExpr::Directive(dir)) = node.data {
+        return is_inline_ir(dir);
     }
-    if let ASTData::Stmt(ASTStmt::Directive(dir)) = node.data {
-        return node_requires_semicolon(dir);
+    return false;
+}
+@trace func is_assignment(node: &AST) -> bool {
+    if let ASTData::Expr(ASTExpr::Binary(bin)) = node.data {
+        return is_assignment(bin);
     }
-    if let ASTData::Directive(Directive::If(_, then, elze)) = node.data {
+    return false;
+}
+@trace func node_requires_semicolon(dir: Directive) -> bool {
+    if let Directive::If(_, then, elze) = dir {
         if (elze != null) {
             return node_requires_semicolon(elze);
         } else {
             return node_requires_semicolon(then);
         }
     }
-    if let ASTData::Expr(ASTExpr::If(_, _)) = node.data {
-        return false;
+    return true;
+}
+@trace func node_requires_semicolon(node: &AST) -> bool {
+    if let ASTData::Expr(ASTExpr::Directive(dir)) = node.data {
+        return node_requires_semicolon(dir);
     }
-    if let ASTData::Expr(ASTExpr::IfElse(_, _, _)) = node.data {
-        return false;
+    if let ASTData::Expr(ASTExpr::If(_, then)) = node.data {
+        return node_requires_semicolon(then);
+    }
+    if let ASTData::Expr(ASTExpr::IfElse(_, _, elze)) = node.data {
+        return node_requires_semicolon(elze);
     }
     return !is_block(node);
 }
 @trace func is_block(node: &AST) -> bool {
-    if let ASTData::Stmt(ASTStmt::Expr(expr)) = node.data {
-        return is_block(expr);
-    }
-    if let ASTData::Expr(ASTExpr::BlockVoid(_)) = node.data {
-        return true;
-    }
-    if let ASTData::Expr(ASTExpr::BlockExpr(_, _)) = node.data {
+    if let ASTData::Expr(ASTExpr::Block(_, _)) = node.data {
         return true;
     }
     return false;
@@ -277,10 +285,7 @@ import "../generated/ast.template.bufo";
 }
 
 @trace func get_statements(node: &ASTExpr) -> &GAF_List {
-    if let &ASTExpr::BlockVoid(stmts) = node {
-        return &stmts;
-    }
-    if let &ASTExpr::BlockExpr(stmts, _) = node {
+    if let &ASTExpr::Block(stmts, _) = node {
         return &stmts;
     }
     unreachable("get_statements: Node is not a block");
@@ -476,12 +481,6 @@ let node_counter: usize = 0;
     return ptr;
 }
 
-@trace func create_stmt(parent: &AST, loc: Loc, origin: SubStr, stmt: ASTStmt) -> &AST {
-    let ptr = create_node(parent, loc, origin);
-    ptr.data = ASTData::Stmt(stmt);
-    return ptr;
-}
-
 @trace func create_pattern(parent: &AST, loc: Loc, origin: SubStr, pat: ASTPat) -> &AST {
     let ptr = create_node(parent, loc, origin);
     ptr.data = ASTData::Pat(pat);
@@ -494,10 +493,8 @@ let node_counter: usize = 0;
     return ptr;
 }
 
-@trace func create_directive(parent: &AST, loc: Loc, origin: SubStr, dir: Directive) -> &AST {
-    let ptr = create_node(parent, loc, origin);
-    ptr.data = ASTData::Directive(dir);
-    return ptr;
+@trace func create_noop(parent: &AST, loc: Loc) -> &AST {
+    return create_expr(parent, loc, blank, ASTExpr::Noop);
 }
 
 func monomorphize_function_node(ast: &AST, mapping: GAF_HashMap) -> &AST {

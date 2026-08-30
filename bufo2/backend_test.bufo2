@@ -70,20 +70,19 @@ func sizeof(t: $T) -> u64 @naked {
     };
 }
 
-func foo(t: $T) {
-    comptime true  = 1 as i32 == 1;
-    comptime false = 1 as i32 != 1;
-    comptime _t: $T = blank;
-    #if #run sizeof(_t) != 4 {
-    #assert false, "foo only accepts types that are 4 bytes";
-    }
-    return;
+func foo(t: $T) -> i32 {
+    comptime cond = sizeof({comptime _t: $T = blank; _t}) == 4;
+    #if cond return 1 else return 0;
 }
 
 func main() {
     #run {
         let n: i32 = 1;
-        foo(n);
+        let a = foo(n);
+        #assert a == 1, "i32 is 4 bytes";
+        let m: i64 = 1;
+        let b = foo(m);
+        #assert b == 0, "i64 is not 4 bytes";
     };
     #run {
         let some0: Option(i32) = blank;

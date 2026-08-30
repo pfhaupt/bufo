@@ -3,7 +3,7 @@
 // Command line: .\build\share_template.exe ./templates/ast.template ./generated/ast.template.bufo
 
 // Generated 10 structure(s)
-// Generated 8 union(s)
+// Generated 7 union(s)
 // Generated 5 share(s)
 
 // -- IMPORTS BEGIN --
@@ -138,11 +138,9 @@ union ASTData {
     Module(ASTModule),
     TypeDecl(ASTTypeDecl),
     Function(ASTFunction),
-    Stmt(ASTStmt),
     Expr(ASTExpr),
     Pat(ASTPat),
     Param(&AST),
-    Directive(Directive),
 } // End of ASTData
 
 union ASTAttrData {
@@ -152,10 +150,18 @@ union ASTAttrData {
     __count,
 } // End of ASTAttrData
 
-union ASTStmt {
+union ASTPat {
     // Union variants
-    Directive(&AST),
-    Expr(&AST),
+    Ident(SubStr),
+    PatWithType(&AST, &AST), // SubPattern, Type
+} // End of ASTPat
+
+union ASTExpr {
+    // Union variants
+    // bufo2 is an expression based language.
+    // Even though things like `return;` are expressions too,
+    // the parser will prevent us from constructing ASTs
+    // that have these variants as sub-expressions
     ReturnExpr(&AST),
     ReturnVoid,
     Let {
@@ -168,35 +174,30 @@ union ASTStmt {
         expr: &AST,       // if null: let <pat>;
         trampoline: &AST, // if null: let <pat> = <expr>;
     },
-} // End of ASTStmt
 
-union ASTPat {
-    // Union variants
-    Ident(SubStr),
-    PatWithType(&AST, &AST), // SubPattern, Type
-} // End of ASTPat
-
-union ASTExpr {
-    // Union variants
     Noop, // See FIXME for union Directive
+
     BuiltinType { name: SubStr },
     Ident { name: SubStr },
     FnIdent { name: SubStr, fn: &AST },
     Number { value: SubStr },
     StringLiteral { value: String },
     Call(&AST, GAF_List), // arguments = List<&AST>
-    // if (<cond>) <then>
-    If(&AST, &AST),
-    // if (<cond>) <then> else <else>
-    IfElse(&AST, &AST, &AST),
-    // BlockExpr is something like `{ let a = 12; a }` and returns a non-none value
-    BlockExpr(GAF_List, &AST), // List<&AST>
-    BlockVoid(GAF_List), // List<&AST>
+
+    If(&AST, &AST),           // if (<cond>) <then>
+    IfElse(&AST, &AST, &AST), // if (<cond>) <then> else <else>
+
+    Block(GAF_List, &AST), // List<&AST>
+                           // second argument is "return value" of block or
+                           // ASTExpr::Noop if last statement ends with a ;
+
     Unary(ASTUnary),
     Binary(ASTBinary),
+
+    Directive(Directive),
+
     Blank,
     Null,
-    Directive(&AST),
     ComptimeValue(Value),
     Generic,
     ResolvedGeneric(&Type),
