@@ -1,0 +1,99 @@
+import "prelude.bufo";
+import "substr.bufo";
+import "string.bufo";
+import "list.bufo";
+import "type_info.bufo";
+import "format.bufo";
+
+import "common.bufo";
+import "lexer.bufo";
+import "parser.bufo";
+import "codegen.bufo";
+import "ast.bufo";
+import "../generated/ast.template.bufo";
+
+struct Scratch_ID { _i: usize; }
+
+struct Scratch_Context {
+    src: String;
+    name: String;
+    node: &AST;
+    context: Parse_Context;
+    is_active: bool;
+}
+
+struct Scratch_Engine {
+    scratchpads: GAF_List; // List<Scratch_Context>
+}
+
+let __scratchpad_context: Scratch_Engine = blank;
+
+@nodiscard @trace func reserve_scratchpad(node: &AST) -> Scratch_ID {
+    for (let i: usize = 0; i < __scratchpad_context.scratchpads.length; i = i + 1) {
+        let sid = Scratch_ID { _i: i };
+        let ctx = __get_scratchpad_by_id(sid);
+        if (!ctx.is_active) {
+            ctx.is_active = true;
+            return sid;
+        }
+    }
+    let count = __scratchpad_context.scratchpads.length;
+    let sid = Scratch_ID { _i: count };
+    let new_scratchpad = create_scratchpad_function(node, count);
+    new_scratchpad.is_active = true;
+    push(&__scratchpad_context.scratchpads, new_scratchpad);
+    parse_function_signature(&new_scratchpad.context);
+    return sid;
+}
+
+@trace func __get_scratchpad_by_id(id: Scratch_ID) -> &Scratch_Context {
+    return get_ref_raw(&__scratchpad_context.scratchpads, id._i);
+}
+
+@trace func get_scratchpad_by_id(id: Scratch_ID) -> &AST {
+    return __get_scratchpad_by_id(id).node;
+}
+
+@trace func release_scratchpad(id: Scratch_ID) {
+    let ctx = __get_scratchpad_by_id(id);
+    assert(ctx.is_active, "release_scratchpad: Scratchpad is not active");
+    ctx.is_active = false;
+    let func_info = get_func_info(ctx.node);
+    reset(&func_info.code);
+}
+
+@trace func get_scratchpad_count(all: bool) -> usize {
+    let c: usize = 0;
+    for (let i: usize = 0; i < __scratchpad_context.scratchpads.length; i = i + 1) {
+        let ctx = __get_scratchpad_by_id(Scratch_ID { _i: i });
+        if (all || ctx.is_active) c = c + 1;
+    }
+    return c;
+}
+
+@trace func init_scratchpad_functions() {
+    message(dbg(blank, "init_scratchpad_functions()"));
+    __scratchpad_context = Scratch_Engine {
+        scratchpads: new_GAF_List(type_info(Scratch_Context)),
+    };
+    reserve_capacity(&__scratchpad_context.scratchpads, 128);
+}
+
+@trace func create_scratchpad_function(node: &AST, count: usize) -> Scratch_Context {
+    let name = format1("__global_run_scratchpad_please_never_define_a_function_like_this_yourself_%", count);
+    let src = format1("func %() {}", name);
+    let _lexer = Lexer {
+        offset_in_file: 0,
+        file_name: newSubStr("create_scratchpad_function"),
+        source: asSubStr(&src),
+    };
+    let global = get_global_module(node);
+    let new_node = create_function(global, node.loc, blank, asSubStr(&name));
+    let context = new_parse_context(new_node, _lexer);
+    return Scratch_Context {
+        name: name,
+        src: src,
+        node: new_node,
+        context: context,
+    };
+}

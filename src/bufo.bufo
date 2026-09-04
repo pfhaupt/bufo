@@ -49,6 +49,7 @@ struct Flags {
     debug: &bool;
     trace: &bool;
     opt: &bool;
+    runProgram: &bool;
     disableExternalComptime: &bool;
     disableInlineAssembly: &bool;
     llvm_passes: &String;
@@ -90,6 +91,7 @@ let flags = Flags {};
     flags.debug = addBoolFlag(&flagParser, "d", "debug", "Compile with debug info");
     flags.trace = addBoolFlag(&flagParser, "--trace", "Trace function calls with Tracy (https://github.com/wolfpld/tracy)");
     flags.opt = addBoolFlag(&flagParser, "--opt", "Enable aggressive optimizations");
+    flags.runProgram = addBoolFlag(&flagParser, "--run", "Run the executable after compilation.");
     flags.disableExternalComptime = addBoolFlag(&flagParser, "--no-extern-comptime", "Don't allow any compile time calls to functions marked `@extern`.");
     flags.disableInlineAssembly = addBoolFlag(&flagParser, "--no-inline-assembly", "Don't allow any `asm()` blocks.");
     flags.llvm_passes = addStringFlag(&flagParser, "lp", "llvm-passes", "`opt`-compatible pass pipeline that the LLVM backend should use for optimizations.");
@@ -157,6 +159,11 @@ let flags = Flags {};
         let llvmCodegen: LLVMCodegen = newLLVMCodegen(fileSubStr, &generator, &interp);
         if (!generateExecutable(&llvmCodegen, asSubStr(flags.out), argc, argv)) return 1;
         if (!linkExecutable()) return 1;
+        if (*flags.runProgram) {
+            let cmd: Cmd = newCmdFromStrLit(flags.out.buffer);
+            cmd.dont_log = !*flags.verbose;
+            if (!runSync(&cmd)) return 1;
+        }
     }
     if (*flags.debug) {
         C::printf("files.length         = %llu\n", files.length);

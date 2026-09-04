@@ -5,12 +5,18 @@ import "string.bufo";
 import "substr.bufo";
 import "format.bufo";
 import "time.bufo";
+import "list.bufo";
 
 import "common.bufo";
 import "corot.bufo";
 import "lexer.bufo";
 import "parser.bufo";
 import "lookup.bufo";
+import "checker.bufo";
+import "type.bufo";
+import "ast.bufo";
+import "../generated/ast.template.bufo";
+import "scratchpad.bufo";
 
 @if_tracing import "tracy.bufo";
 
@@ -49,14 +55,16 @@ import "lookup.bufo";
     let start = get_high_resolution_timestamp();
 
     init_corot_engine();
+    init_scratchpad_functions();
     @if_tracing tracy::fiber_enter("main_fiber");
 
-    let file_name = newSubStrOfStrLit(argv[1]);
-    let file = spawn(load_file, wrap(Load_Context {
+    let file_name = newSubStr(argv[1]);
+    let main_context = Load_Context {
         file_name: file_name,
         loc: new_loc(file_name, 0),
         main_file: true,
-    }));
+    };
+    let file = spawn(load_file, &main_context);
 
     // The main function only switches between scheduled coroutines
     let last = start;
@@ -66,12 +74,128 @@ import "lookup.bufo";
         let now = get_high_resolution_timestamp();
         let dt = get_duration_between_high_resolution_timestamps_in_microseconds(last, now);
         if (dt > 100 * 1000) {
-            message(info(blank, "There are % active coroutine(s).", get_corot_count()));
+            message(
+                info(blank, "There are % active coroutine(s).", get_corot_count()),
+                info(blank, "There are % active scratchpad(s).", get_scratchpad_count(false)));
             last = now;
         }
         switch();
     }
     @if_tracing tracy::fiber_leave();
+
+    // Below here is some experimental bufo1 <-> bufo2 interop code. It can safely be removed later
+    // TODO(2026-08-30): Clean up this code a bit and integrate it into the compiler :)
+    // Can we use other modules?
+    let &ASTData::Module(global_module) = &main_context.current_module.data else {
+        unreachable("current_module is not a module");
+    };
+    assert(equals(&global_module.name, &comptime newSubStr("__global__")), "it's not __global__");
+    message(note(blank, "Got module %", global_module.name));
+
+    let fns = get_functions_by_name(&global_module.lookup, comptime newSubStr("needle"));
+
+    // Can we assert these null checks later on?
+    if (fns != null) {
+        message(note(blank, "Got function %", *fns));
+        let structure = get_type_decl_by_name(&global_module.lookup, comptime newSubStr("Structure"));
+        if (structure != null) {
+            message(note(blank, "Got structure %", *structure));
+            assert(structure.node != null, "Structure lookup is not associated with node");
+            assert(structure.node.type != null, "Structure lookup does not have a type");
+
+            let call_bufo2_function = func (fns: &FunctionLookup, ret: &Type, args: ...(&Type, String)) -> (bool, Any) {
+                let create_template = func (fns: &FunctionLookup, ret: &Type, args: ...(&Type, String)) -> (bool, &AST, String) {
+                    let find_correct_overload = func (fns: &FunctionLookup, ret: &Type, _args: ...(&Type, String)) -> (&AST, &ASTFunction) {
+                        // Can we get rid of this function?
+                        let args = new_GAF_List(type_info(&Type));
+                        for (let i: usize = 0; i < _args.length; i = i + 1) {
+                            push(&args, _args[i].0);
+                        }
+                        let fn = create_base_type(BaseType::Func(args, ret));
+                        let ret1: &AST = null;
+                        let ret2: &ASTFunction = null;
+                        for (let i: usize = 0; i < fns.overloads.length; i = i + 1) {
+                            let overload = *(get_ref_raw(&fns.overloads, i) as &&AST);
+                            assert(overload.type != null, "Overload type is not set");
+                            if (is_equal_to(overload.type, fn)) {
+                                message(info(overload.loc, "Found matching overload"));
+                                let &ASTData::Function(_fn) = &overload.data else {
+                                    unreachable("function overload is not a function?");
+                                };
+                                ret1 = overload;
+                                ret2 = &_fn;
+                            }
+                        }
+                        return (ret1, ret2);
+                    };
+
+                    let (node, overload) = find_correct_overload(fns, ret, args);
+                    if (node == null) return (false, null, blank);
+                    assert(overload.state.did_codegen_body, "Overload is not yet generated");
+
+                    let template = "#run (%(%) as %)";
+                    let fn_string = format1("%", overload.name);
+                    let ret_string = format1("%", to_string(unwrap_meta_type(ret, 1)));
+                    let arg_string = String {};
+                    for (let i: usize = 0; i < args.length; i = i + 1) {
+                        if (i != 0) pushChar(&arg_string, ',');
+                        format(&arg_string, "%", args[i].1);
+                    }
+                    return (true, node, format1(template, fn_string, arg_string, ret_string));
+                };
+
+                let (succ, node, src) = create_template(fns, ret, args);
+                if (!succ) return (succ, null);
+
+                let lexer = Lexer {
+                    file_name: comptime newSubStr("call_bufo2_function"),
+                    offset_in_file: 0,
+                    source: asSubStr(&src)
+                };
+                let context = new_parse_context(node, lexer);
+                let (_, run_node) = parse_expr(&context);
+
+                let scopes = new_GAF_List(type_info(Scope_Info));
+                // REVIEW(2026-08-30): Is it always the parent module? It shouldn't matter as we only
+                //                     check a very limited #run directive with no variables and such,
+                //                     but I am not sure.
+                let (value, is_valid) = convert_to_comptime_value_if_possible(get_parent_module(node), node, &scopes, run_node);
+                if (!is_valid) return (is_valid, null);
+                let Value::Var { ptr, size } = value else {
+                    unreachable("Value is not a variable");
+                };
+                return (true, ptr);
+            };
+
+            let _i32 = create_meta_type(1, PrimType::I32);
+            let _i64 = create_meta_type(1, PrimType::I64);
+            let _ptr = wrap_meta_type(into_pointer_type(unwrap_meta_type(_i64, 1)), 1);
+
+            let target: i64 = 912;
+
+            // Can we do better than passing strings here?
+            let (succ, ptr) = call_bufo2_function(
+                fns,
+                _i64,
+                (_i32, comptime newReadonlyString("42")),
+                (structure.node.type, comptime newReadonlyString("blank")),
+                (_i64, comptime newReadonlyString("345")),
+                (_ptr, format1("% as u64 as *i64", (&target) as usize)),
+            );
+            assert(succ, "could not call bufo2 function");
+            let __i64 = *(ptr as &i64);
+
+            message(note(blank, "i64: %", __i64));
+            message(note(blank, "target: %", target));
+            assert(__i64 == 345, "needle returned incorrect value");
+            assert(target == 123, "needle did not set target correctly");
+        } else {
+            message(warn(blank, "Didn't find the structure"));
+        }
+    } else {
+        message(warn(blank, "Didn't find the function"));
+    }
+    // Above here is some experimental bufo1 <-> bufo2 interop code. It can safely be removed later
 
     let end = get_high_resolution_timestamp();
 
@@ -92,6 +216,11 @@ import "lookup.bufo";
         C::fprintf(stderr, "error: Could not compile program due to the above errors.\n");
         return 1;
     }
+
+    if (get_scratchpad_count(false) != 0) {
+        message(fatal(blank, "Scratchpad count after compilation is not zero!"));
+    }
+
     message(note(blank, "done"));
 
     return 0;

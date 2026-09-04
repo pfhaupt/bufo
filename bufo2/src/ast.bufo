@@ -16,6 +16,7 @@ import "lookup.bufo";
 import "parser.bufo";
 import "codegen.bufo";
 import "interp.bufo";
+import "scratchpad.bufo";
 
 import "../generated/ast.template.bufo";
 
@@ -38,17 +39,64 @@ import "../generated/ast.template.bufo";
     return false;
 }
 
-@trace func is_in_function(node: &AST) -> bool {
-    if let ASTData::Function { .. } = node.super_node.data {
+@trace func get_parent_node(node: &AST) -> &AST {
+    let p = node.parent;
+    if (p == null) message(fatal(node.loc, "get_parent_node: Node does not have a parent node"));
+    return p;
+}
+
+@trace func get_parent_module(node: &AST) -> &AST {
+    while (!is_global_module(node)) {
+        let parent = get_parent_node(node);
+        if (is_module(parent)) return parent;
+        node = parent;
+    }
+    assert(node != null, "get_parent_module: Node does not have a parent module");
+    return node;
+}
+@trace func get_parent_function(node: &AST) -> &AST {
+    let parent = __get_parent_function(node);
+    assert(parent != null, "get_parent_function: Node is not inside a function");
+    return parent;
+}
+@trace func __get_parent_function(node: &AST) -> &AST {
+    while (!is_global_module(node)) {
+        let parent = get_parent_node(node);
+        if (is_function(parent)) return parent;
+        node = parent;
+    }
+    return null;
+}
+
+@trace func get_global_module(node: &AST) -> &AST {
+    while (!is_global_module(node)) node = get_parent_node(node);
+    return node;
+}
+
+@trace func get_function_for_run_directive(node: &AST) -> (bool, &AST) {
+    let fn = __get_parent_function(node);
+    if (fn != null) return (false, fn);
+    let sid = reserve_scratchpad(node);
+    return (true, get_scratchpad_by_id(sid));
+}
+
+@trace func is_global_module(node: &AST) -> bool {
+    return is_module(node) && node.parent == node;
+}
+@trace func is_function(node: &AST) -> bool {
+    if let ASTData::Function(_) = node.data {
         return true;
     }
     return false;
 }
-@trace func get_parent_function(node: &AST) -> &AST {
-    if let ASTData::Function { .. } = node.super_node.data {
-        return node.super_node;
+@trace func is_module(node: &AST) -> bool {
+    if let ASTData::Module(_) = node.data {
+        return true;
     }
-    unreachable("get_parent_function: Node is not inside a function");
+    return false;
+}
+@trace func is_in_function(node: &AST) -> bool {
+    return __get_parent_function(node) != null;
 }
 
 @trace func node_requires_unused_warning(node: &AST) -> bool {
@@ -391,10 +439,6 @@ let node_counter: usize = 0;
     }
     let ptr = ast_buffer_ptr as &AST;
     ast_buffer_ptr = ast_buffer_ptr + sizeof(AST);
-    if (parent != null) {
-        fassert(parent.super_node != null, "Parent at % doesn't belong to a super node", loc);
-        ptr.super_node = parent.super_node;
-    }
     ptr.parent = parent;
     ptr.origin = origin;
     ptr.loc = loc;

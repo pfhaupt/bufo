@@ -13,8 +13,7 @@ import "interp.bufo";
 import "parser.bufo";
 
 shared ASTCommon {
-    super_node: &AST; // Function, Struct or the like
-    parent: &AST;     // Expr can be parent of Expr
+    parent: &AST;
     origin: SubStr;
     loc: Loc;
     attributes: GAF_List; // List<ASTAttr>
@@ -160,6 +159,8 @@ union ASTExpr {
 
     Directive(Directive),
 
+    True,
+    False,
     Blank,
     Null,
     ComptimeValue(Value),

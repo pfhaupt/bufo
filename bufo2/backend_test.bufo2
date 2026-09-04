@@ -41,6 +41,13 @@
  *             - Given that everything is a &AST or &Type, we may just pass the pointer?
  *           - Somehow tell a function that it's an internal compiler function
  *             and should call a bufo1 function
+ *           - Somehow be able to call a bufo2 function from bufo1,
+ *             for example LLVM_Backend.initialize()
+ * - Better comptime system
+ *   - Allow users to mark functions as `@pure` or something, which would be verified by the
+ *     compiler, and then allows implicit comptime usage in stuff like `#if foo()`
+ *     - This is particularly relevant because all binary operations desugar to function calls so
+ *       we currently couldnt do legit stuff like `#if OS == .WIN`
  */
 
 struct Foo {
@@ -53,9 +60,19 @@ union Option($T) {
     Some($T);
 }
 
-type Stuff {
-    n: i64;
+func is_zero(n: $T) -> bool {
+    if (n == 0) return true;
+    return false;
+}
+
+type Stuff($n) {
+    n: #if #run is_zero(0 as $n) $n else i64;
     Value(i32);
+}
+
+func stuff() {
+    let s: Stuff(i32) = blank;
+    let n: i32 = s.n;
 }
 
 func sizeof(t: $T) -> u64 @naked {
@@ -75,6 +92,21 @@ func foo(t: $T) -> i32 {
     #if cond return 1 else return 0;
 }
 
+type Structure {
+    n: i64;
+    m: i64;
+}
+
+func needle(a: i32, b: Structure, c: i64, d: *i64) -> i64 {
+    #assert a == 42, "needle: a is not 42";
+    #assert c == 345, "needle: c is not 345";
+    #assert *d == 912, "needle: d is not 912";
+    if (b.n != 0) return 2;
+    if (b.m != 0) return 3;
+    *d = 123;
+    return c;
+}
+
 func main() {
     #run {
         let n: i32 = 1;
@@ -86,7 +118,7 @@ func main() {
     };
     #run {
         let some0: Option(i32) = blank;
-        let stuff: Stuff = blank;
+        let stuff: Stuff(i64) = blank;
         let size = sizeof(stuff);
         #assert size == 16;
 

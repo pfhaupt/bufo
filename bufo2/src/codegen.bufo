@@ -43,6 +43,13 @@ struct Code {
     if (val.ptr == null) return (Value::Invalid, false);
     return (val as Value, true);
 }
+@trace func reset(code: &Code) {
+    reset(&code.runtime);
+    reset(&code.komptime);
+    reset(&code.comptime_variables);
+    code.comptime_level = 0;
+    reset_interpreter(&code.comptime_interp, code.comptime_interp.fn);
+}
 
 @trace func create_code(owner: &AST) -> Code {
     return Code {
@@ -708,6 +715,12 @@ union Op {
         &ASTExpr::As(sub_expr, type) => {
             return codegen_type_cast(fn, expr, sub_expr, type);
         }
+        &ASTExpr::True => {
+            return build_load_bool(&fn.code, expr.loc, true);
+        }
+        &ASTExpr::False => {
+            return build_load_bool(&fn.code, expr.loc, false);
+        }
         _ => {
             message(todo(expr.loc, "codegen_expr: Can't codegen expression %", actual_expr));
         }
@@ -805,6 +818,12 @@ union Op {
     match (unary) {
         ASTUnary::AddressOf(sub) => {
             return codegen_expr(fn, sub, true);
+        }
+        ASTUnary::ValueOf(sub) => {
+            let reg = codegen_expr(fn, sub, false);
+            assert(is_pointer(reg.type), "codegen_unary: SubExpr is not a pointer");
+            if (wants_ptr) return reg;
+            return build_load(&fn.code, expr.loc, reg);
         }
         _ => {
             message(todo(expr.loc, "codegen_unary: Can't codegen expression %", unary));
