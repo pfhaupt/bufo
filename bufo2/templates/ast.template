@@ -201,6 +201,7 @@ union ASTUnary {
     LogicalNot(&AST),
     AddressOf(&AST),
     ValueOf(&AST),
+    MetaTypeOf(&AST),
     __count,
 }
 

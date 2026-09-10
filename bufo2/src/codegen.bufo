@@ -721,6 +721,9 @@ union Op {
         &ASTExpr::False => {
             return build_load_bool(&fn.code, expr.loc, false);
         }
+        &ASTExpr::ResolvedGeneric(typ) => {
+            return build_load_number(&fn.code, expr.loc, typ as u64);
+        }
         _ => {
             message(todo(expr.loc, "codegen_expr: Can't codegen expression %", actual_expr));
         }
@@ -824,6 +827,10 @@ union Op {
             assert(is_pointer(reg.type), "codegen_unary: SubExpr is not a pointer");
             if (wants_ptr) return reg;
             return build_load(&fn.code, expr.loc, reg);
+        }
+        ASTUnary::MetaTypeOf(_) => {
+            assert(expr.type.meta_level != 0, "codegen_unary: MetaTypeOf is not a meta type");
+            return build_load_number(&fn.code, expr.loc, expr.type as u64);
         }
         _ => {
             message(todo(expr.loc, "codegen_unary: Can't codegen expression %", unary));

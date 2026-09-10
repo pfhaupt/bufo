@@ -663,6 +663,10 @@ func __collect_generic_type_mapping(ast: &AST, type: &Type, mapping: &GAF_HashMa
                     };
                     return __collect_generic_type_mapping(sub, ptr, mapping);
                 }
+                (ASTExpr::Unary(ASTUnary::MetaTypeOf(sub)), ty) => {
+                    if (ty.meta_level == 0) return false;
+                    return __collect_generic_type_mapping(sub, unwrap_meta_type(ty, 1), mapping);
+                }
                 (ASTExpr::Call(id, args), ty) => {
                     let BaseType::TypeDecl(str) = ty.base else {
                         return false;

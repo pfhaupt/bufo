@@ -1501,6 +1501,16 @@ struct TCState {
                 type = sub_type;
             }
         }
+        &ASTUnary::MetaTypeOf(sub) => {
+            // ^ <sub>
+            let _type_state = check_expr(current_module, current_function, scopes, sub);
+            if (_type_state.please_infer) return _type_state;
+            let _type = assert_is_valid(_type_state, "check_unary_expr: MetaTypeOf expr type is invalid");
+            if (_type.meta_level == 0) {
+                message(warn(expr.loc, "^<instance> is currently equivalent to type_of(). Think about this more."));
+            }
+            type = wrap_meta_type(_type, 1);
+        }
         _ => {
             message(todo(expr.loc, "check_unary_expr: Can't check expression %", unary));
         }

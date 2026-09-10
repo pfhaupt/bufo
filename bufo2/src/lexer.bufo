@@ -61,6 +61,7 @@ union TokenData {
     Hash,
     At,
     SlashSingle,
+    CaretSingle,
 
     LessThan,
     LessEqual,
@@ -78,7 +79,7 @@ union TokenData {
 }
 
 func to_substr(t: TokenData) -> SubStr {
-    (comptime assert(tag(&TokenData::EndOfFile) == 52, "TokenData::to_substr: Added more tokens"));
+    (comptime assert(tag(&TokenData::EndOfFile) == 53, "TokenData::to_substr: Added more tokens"));
     if let TokenData::Ident { name } = t {
         return name;
     }
@@ -92,7 +93,7 @@ func to_substr(t: TokenData) -> SubStr {
 }
 
 func to_cstr(t: TokenData) -> &char {
-    (comptime assert(tag(&TokenData::EndOfFile) == 52, "TokenData::to_cstr: Added more tokens"));
+    (comptime assert(tag(&TokenData::EndOfFile) == 53, "TokenData::to_cstr: Added more tokens"));
     return [
         "<empty token>",
         "builtin type",
@@ -139,6 +140,7 @@ func to_cstr(t: TokenData) -> &char {
         "`#`",
         "`@`",
         "`/`",
+        "`^`",
 
         "`<`",
         "`<=`",
@@ -165,7 +167,7 @@ func get_name(t: &Token) -> SubStr {
 }
 
 func is_keyword(s: SubStr, kw: &TokenData) -> bool {
-    (comptime assert(tag(&TokenData::EndOfFile) == 52, "Lexer::is_keyword: Added more tokens"));
+    (comptime assert(tag(&TokenData::EndOfFile) == 53, "Lexer::is_keyword: Added more tokens"));
     if (s.len < 2 || s.len > 8) return false;
 
     let first = s.start[0];
@@ -249,7 +251,7 @@ func is_keyword(s: SubStr, kw: &TokenData) -> bool {
 }
 
 func is_builtin_type(s: SubStr) -> bool {
-    (comptime assert(tag(&TokenData::EndOfFile) == 52, "Lexer::is_builtin_type: Added more tokens"));
+    (comptime assert(tag(&TokenData::EndOfFile) == 53, "Lexer::is_builtin_type: Added more tokens"));
     comptime types = [
         newSubStrOfStrLit("i8"),
         newSubStrOfStrLit("i16"),
@@ -314,7 +316,7 @@ func __next2(l: &Lexer) -> (Token, bool) {
 
     let offset = l.offset_in_file;
     let i: usize = 1;
-    (comptime assert(tag(&TokenData::EndOfFile) == 52, "Lexer::__next2: Added more tokens"));
+    (comptime assert(tag(&TokenData::EndOfFile) == 53, "Lexer::__next2: Added more tokens"));
     if (isAlphabetic(first) || first == '_') {
         while (isAlphanumeric(l.source.start[i]) || l.source.start[i] == '_') i = i + 1;
         let kw: TokenData = TokenData::Empty;
@@ -376,6 +378,8 @@ func __next2(l: &Lexer) -> (Token, bool) {
         tkn.data = TokenData::Dollar;
     } else if (first == '*') {
         tkn.data = TokenData::AsteriskSingle;
+    } else if (first == '^') {
+        tkn.data = TokenData::CaretSingle;
     } else if (first == '&') {
         if (l.source.len > 1 && l.source.start[1] == '&') {
             tkn.data = TokenData::AmpersandDouble;

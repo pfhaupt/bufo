@@ -36,11 +36,11 @@
  *         - Implement better metaprogramming
  *           - Module support, again
  *             - Declaring normal modules should be easy enough
- *           - `#if` and variations of it (WE ARE HERE)
+ *           - `#if` and variations of it
  *           - Somehow allow users to get handles of $T and such at compile time
  *             - Given that everything is a &AST or &Type, we may just pass the pointer?
  *           - Somehow tell a function that it's an internal compiler function
- *             and should call a bufo1 function
+ *             and should call a bufo1 function (WE ARE HERE)
  *           - Somehow be able to call a bufo2 function from bufo1,
  *             for example LLVM_Backend.initialize()
  * - Better comptime system
@@ -75,20 +75,15 @@ func stuff() {
     let n: i32 = s.n;
 }
 
-func sizeof(t: $T) -> u64 @naked {
-    comptime ty = $T;
-    #bir {
-        entry:
-        param ty r9999, 0;
-        alloca ty r0;
-        alloca ty r1;
-        sub u64 r2, r1, r0;
-        ret u64 r2;
-    };
+func sizeof(t: ^$T) -> u64 {
+    let a: t = blank;
+    let b: t = blank;
+    let d = &b - &a;
+    return d as u64;
 }
 
 func foo(t: $T) -> i32 {
-    comptime cond = sizeof({comptime _t: $T = blank; _t}) == 4;
+    comptime cond = sizeof($T) == 4;
     #if cond return 1 else return 0;
 }
 
@@ -119,7 +114,7 @@ func main() {
     #run {
         let some0: Option(i32) = blank;
         let stuff: Stuff(i64) = blank;
-        let size = sizeof(stuff);
+        let size = sizeof(^stuff);
         #assert size == 16;
 
         let n: i32 = 69;
