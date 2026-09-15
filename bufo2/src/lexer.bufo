@@ -524,6 +524,39 @@ func skip_until(l: &Lexer, token: TokenData) -> Token {
     return expect(l, token);
 }
 
+func skip_until_matching_considering_brackets(lexer: &Lexer, end: TokenData) -> Token {
+    let curly_count: usize = 0;
+    let paren_count: usize = 0;
+    while (true) {
+        let tkn = next(lexer);
+        match (tkn.data) {
+            TokenData::EndOfFile => {
+                message(error(tkn.loc, "Could not skip until the next matching %: Reached end of file.", to_cstr(end)));
+            }
+            TokenData::CurlyOpen => { curly_count = curly_count + 1; }
+            TokenData::ParenOpen => { paren_count = paren_count + 1; }
+            TokenData::CurlyClose => {
+                if (curly_count == 0) {
+                    message(error(tkn.loc, "Unmatched closing curly bracket."));
+                }
+                curly_count = curly_count - 1;
+            }
+            TokenData::ParenClose => {
+                if (paren_count == 0) {
+                    message(error(tkn.loc, "Unmatched closing parenthesis."));
+                }
+                paren_count = paren_count - 1;
+            }
+            _ => {
+                if (tag(&tkn.data) == tag(&end)) {
+                    if (curly_count == 0 && paren_count == 0) return tkn;
+                }
+            }
+        }
+    }
+    unreachable("skip_until_matching_considering_brackets");
+}
+
 func skip_until_matching(lexer: &Lexer, start: TokenData, end: TokenData) -> Token {
     let tok = expect(lexer, start);
     let count: usize = 1;

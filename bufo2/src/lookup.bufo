@@ -13,7 +13,8 @@ import "type.bufo";
 
 struct Variable {
     origin: &AST;
-    type: &Type;
+    type: &Type; // if null, inference must use <expr> to find a type
+    expr: &AST;
 }
 
 struct Scope_Info {
@@ -40,6 +41,7 @@ union Lookup {
     TypeDecl(TypeDeclLookup),
     Function(FunctionLookup),
     Module(SymbolLookup),
+    Variable(Variable),
 }
 
 func new_type_decl_lookup(node: &AST) -> Lookup {
@@ -61,6 +63,12 @@ func new_module_lookup(node: &AST) -> Lookup {
     return Lookup::Module(lookup);
 }
 
+func new_variable_lookup(node: &AST) -> Lookup {
+    return Lookup::Variable(Variable {
+        origin: node,
+    });
+}
+
 struct TypeDeclLookup {
     node: &AST;
 }
@@ -72,8 +80,9 @@ struct FunctionLookup {
 struct SymbolLookup {
     original: &AST; // &ASTModule
     type_decls: GAF_HashMap; // HashMap<SubStr, Lookup>
-    functions: GAF_HashMap; // HashMap<SubStr, Lookup>
-    modules: GAF_HashMap; // HashMap<SubStr, Lookup>
+    functions: GAF_HashMap;  // HashMap<SubStr, Lookup>
+    modules: GAF_HashMap;    // HashMap<SubStr, Lookup>
+    variables: GAF_HashMap;  // HashMap<SubStr, Lookup>
 }
 
 func new_symbol_lookup(original: &AST) -> SymbolLookup {
@@ -82,6 +91,7 @@ func new_symbol_lookup(original: &AST) -> SymbolLookup {
         type_decls: new_hashmap_with_substr_key(type_info(Lookup)),
         functions: new_hashmap_with_substr_key(type_info(Lookup)),
         modules: new_hashmap_with_substr_key(type_info(Lookup)),
+        variables: new_hashmap_with_substr_key(type_info(Lookup)),
     };
 }
 
@@ -109,11 +119,20 @@ func get_module_by_name(lookup: &SymbolLookup, name: SubStr) -> &SymbolLookup {
     };
     return &ml;
 }
+func get_variable_by_name(lookup: &SymbolLookup, name: SubStr) -> &Variable {
+    let node = get(&lookup.variables, name).ptr as &Lookup;
+    if (node == null) return null;
+    let &Lookup::Variable(vl) = node else {
+        return null;
+    };
+    return &vl;
+}
 
-func get_identifier_by_name(mod: &ASTModule, name: SubStr) -> (&TypeDeclLookup, &FunctionLookup, &SymbolLookup) {
+func get_identifier_by_name(mod: &ASTModule, name: SubStr) -> (&TypeDeclLookup, &FunctionLookup, &SymbolLookup, &Variable) {
     return (
         get_type_decl_by_name(&mod.lookup, name),
         get_functions_by_name(&mod.lookup, name),
         get_module_by_name(&mod.lookup, name),
+        get_variable_by_name(&mod.lookup, name),
     );
 }

@@ -40,9 +40,19 @@
  *           - Somehow allow users to get handles of $T and such at compile time
  *             - Given that everything is a &AST or &Type, we may just pass the pointer?
  *           - Somehow tell a function that it's an internal compiler function
- *             and should call a bufo1 function (WE ARE HERE)
+ *             and should call a bufo1 function
+ *             - This can be implemented using the dlopen+dlsym trick later once we can call extern
+ *               functions at compile time
  *           - Somehow be able to call a bufo2 function from bufo1,
  *             for example LLVM_Backend.initialize()
+ *   - Call extern functions at compile time
+ *     - bufo1 module config system sucks, bufo2 should allow configs on a function level without
+ *       needing to use modules
+ *       - config in bufo2 should use bufo2 data structures, however we cant initialize types yet
+ *         except if they have active variants, in which case we *can* initialize them but cant
+ *         *use* them because we dont have pattern matching yet :^)
+ *         - Be able to initialize and use instances of types (WE ARE HERE)
+ *         - Proper Pattern Matching
  * - Better comptime system
  *   - Allow users to mark functions as `@pure` or something, which would be verified by the
  *     compiler, and then allows implicit comptime usage in stuff like `#if foo()`
@@ -71,7 +81,7 @@ type Stuff($n) {
 }
 
 func stuff() {
-    let s: Stuff(i32) = blank;
+    let s: Stuff(i32) = .{};
     let n: i32 = s.n;
 }
 
@@ -122,7 +132,7 @@ func main() {
         let some2: Option(i32) = .Some(n);
         let none1: Option(i32) = .None;
         let none2: Option(i32) = Option(i32).None;
-        some2 = .None;
+        some2 = Option.None;
         none2 = .Some(n);
 
         // #assert some1 == .Some;
@@ -132,16 +142,21 @@ func main() {
         // #debug;
 
         // Bonus:
-        // let stuff1: Stuff = blank; // warning: Initializing type with variants with blank
-        // stuff1.n = 12;
-        // stuff1 = .Value(n); // works but sets n to 0
-        // #assert stuff1.n == 0, "stuff1.n is not 0";
-        // stuff1 = .{ n: 12, Value(n) }; // set fields accordingly, infer struct type
-        // stuff1 = Stuff { n: 12, Value(n) }; // explicit initialization
-        // #assert stuff1.n == 12, "stuff1.n is not 12 part 1";
+        let stuff1: Stuff(^n) = blank; // warning: Initializing type with variants with blank
+        #assert stuff1.n == 0, "stuff1.n is not blank";
+        stuff1.n = 9;
+        #assert stuff1.n == 9, "stuff1.n is not 9";
+        stuff1 = .Value(n); // works but sets n to 0
+        #assert stuff1.n == 0, "stuff1.n is not 0";
+        stuff1 = .{ n: 13, Value(n) }; // set fields accordingly, infer struct type
+        #assert stuff1.n == 13, "stuff1.n is not 13";
+        stuff1 = Stuff { n: 14, Value(n) }; // explicit initialization
+        #assert stuff1.n == 14, "stuff1.n is not 14";
 
-        // let stuff2 = Stuff { n: 13, Value(n) };
-        // #assert stuff1.n == 12, "stuff1.n is not 12 part 2";
+        let stuff2 = Stuff(i32) { n: 15, Value(n) };
+        #assert stuff1.n == 14, "stuff1.n is not 15 part 1";
+        stuff1 = stuff2;
+        #assert stuff1.n == 15, "stuff1.n is not 15 part 2";
         // stuff1 = .{ Value(n), ..stuff2 }; // copy stuff2 to stuff1 and set variant
         // #assert stuff1.n == 13, "stuff1.n is not 13";
     }

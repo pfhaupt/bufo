@@ -35,6 +35,7 @@ union Message {
     FinalizeError,
     Fatal(Loc, String),
     Todo(Loc, String),
+    Unsure(Loc, String),
     Error(Loc, String),
     Warning(Loc, String),
     Note(Loc, String),
@@ -54,6 +55,11 @@ func fatal(loc: Loc, fmt: &char, args: ...Data) -> Message {
 func todo(loc: Loc, fmt: &char, args: ...Data) -> Message {
     comptime TODO_STR: &char = "\x1b[95mTODO\x1b[0m";
     return Message::Todo(loc, format1("%: %", TODO_STR, format1(fmt, args)));
+}
+
+func unsure(loc: Loc, fmt: &char, args: ...Data) -> Message {
+    comptime UNSURE_STR: &char = "\x1b[96minternal compiler warning\x1b[0m";
+    return Message::Unsure(loc, format1("%: %", UNSURE_STR, format1(fmt, args)));
 }
 
 func error(loc: Loc, fmt: &char, args: ...Data) -> Message {
@@ -124,6 +130,7 @@ func message(errors: ...Message) {
             }
             Message::Fatal  (_loc, _msg) => { loc = _loc; msg = _msg; fatal_error = true; }
             Message::Todo   (_loc, _msg) => { loc = _loc; msg = _msg; fatal_error = true; }
+            Message::Unsure (_loc, _msg) => { loc = _loc; msg = _msg; }
             Message::Error  (_loc, _msg) => { loc = _loc; msg = _msg; had_error = true; }
             Message::Warning(_loc, _msg) => { loc = _loc; msg = _msg; }
             Message::Note   (_loc, _msg) => { loc = _loc; msg = _msg; }

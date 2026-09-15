@@ -74,9 +74,9 @@ import "scratchpad.bufo";
         let now = get_high_resolution_timestamp();
         let dt = get_duration_between_high_resolution_timestamps_in_microseconds(last, now);
         if (dt > 100 * 1000) {
-            message(
-                info(blank, "There are % active coroutine(s).", get_corot_count()),
-                info(blank, "There are % active scratchpad(s).", get_scratchpad_count(false)));
+            message(info(blank, "There are % active coroutine(s).", get_corot_count()));
+            let sc_count = get_scratchpad_count(false);
+            if (sc_count > 0) message(info(blank, "There are % active scratchpad(s).", sc_count));
             last = now;
         }
         switch();

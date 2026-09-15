@@ -18,6 +18,7 @@ import "type.bufo";
 import "lookup.bufo";
 import "codegen.bufo";
 import "interp.bufo";
+import "scratchpad.bufo";
 
 import "../generated/ast.template.bufo";
 
@@ -49,13 +50,16 @@ func pop_parse_fn(context: &Parse_Context) -> Parse_Fn {
     return pfn;
 }
 
-func new_parse_context(parent: &AST, lexer: Lexer) -> Parse_Context {
+func new_parse_context(parent: &AST, lexer: Lexer, mapping: GAF_HashMap) -> Parse_Context {
     return Parse_Context {
         parent: parent,
         lexer: lexer,
         parse_fns: new_GAF_List(type_info(Parse_Fn)),
-        generic_type_mapping: new_generic_type_mapping(),
+        generic_type_mapping: mapping,
     };
+}
+func new_parse_context(parent: &AST, lexer: Lexer) -> Parse_Context {
+    return new_parse_context(parent, lexer, new_generic_type_mapping());
 }
 
 func copy(context: &Parse_Context) -> Parse_Context {
@@ -126,9 +130,14 @@ let loaded_files: GAF_HashMap = blank;
 
 @trace func __parse_module_body(ctx: &Parse_Context) {
     let mod = get_module_info(ctx.parent);
+    if (mod.state.did_parse_everything) {
+        message(unsure(ctx.parent.loc, "mod.state.did_parse_everything was true, is that fine or a bug?"));
+        mod.state.did_parse_everything = false;
+    }
     register_monitor(&mod.state.did_parse_everything);
 
     let module_source = ctx.lexer.source;
+
     let __parse_type_decl = func (ctx: &Parse_Context, tkn: Token) {
         let slice = ctx.lexer.source;
         let offset_in_file = ctx.lexer.offset_in_file;
@@ -148,6 +157,79 @@ let loaded_files: GAF_HashMap = blank;
         let context = new_parse_context(type_decl_node, _lexer);
         let _ = spawn(parse_type_decl, wrap(context));
     };
+
+    let __parse_var_decl = func (ctx: &Parse_Context, tkn: Token) {
+        let slice = ctx.lexer.source;
+        let offset_in_file = ctx.lexer.offset_in_file;
+        let start = expect(&ctx.lexer, TokenData::KeywordLet, TokenData::KeywordComptime);
+        let TokenData::Ident { _name } = expect(&ctx.lexer, TokenData::Ident).data else {
+            unreachable("we just expected an identifier");
+        };
+        let end = skip_until_matching_considering_brackets(&ctx.lexer, TokenData::SemiColon);
+        let source = substring(&slice, start.loc.offset - offset_in_file, end.loc.offset - offset_in_file + 1);
+        let _lexer = Lexer {
+            offset_in_file: tkn.loc.offset,
+            file_name: tkn.loc.file,
+            source: source,
+        };
+        let context = new_parse_context(ctx.parent, _lexer);
+
+        let (is_generic, var_decl) = parse_stmt(&context);
+        if (is_generic) message(error(var_decl.loc, "Global variables cannot contain generic subexpressions."));
+
+        expect(&context.lexer, TokenData::SemiColon);
+
+        if (!is_constant_expression(var_decl)) {
+            message(error(var_decl.loc, "Global variables can only contain constant expressions as initializers."));
+        }
+
+        let current_module = get_parent_module(ctx.parent);
+        if (is_module(ctx.parent)) current_module = ctx.parent;
+        let &ASTData::Module(current_module_data) = &current_module.data else {
+            unreachable("we just checked it's a module");
+        };
+        add(&current_module_data.lookup.variables, _name, new_variable_lookup(var_decl));
+
+        let _fn = func (arg: &(&AST, &AST, SubStr)) {
+            let &(var_decl, current_module, _name) = arg;
+            let sid = reserve_scratchpad(var_decl);
+            let current_function = get_scratchpad_by_id(sid);
+
+            register_monitor(var_decl.type);
+
+            let current_module_data = get_module_info(current_module);
+
+            let scopes = new_GAF_List(type_info(Scope_Info));
+            push(&scopes, new_stack());
+            let var_state = check_expr(current_module, current_function, &scopes, var_decl);
+            if (!var_state.is_complete) {
+                message(error(var_decl.loc, "Could not infer the type of this variable declaration."));
+            }
+            let var_type = assert_is_valid(var_state, "we just checked it's complete");
+            assert(scopes.length == 1, "__parse_var_decl: Scope List has unexpected length");
+
+            let (p, e, t) = extract_variable_declaration_components(var_decl);
+            assert(p.type != null, "__parse_var_decl: Pattern Type is null");
+
+            let var = get_variable_by_name(&current_module_data.lookup, _name);
+            assert(var != null, "Variable doesnt exist in the lookup");
+            var_decl.type = var.type = p.type;
+
+            let global_module = get_global_module(current_module);
+            let global_module_info = get_module_info(global_module);
+
+            codegen_expr(&global_module_info.code, var_decl, false);
+            let var_reg = get(&get_context(&global_module_info.code).variable_map, _name);
+            assert(var_reg.ptr != null, "__parse_var_decl: Could not find variable in global scope");
+            add(&global_module_info.node_to_global_map, var_decl, (var_reg as Var).alloca_reg);
+
+            reset_interpreter(&global_module_info.interp, current_function);
+
+            release_scratchpad(sid);
+        };
+        let _ = spawn(_fn, wrap((var_decl, current_module, _name)));
+    };
+
     while (!lexer_at(&ctx.lexer, TokenData::CurlyClose, TokenData::EndOfFile)) {
         let leftover_source = ctx.lexer.source;
         let offset_in_file = ctx.lexer.offset_in_file;
@@ -181,6 +263,12 @@ let loaded_files: GAF_HashMap = blank;
             TokenData::KeywordUnion => {
                 __parse_type_decl(ctx, tkn);
             }
+            TokenData::KeywordLet => {
+                __parse_var_decl(ctx, tkn);
+            }
+            TokenData::KeywordComptime => {
+                __parse_var_decl(ctx, tkn);
+            }
             TokenData::KeywordModule => {
                 expect(&ctx.lexer, TokenData::KeywordModule);
                 let _name = expect(&ctx.lexer, TokenData::Ident);
@@ -192,15 +280,22 @@ let loaded_files: GAF_HashMap = blank;
                     file_name: tkn.loc.file,
                     source: source,
                 };
-                let context = new_parse_context(mod_node, _lexer);
+                let context = new_parse_context(mod_node, _lexer, ctx.generic_type_mapping);
                 let _ = spawn(parse_module, wrap(context));
             }
             TokenData::KeywordFunc => {
                 expect(&ctx.lexer, TokenData::KeywordFunc);
                 let _name = expect(&ctx.lexer, TokenData::Ident);
                 skip_until_matching(&ctx.lexer, TokenData::ParenOpen, TokenData::ParenClose);
-                while (!lexer_at(&ctx.lexer, TokenData::CurlyOpen)) next(&ctx.lexer);
-                let end = skip_until_matching(&ctx.lexer, TokenData::CurlyOpen, TokenData::CurlyClose);
+                while (!lexer_at(&ctx.lexer, TokenData::CurlyOpen, TokenData::SemiColon)) next(&ctx.lexer);
+                let end: Token = blank;
+                if (lexer_at(&ctx.lexer, TokenData::CurlyOpen)) {
+                    end = skip_until_matching(&ctx.lexer, TokenData::CurlyOpen, TokenData::CurlyClose);
+                } else if (lexer_at(&ctx.lexer, TokenData::SemiColon)) {
+                    end = expect(&ctx.lexer, TokenData::SemiColon);
+                } else {
+                    message(error(_name.loc, "Expected to find either a function body or a semicolon, but found % instead.", to_cstr(next(&ctx.lexer).data)));
+                }
                 // func foo ( ) { } .......
                 // ^offset_in_file
                 //                ^end.offset_in_file
@@ -212,7 +307,7 @@ let loaded_files: GAF_HashMap = blank;
                     file_name: tkn.loc.file,
                     source: source,
                 };
-                let context = new_parse_context(func_node, _lexer);
+                let context = new_parse_context(func_node, _lexer, ctx.generic_type_mapping);
                 let _ = spawn(parse_function_signature, wrap(context));
             }
             t => {
@@ -255,8 +350,7 @@ let loaded_files: GAF_HashMap = blank;
     register_monitor(&type_decl_state.state.did_parse_signature);
     unregister_monitor(&type_decl_state.state.did_parse_signature);
 
-    let context = new_parse_context(ast, _lexer);
-    context.generic_type_mapping = mapping;
+    let context = new_parse_context(ast, _lexer, mapping);
     let cid = spawn(parse_type_decl_body, wrap(context));
     handle_corot_result(wait(cid),
         error(ast.loc, "Could not monomorphize type declaration due to a cyclic dependency on %.", corot_str(cid)),
@@ -297,6 +391,7 @@ let loaded_files: GAF_HashMap = blank;
     let parent_module = type_decl_node.parent;
     assert(parent_module != null, "parse_type_decl_body: Parent is null");
 
+    register_monitor(&type_decl_node.type);
     register_monitor(&type_decl_state.size_in_bytes);
     register_monitor(&type_decl_state.align_in_bytes);
     register_monitor(&type_decl_state.tag_offset);
@@ -349,6 +444,8 @@ let loaded_files: GAF_HashMap = blank;
     }
 
     check_type_decl(parent_module, type_decl_node);
+
+    message(dbg(type_decl_node.loc, "Parsed, type checked and generated type %", type_decl_state.name));
 }
 
 @trace func parse_generic_parameters(context: &Parse_Context) -> GAF_List {
@@ -384,6 +481,15 @@ let loaded_files: GAF_HashMap = blank;
         (comptime newSubStr("naked"), func (context: &Parse_Context) -> ASTAttrData {
             return ASTAttrData::Naked;
         }),
+        (comptime newSubStr("library"), func (context: &Parse_Context) -> ASTAttrData {
+            expect(&context.lexer, TokenData::ParenOpen);
+            let (is_gen, expr) = parse_expr(context);
+            if (is_gen) {
+                message(error(expr.loc, "Unexpected generic expression in @library argument."));
+            }
+            expect(&context.lexer, TokenData::ParenClose);
+            return ASTAttrData::Library(expr);
+        }),
     ];
     for (let i: usize = 0; i < attrs.length; i = i + 1) {
         if (equals(&attribute, &attrs[i].0)) {
@@ -401,7 +507,7 @@ let loaded_files: GAF_HashMap = blank;
 @trace func parse_function_attributes(context: &Parse_Context) {
     let func_node = context.parent;
     let attributes = new_GAF_List(type_info(ASTAttr));
-    while (!lexer_at(&context.lexer, TokenData::CurlyOpen)) {
+    while (lexer_at(&context.lexer, TokenData::At)) {
         let attr = parse_attribute(context);
         if (!is_function_attribute(attr)) {
             message(error(attr.loc, "Attribute `%` cannot be used on functions.", attr.name));
@@ -417,8 +523,7 @@ let loaded_files: GAF_HashMap = blank;
         file_name: ast.loc.file,
         source: ast.origin,
     };
-    let context = new_parse_context(ast, _lexer);
-    context.generic_type_mapping = mapping;
+    let context = new_parse_context(ast, _lexer, mapping);
     let func_state = get_func_info(context.parent);
 
     let cid = spawn(parse_function_signature, wrap(context));
@@ -433,11 +538,13 @@ let loaded_files: GAF_HashMap = blank;
     let context = *_context;
     let lexer = &context.lexer;
     let func_node = context.parent;
-    expect(lexer, TokenData::KeywordFunc);
-    let _name = expect(lexer, TokenData::Ident);
     let func_state = get_func_info(func_node);
 
     register_monitor(&func_state.state.did_parse_signature);
+    register_monitor(&func_state.state.is_extern);
+
+    expect(lexer, TokenData::KeywordFunc);
+    let _name = expect(lexer, TokenData::Ident);
 
     expect(lexer, TokenData::ParenOpen);
     while (!lexer_at(lexer, TokenData::ParenClose)) {
@@ -460,6 +567,13 @@ let loaded_files: GAF_HashMap = blank;
     }
 
     parse_function_attributes(&context);
+
+    func_state.state.is_extern = lexer_at(lexer, TokenData::SemiColon);
+    unregister_monitor(&func_state.state.is_extern);
+
+    if (func_state.state.is_extern && func_state.state.is_generic) {
+        message(error(func_node.loc, "External functions cannot be generic."));
+    }
 
     func_state.state.did_parse_signature = true;
     unregister_monitor(&func_state.state.did_parse_signature);
@@ -507,25 +621,37 @@ let loaded_files: GAF_HashMap = blank;
     unregister_monitor(&func_state.state.did_check_signature);
     finalize_function_type(func_node, func_state);
 
-    codegen_function_entry(func_node);
+    if (func_state.state.is_extern) {
+        expect(&context.lexer, TokenData::SemiColon);
 
-    expect(&context.lexer, TokenData::CurlyOpen);
-    let (is_generic, block) = parse_block(context);
-    assert(!is_generic, "parse_function_body: Unexpected generics in function");
-    expect(&context.lexer, TokenData::EndOfFile);
-    func_state.block = block;
-    func_state.state.did_parse_body = true;
-    unregister_monitor(&func_state.state.did_parse_body);
+        func_state.state.did_parse_body = true;
+        unregister_monitor(&func_state.state.did_parse_body);
+        func_state.state.did_check_body = true;
+        unregister_monitor(&func_state.state.did_check_body);
+        func_state.state.did_codegen_body = true;
+        unregister_monitor(&func_state.state.did_codegen_body);
+    } else {
+        codegen_function_entry(func_node);
 
-    check_block(parent_module, func_node, block);
-    func_state.state.did_check_body = true;
-    unregister_monitor(&func_state.state.did_check_body);
+        expect(&context.lexer, TokenData::CurlyOpen);
+        let (is_generic, block) = parse_block(context);
+        assert(!is_generic, "parse_function_body: Unexpected generics in function");
+        expect(&context.lexer, TokenData::EndOfFile);
+        func_state.block = block;
 
-    codegen_expr(func_state, block, false);
-    func_state.state.did_codegen_body = true;
-    unregister_monitor(&func_state.state.did_codegen_body);
+        func_state.state.did_parse_body = true;
+        unregister_monitor(&func_state.state.did_parse_body);
 
-    codegen_function_exit(func_node);
+        check_block(parent_module, func_node, block);
+        func_state.state.did_check_body = true;
+        unregister_monitor(&func_state.state.did_check_body);
+
+        codegen_expr(&func_state.code, block, false);
+        func_state.state.did_codegen_body = true;
+        unregister_monitor(&func_state.state.did_codegen_body);
+
+        codegen_function_exit(func_node);
+    }
 
     pop(&func_state.scopes);
     assert(func_state.scopes.length == 0, "parse_function_body: Stack not empty");
@@ -666,14 +792,14 @@ let loaded_files: GAF_HashMap = blank;
 }
 
 @trace func parse_type(context: &Parse_Context) -> (bool, &AST) {
-    let min_precedence = get_binary_precedence(TokenData::EqualSingle) + 1;
+    let min_precedence = get_binary_precedence(TokenData::EqualSingle, false) + 1;
     return __parse_type(context, min_precedence);
 }
 // NOTE(2026-07-08): Types can be any expression that doesn't include `=` or lower things like
 //                   `+=`. Actually we only care about Equals, because otherwise `let a: i32 = 1;`
 //                   would be ambiguous, but at the same time, does `let a: i32 += 1;` make sense?
 @trace func __parse_type(context: &Parse_Context, min_precedence: usize) -> (bool, &AST) {
-    let (gen_expr, type) = __parse_expr(context, min_precedence, true);
+    let (gen_expr, type) = __parse_expr(context, min_precedence, false);
     // REVIEW(2026-06-05): Limit what we accept here?
     return (gen_expr, type);
 }
@@ -694,10 +820,11 @@ union Assoc { Left, Right }
     }
     unreachable("matches_unary_expr");
 }
-@trace func matches_binary_expr(context: &Parse_Context) -> bool {
+@trace func matches_binary_expr(context: &Parse_Context, struct_init_allowed: bool) -> bool {
     (comptime assert(tag(&TokenData::EndOfFile) == 53, "Parser::matches_binary_expr: Added more tokens"));
     match (peek(&context.lexer).data) {
         TokenData::ParenOpen      => { return true; }
+        TokenData::CurlyOpen      => { return struct_init_allowed; }
         TokenData::KeywordAs      => { return true; }
         TokenData::MinusSingle    => { return true; }
         TokenData::PlusSingle     => { return true; }
@@ -718,10 +845,11 @@ union Assoc { Left, Right }
     }
     unreachable("matches_binary_expr");
 }
-@trace func get_binary_precedence(tkn: TokenData) -> usize {
+@trace func get_binary_precedence(tkn: TokenData, struct_init_allowed: bool) -> usize {
     (comptime assert(tag(&TokenData::EndOfFile) == 53, "Parser::get_binary_precedence: Added more tokens"));
     (comptime assert(tag(&ASTBinary::__count) == 15, "get_binary_precedence: Added more Operands"));
     match (tkn) {
+        TokenData::CurlyOpen      => { if (struct_init_allowed) return 20; else return 0; }
         TokenData::KeywordAs      => { return 20; }
         TokenData::Dot            => { return 17; }
         TokenData::ParenOpen      => { return 16; }
@@ -790,9 +918,9 @@ union Assoc { Left, Right }
     let is_generic = false;
     let (gen_prim, expr) = parse_primary_expr(context, struct_init_allowed);
     if (gen_prim) is_generic = true;
-    while (matches_binary_expr(context)) {
+    while (matches_binary_expr(context, struct_init_allowed)) {
         let tkn = peek(&context.lexer);
-        let new_prec = get_binary_precedence(tkn.data);
+        let new_prec = get_binary_precedence(tkn.data, struct_init_allowed);
         if (new_prec < precedence) break;
         if (new_prec == precedence && tag(&associativity) == comptime tag(&Assoc::Left)) break;
         let new_assoc = get_binary_associativity(tkn);
@@ -819,7 +947,7 @@ union Assoc { Left, Right }
                 if (hit != null) {
                     return (false, create_expr(context.parent, tkn.loc, name, ASTExpr::ResolvedGeneric(*hit)));
                 }
-                message(todo(blank, "parse_primary_expr: Is this reachable?"));
+                message(error(tkn.loc, "Use of unknown generic identifier $%.", name));
             }
             return (true, create_expr(context.parent, tkn.loc, name, ASTExpr::Generic));
         }
@@ -872,31 +1000,78 @@ union Assoc { Left, Right }
             return (gen, create_expr(context.parent, tkn.loc, blank, ASTExpr::Paren(_expr)));
         }
         TokenData::Dot => {
-            let name_tkn = expect(&context.lexer, TokenData::Ident);
-            let TokenData::Ident { name } = name_tkn.data else { unreachable(); };
-            let args = new_GAF_List(type_info(&AST));
-            let is_generic = false;
-            if (eat(&context.lexer, TokenData::ParenOpen)) {
-                while (!lexer_at(&context.lexer, TokenData::ParenClose)) {
-                    let (gen_arg, arg) = parse_expr(context);
-                    if (gen_arg) is_generic = true;
-                    push(&args, arg);
-                }
-                if (args.length == 0) {
-                    message(
-                        error(name_tkn.loc, "Unexpected parentheses in empty type variant initialization."),
-                        note(name_tkn.loc, "Tuple variants must always have at least one field, so an initialization like .%() is always incorrect.", name)
-                    );
-                }
-                expect(&context.lexer, TokenData::ParenClose);
-            }
-            return (is_generic, create_expr(context.parent, tkn.loc, name, ASTExpr::VariantInit(null, name, args)));
+            return parse_type_init(context, tkn, null);
         }
         t => {
             message(error(tkn.loc, "Expected primary expression, but got %.", to_cstr(t)));
         }
     }
     todo_with_msg("primary");
+}
+
+@trace func parse_type_init(context: &Parse_Context, tkn: Token, type_node: &AST) -> (bool, &AST) {
+    let is_generic = false;
+    let type_init: ASTTypeInit = new_type_init();
+    type_init.lhs = type_node;
+    let f = func (context: &Parse_Context, name: Token, init: &ASTTypeInit) -> bool {
+        let (is_gen, loc, name, args) = parse_variant_init(context, name);
+        init.has_variant = true;
+        init.variant_loc = loc;
+        init.variant_name = name;
+        init.variant_args = args;
+        return is_gen;
+    };
+    if (lexer_at(&context.lexer, TokenData::Ident)) {
+        let name = expect(&context.lexer, TokenData::Ident);
+        let is_gen = f(context, name, &type_init);
+        if (is_gen) is_generic = true;
+    } else if (eat(&context.lexer, TokenData::CurlyOpen)) {
+        while (!lexer_at(&context.lexer, TokenData::CurlyClose)) {
+            let ident = expect(&context.lexer, TokenData::Ident);
+            if (eat(&context.lexer, TokenData::ColonSingle)) {
+                let (is_gen, expr) = parse_expr(context);
+                if (is_gen) is_generic = true;
+                add(&type_init.fields, to_substr(ident.data), expr);
+            } else {
+                let old_init = type_init;
+                let is_gen = f(context, ident, &type_init);
+                if (is_gen) is_generic = true;
+                if (old_init.has_variant) {
+                    message(
+                        error(type_init.variant_loc, "Duplicate variant in type initialization."),
+                        note(old_init.variant_loc, "A variant initializer was already provided here."));
+                }
+            }
+            if (!lexer_at(&context.lexer, TokenData::CurlyClose)) {
+                expect(&context.lexer, TokenData::Comma);
+            }
+        }
+        let end = expect(&context.lexer, TokenData::CurlyClose);
+    } else {
+        message(error(tkn.loc, "Expected identifier or opening curly bracket, but got %.", to_cstr(next(&context.lexer).data)));
+    }
+    return (is_generic, create_expr(context.parent, tkn.loc, blank, ASTExpr::TypeInit(type_init)));
+}
+
+@trace func parse_variant_init(context: &Parse_Context, name_tkn: Token) -> (bool, Loc, SubStr, GAF_List) {
+    let name = to_substr(name_tkn.data);
+    let args = new_GAF_List(type_info(&AST));
+    let is_generic = false;
+    if (eat(&context.lexer, TokenData::ParenOpen)) {
+        while (!lexer_at(&context.lexer, TokenData::ParenClose)) {
+            let (gen_arg, arg) = parse_expr(context);
+            if (gen_arg) is_generic = true;
+            push(&args, arg);
+        }
+        if (args.length == 0) {
+            message(
+                error(name_tkn.loc, "Unexpected parentheses in empty type variant initialization."),
+                note(name_tkn.loc, "Tuple variants must always have at least one field, so an initialization like .%() is always incorrect.", name)
+            );
+        }
+        expect(&context.lexer, TokenData::ParenClose);
+    }
+    return (is_generic, name_tkn.loc, name, args);
 }
 
 @trace func parse_directive(context: &Parse_Context, struct_init_allowed: bool) -> (bool, &AST) {
@@ -1017,8 +1192,11 @@ union Assoc { Left, Right }
 }
 
 @trace func parse_secondary_expr(context: &Parse_Context, lhs: &AST, prec: usize, assoc: Assoc, struct_init_allowed: bool) -> (bool, &AST) {
-    let lexer = &context.lexer;
-    let op = next(lexer);
+    if let TokenData::CurlyOpen = peek(&context.lexer).data {
+        let op = peek(&context.lexer);
+        return parse_type_init(context, op, lhs);
+    }
+    let op = next(&context.lexer);
     if let TokenData::KeywordAs = op.data {
         let (generic, typ) = __parse_type(context, prec);
         return (generic, create_expr(context.parent, op.loc, blank, ASTExpr::As(lhs, typ)));

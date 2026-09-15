@@ -89,7 +89,10 @@ func main(argc: i32, argv: &&char) -> i32 {
 
     if (!generate_templates(&flags)) return 1;
     if (!build_bufo2(&flags)) return 1;
-    if (!build_test_program(&flags, "./backend_test.bufo2")) return 1;
+    // if (!build_test_program(&flags, "./macros.bufo2")) return 1;
+    if (!build_test_program(&flags, "./turing.bufo2")) return 1;
+    // if (!build_test_program(&flags, "./extern_test.bufo2")) return 1;
+    if (!*flags.debug) if (!build_test_program(&flags, "./backend_test.bufo2")) return 1;
     if (!*flags.debug) if (!build_test_program(&flags, "./test.bufo2")) return 1;
 
     fprint("[Build] Done!\n");

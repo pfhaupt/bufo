@@ -29,6 +29,7 @@ struct Scratch_Engine {
 let __scratchpad_context: Scratch_Engine = blank;
 
 @nodiscard @trace func reserve_scratchpad(node: &AST) -> Scratch_ID {
+    message(dbg(blank, "reserve_scratchpad"));
     for (let i: usize = 0; i < __scratchpad_context.scratchpads.length; i = i + 1) {
         let sid = Scratch_ID { _i: i };
         let ctx = __get_scratchpad_by_id(sid);
@@ -55,6 +56,7 @@ let __scratchpad_context: Scratch_Engine = blank;
 }
 
 @trace func release_scratchpad(id: Scratch_ID) {
+    message(dbg(blank, "release_scratchpad"));
     let ctx = __get_scratchpad_by_id(id);
     assert(ctx.is_active, "release_scratchpad: Scratchpad is not active");
     ctx.is_active = false;

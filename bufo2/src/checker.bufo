@@ -146,6 +146,7 @@ import "../generated/ast.template.bufo";
     unregister_monitor(&type_decl_info.state.did_check_variants);
 
     node.type = create_meta_type(1, BaseType::TypeDecl(node));
+    unregister_monitor(&node.type);
     calculate_size_and_alignment_of_type_decl(&type_decl_info);
 
     release_scratchpad(sid);
@@ -155,6 +156,7 @@ import "../generated/ast.template.bufo";
     let fn = get_parent_function(func_state.return_type);
     let ret_state = check_expr(current_module, fn, &func_state.scopes, func_state.return_type);
     let ret_type = assert_is_valid(ret_state, "check_function_return_type: Return type is invalid");
+    func_state.return_type.type = ret_type;
     let none = create_meta_type(1, PrimType::None);
     if (has_attribute(fn, ASTAttrData::Expand) && !is_equal_to(ret_type, none)) {
         message(error(fn.loc, "Functions marked @expand may not return values."));
@@ -188,10 +190,6 @@ import "../generated/ast.template.bufo";
 }
 
 @trace func check_block(current_module: &AST, current_function: &AST, block: &AST) -> TCState {
-    // TODO(2026-04-13): Once we have stuff like #value_of() we can condense BlockExpr and
-    //                   BlockVoid into one block in the parser, so we don't have to pass
-    //                   null as value here. BlockVoid would simply have an implicit
-    //                   `#value_of(none)`.
     let &ASTData::Expr(ASTExpr::Block(stmts, block_value)) = &block.data else {
         unreachable("check_block: Node is not a block");
     };
@@ -206,6 +204,13 @@ import "../generated/ast.template.bufo";
         let warn_unused = node_requires_unused_warning(expr);
 
         let expr_state = check_expr(current_module, current_function, &func_state.scopes, expr);
+        if (!expr_state.is_complete) {
+            let unknown = create_base_type(BaseType::Unknown);
+            expr_state = infer_type_onto_expr(current_module, current_function, &func_state.scopes, unknown, expr);
+            if (!expr_state.is_complete) {
+                message(error(expr.loc, "Could not evaluate type of statement."));
+            }
+        }
         let expr_type = assert_is_valid(expr_state, "check_block: Stmt is incomplete");
 
         let none = create_base_type(PrimType::None);
@@ -271,9 +276,7 @@ import "../generated/ast.template.bufo";
 @trace func infer_type_onto_expr(current_module: &AST, current_function: &AST, scopes: &GAF_List, type: &Type, _expr: &AST) -> TCState {
     let expr_state = check_expr(current_module, current_function, scopes, _expr);
     if let (true, expr_type) = get_type_if_complete(expr_state) {
-        if (!is_equal_to(type, expr_type)) {
-            message(error(_expr.loc, "Expected type %, but got %.", to_string(type), to_string(expr_type)));
-        }
+        ensure_equal_type(_expr.loc, type, expr_type);
         return mktcs(expr_type);
     }
     let &ASTData::Expr(expr) = &_expr.data else {
@@ -309,7 +312,14 @@ import "../generated/ast.template.bufo";
                 }
             }
         }
-        &ASTExpr::Blank => { },
+        &ASTExpr::Blank => {
+            if (is_type_decl(type)) {
+                let type_decl_info = get_type_decl_info(as_type_decl(type));
+                if (type_decl_info.variants.length > 0) {
+                    message(warn(_expr.loc, "Using `blank` to initialize a type with variants."));
+                }
+            }
+        },
         &ASTExpr::Call(_base, _args) => {
             res_state = infer_type_onto_call(current_module, current_function, scopes, type, _expr);
         }
@@ -319,8 +329,11 @@ import "../generated/ast.template.bufo";
         &ASTExpr::Dot(lhs, member) => {
             res_state = infer_type_onto_member(current_module, current_function, scopes, type, _expr, lhs, member);
         }
-        &ASTExpr::VariantInit(lhs, variant_name, args) => {
-            res_state = infer_type_onto_variant_init(current_module, current_function, scopes, type, _expr, lhs, variant_name, args);
+        &ASTExpr::TypeInit(init) => {
+            res_state = infer_type_onto_type_init(current_module, current_function, scopes, type, _expr, &init);
+        }
+        &ASTExpr::Unary(unary) => {
+            res_state = infer_type_onto_unary(current_module, current_function, scopes, type, _expr, &unary);
         }
         _ => {
             message(todo(_expr.loc, "infer_type_onto_expr: Can't infer expression %", expr));
@@ -331,6 +344,22 @@ import "../generated/ast.template.bufo";
 
     _expr.type = assert_is_valid(res_state, "infer_type_onto_expr: Inferred type is invalid");
     return res_state;
+}
+
+@trace func infer_type_onto_unary(current_module: &AST, current_function: &AST, scopes: &GAF_List, type: &Type, expr: &AST, unary: &ASTUnary) -> TCState {
+    match (unary) {
+        &ASTUnary::MetaTypeOf(sub) => {
+            if (type.meta_level == 0) {
+                message(error(expr.loc, "Expected an instance of a type, but got the meta-type operator."));
+            }
+            let under = unwrap_meta_type(type, 1);
+            return infer_type_onto_expr(current_module, current_function, scopes, under, sub);
+        }
+        _ => {
+            message(todo(expr.loc, "infer_type_onto_unary: Can't infer expression %", expr.data));
+        }
+    }
+    unreachable("infer_type_onto_unary");
 }
 
 @trace func infer_type_onto_directive(current_module: &AST, current_function: &AST, scopes: &GAF_List, type: &Type, expr: &AST, dir: Directive) -> TCState {
@@ -365,35 +394,28 @@ import "../generated/ast.template.bufo";
     return blank;
 }
 
-@trace func infer_type_onto_variant_init(current_module: &AST, current_function: &AST, scopes: &GAF_List, type: &Type, init: &AST, lhs: &AST, variant_name: SubStr, args: GAF_List) -> TCState {
-    assert(type != null, "infer_type_onto_variant_init: Type is null");
-
-    if (lhs != null) {
-        // TODO(2026-07-17): Clean up this mess, ideally I want to be able to compile stuff like
-        //                   let o: Option(i32) = Option.None;
-        let lhs_type = lhs.type;
-        assert(lhs_type != null, "infer_type_onto_variant_init: LHS does not have a type set");
-        assert(lhs_type.meta_level != 0, "infer_type_onto_variant_init: LHS is not a meta type");
-        lhs_type = unwrap_meta_type(lhs_type, 1);
-        if (!is_equal_to(lhs_type, type)) {
-            let t1 = to_string(type);
-            let t2 = to_string(lhs_type);
-            message(error(init.loc, "Expected expression of type %, but got %.", t1, t2));
+@trace func infer_type_onto_type_init(current_module: &AST, current_function: &AST, scopes: &GAF_List, type: &Type, expr: &AST, init: &ASTTypeInit) -> TCState {
+    assert(type != null, "infer_type_onto_struct_init: Type is null");
+    if (init.lhs != null) {
+        let lhs_type = init.lhs.type;
+        if (lhs_type != null) {
+            assert(lhs_type.meta_level != 0, "infer_type_onto_struct_init: LHS is not a meta type");
+            lhs_type = unwrap_meta_type(lhs_type, 1);
+            if (!is_equal_to(lhs_type, type)) {
+                let t1 = to_string(type);
+                let t2 = to_string(lhs_type);
+                message(error(expr.loc, "Expected expression of type %, but got %.", t1, t2));
+            }
+        } else {
+            init.lhs = null;
         }
     }
-
-    let &ASTData::Expr(ASTExpr::VariantInit(lhs1, _variant_name, _args)) = &init.data else {
-        unreachable("infer_type_onto_variant_init");
-    };
-    if (lhs1 == null) {
-        // REVIEW(2026-07-17): ResolvedGeneric doesn't really match here, but I dont feel like
-        //                     adding another ASTExpr variant.
-        lhs1 = create_expr(init, init.loc, init.origin, ASTExpr::ResolvedGeneric(type));
-        lhs1.type = wrap_meta_type(type, 1);
+    if (init.lhs == null) {
+        replace_node_with_constant_type(&init.lhs, expr, wrap_meta_type(type, 1));
     }
-    let _st = check_variant_init(current_module, current_function, scopes, init, lhs1, variant_name, args);
-    let _st_type = assert_is_valid(_st, "infer_type_onto_variant_init: check_variant_init failed to get a type");
-    assert(is_equal_to(_st_type, type), "infer_type_onto_variant_init: check_variant_init got a different type");
+    let _st = check_type_init(current_module, current_function, scopes, expr, init);
+    let _st_type = assert_is_valid(_st, "infer_type_onto_type_init: check_type_init failed to get a type");
+    assert(is_equal_to(_st_type, type), "infer_type_onto_type_init: check_type_init got a different type");
     return _st;
 }
 
@@ -423,7 +445,8 @@ import "../generated/ast.template.bufo";
             } else {
                 add(&_last.variables, _pat.origin, Variable {
                     origin: _pat,
-                    type: type
+                    type: type,
+                    expr: _expr,
                 });
             }
             result = (false, false);
@@ -460,11 +483,12 @@ import "../generated/ast.template.bufo";
         type = var.type;
     } else {
         let current_module_info = get_module_info(current_module);
-        if let (sl, fl, ml) = get_identifier_by_name(current_module_info, ident) {
+        if let (sl, fl, ml, vl) = get_identifier_by_name(current_module_info, ident) {
             let ctr: u64 = 0;
             if (sl != null) ctr = ctr + 1;
             if (fl != null) ctr = ctr + 1;
             if (ml != null) ctr = ctr + 1;
+            if (vl != null) ctr = ctr + 1;
             // FIXME(2026-08-01): other.foo still calls infer_type_onto_ident(__global__) even
             //                    though it shouldn't
             // module other {
@@ -480,18 +504,54 @@ import "../generated/ast.template.bufo";
                 return infer_type_onto_ident(current_module.parent, current_function, scopes, infer_type, ast, ident);
             } else if (ctr > 1) {
                 message(todo(ast.loc, "infer_type_onto_ident: ident can be more than one thing"));
+            } else if (vl != null) {
+                assert(vl.origin != null, "infer_type_onto_ident: Variable Lookup Node is null");
+                if (infer_type == null) {
+                    if (vl.origin.type == null) {
+                        let (resp, state) = wait_for_monitor(vl.origin.type);
+                        let Corot_Result::Success = state else {
+                            suppress_exit_on_error();
+                            match (state) {
+                                Corot_Result::Cycle_Detected => {
+                                    message(
+                                        error(ast.loc, "Could not get type of global variable due to a cyclic dependency on %.", corot_str(resp)),
+                                        note(vl.origin.loc, "Variable `%` declared here.", ident),
+                                    );
+                                }
+                                Corot_Result::Fucking_Died => {
+                                    message(
+                                        error(ast.loc, "Could not get type of global variable. There were errors."),
+                                        note(vl.origin.loc, "Variable `%` declared here.", ident),
+                                    );
+                                }
+                                _ => { }
+                            }
+                            _finish_current(state);
+                        };
+                    }
+                    assert(vl.origin.type != null, "infer_type_onto_ident: Global variable has invalid type");
+                    ast.data = ASTData::Expr(ASTExpr::GlobalIdent { name: ident, var: vl.origin });
+                    return mktcs(vl.origin.type);
+                }
+                message(todo(ast.loc, "infer_type_onto_ident: Variable Type is null but we could infer backwards"));
+                return mktcs(infer_type);
             } else if (sl != null) {
                 let type = create_meta_type(1, BaseType::TypeDecl(sl.node));
                 let info = get_type_decl_info(sl.node);
                 let isg = is_generic(info);
-                return mktcs(!isg, false, isg, false, type);
+                if (!is_generic(info)) {
+                    ast.data = ASTData::Expr(ASTExpr::TypeIdent { name: ident, ty: sl.node });
+                    return mktcs(true, true, false, false, type);
+                } else {
+                    return mktcs(false, false, true, false, type);
+                }
             } else if (ml != null) {
                 let type = create_meta_type(1, BaseType::Module(ml.original));
                 return mktcs(type);
             } else if (fl != null) {
                 assert(fl.overloads.length != 0, "infer_type_onto_ident: function overloads are empty??");
 
-                if (infer_type == null) return mktcs(false, false, false, true, null);
+                if (infer_type == null) return please_infer();
                 let &BaseType::Func(args, ret) = &infer_type.base else {
                     message(error(ast.loc, "Expected value of type %, but found a function named %.", to_string(infer_type), ident));
                     unreachable(); // error terminates
@@ -529,13 +589,13 @@ import "../generated/ast.template.bufo";
                             Corot_Result::Cycle_Detected => {
                                 message(
                                     error(ast.loc, "Could not resolve type of function due to a cyclic dependency on %.", corot_str(resp)),
-                                    note(_fn.loc, "Function % declared here.", func_state.name),
+                                    note(_fn.loc, "Function % is declared here.", func_state.name),
                                 );
                             }
                             Corot_Result::Fucking_Died => {
                                 message(
                                     error(ast.loc, "Could not resolve type of function. There were errors."),
-                                    note(_fn.loc, "Function % declared here.", func_state.name),
+                                    note(_fn.loc, "Function % is declared here.", func_state.name),
                                 );
                             }
                             _ => { }
@@ -558,7 +618,7 @@ import "../generated/ast.template.bufo";
                 }
                 if (candidates.length == 0) {
                     if (is_unknown(ret)) {
-                        return mktcs(false, false, false, true, null);
+                        return please_infer();
                     }
                     suppress_exit_on_error();
                     message(
@@ -603,10 +663,8 @@ import "../generated/ast.template.bufo";
                 assert(!is_generic(func_state), "Candidate is still generic");
                 assert(candidate.type != null, "Candidate still has no type");
 
-                if let &ASTData::Expr(expr) = &ast.data {
-                    ast.data = ASTData::Expr(ASTExpr::FnIdent { name: ident, fn: candidate });
-                    replaced_node = true;
-                }
+                ast.data = ASTData::Expr(ASTExpr::FnIdent { name: ident, fn: candidate });
+                replaced_node = true;
                 free(&candidates);
                 type = candidate.type;
             } else {
@@ -672,7 +730,7 @@ import "../generated/ast.template.bufo";
             if (!is_none(run_expr.type)) {
                 start_comptime(&func_state.code);
                 let var_reg = build_alloca(&func_state.code, run_expr.loc, run_expr.type, _tmp);
-                let creg = codegen_expr(func_state, run_expr, false);
+                let creg = codegen_expr(&func_state.code, run_expr, false);
                 build_store(&func_state.code, run_expr.loc, var_reg, creg);
                 end_comptime(&func_state.code);
 
@@ -685,7 +743,7 @@ import "../generated/ast.template.bufo";
                 result = ASTExpr::ComptimeValue(var);
             } else {
                 start_comptime(&func_state.code);
-                let creg = codegen_expr(func_state, run_expr, false);
+                let creg = codegen_expr(&func_state.code, run_expr, false);
                 end_comptime(&func_state.code);
 
                 evaluate_comptime_variables(current_function, &_tmp);
@@ -814,8 +872,8 @@ import "../generated/ast.template.bufo";
             }
             return check_fn(current_module, current_function, scopes, parent);
         }
-        _ => {
-            message(todo(parent.loc, "check_directive: Exhaustive handling of Directives"));
+        d => {
+            message(todo(parent.loc, "check_directive: Cannot handle directive % yet", d));
         }
     }
     unreachable("check_directive");
@@ -922,14 +980,14 @@ import "../generated/ast.template.bufo";
             Corot_Result::Cycle_Detected => {
                 message(
                     error(expr.loc, "Could not expand call to function % due to a cyclic dependency on %.", func_info.name, corot_str(resp)),
-                    note(fn.loc, "Function % declared here.", func_info.name),
+                    note(fn.loc, "Function % is declared here.", func_info.name),
                     help(fn.loc, "Did you call %() in another function marked `@expand`?", func_info.name),
                 );
             }
             Corot_Result::Fucking_Died => {
                 message(
                     error(expr.loc, "Could not expand call to function %. There were errors.", func_info.name),
-                    note(fn.loc, "Function % declared here.", func_info.name),
+                    note(fn.loc, "Function % is declared here.", func_info.name),
                 );
             }
             _ => { }
@@ -1019,6 +1077,9 @@ struct TCState {
     return t.computed_type;
 }
 
+@trace func please_infer() -> TCState {
+    return mktcs(false, false, false, true, null);
+}
 @trace func mktcs(type: &Type) -> TCState {
     return mktcs(true, false, false, false, type);
 }
@@ -1030,6 +1091,19 @@ struct TCState {
         please_infer: please_infer,
         computed_type: type,
     };
+}
+
+@trace func ensure_equal_type(loc: Loc, want: &Type, got: &Type) {
+    if (!is_equal_to(want, got)) {
+        message(error(loc, "Expected type %, but got %.", to_string(want), to_string(got)));
+    }
+}
+
+@trace func replace_node_with_constant_type(node: &&AST, orig: &AST, ty: &Type) {
+    // REVIEW(2026-09-15): ResolvedGeneric doesn't really match here, but I dont feel like
+    //                     adding another ASTExpr variant.
+    *node = create_expr(orig.parent, orig.loc, orig.origin, ASTExpr::ResolvedGeneric(ty));
+    (*node).type = ty;
 }
 
 @trace func check_expr(current_module: &AST, current_function: &AST, scopes: &GAF_List, _expr: &AST) -> TCState {
@@ -1075,7 +1149,7 @@ struct TCState {
         &ASTExpr::Comptime { pat, subexpr, trampoline } => {
             f(current_module, current_function, _expr, scopes, pat, subexpr, trampoline);
             let func_state = get_func_info(current_function);
-            codegen_expr(func_state, _expr, false);
+            codegen_expr(&func_state.code, _expr, false);
             evaluate_comptime_variables(current_function, null);
             expr = ASTExpr::Noop;
             type_state = mktcs(create_base_type(PrimType::None));
@@ -1132,6 +1206,13 @@ struct TCState {
             assert(fn.type != null, "FnIdent function type is null");
             type_state = mktcs(fn.type);
         }
+        &ASTExpr::TypeIdent { name, ty } => {
+            if (ty.type == null) {
+                type_state = please_infer();
+            } else {
+                type_state = mktcs(ty.type);
+            }
+        }
         &ASTExpr::Ident { name } => {
             type_state = infer_type_onto_ident(current_module, current_function, scopes, null, _expr, name);
             if (current_function != null) {
@@ -1143,7 +1224,7 @@ struct TCState {
             }
         }
         &ASTExpr::Number { value } => {
-            type_state = mktcs(false, false, false, true, null); // Number Literals must be inferred from context
+            type_state = please_infer(); // Number Literals must be inferred from context
         }
         &ASTExpr::StringLiteral { value } => {
             type_state = mktcs(create_base_type(PrimType::Str));
@@ -1170,8 +1251,8 @@ struct TCState {
         &ASTExpr::Dot(lhs, member) => {
             type_state = check_member_expr(current_module, current_function, scopes, _expr, lhs, member);
         }
-        &ASTExpr::VariantInit(lhs, variant, args) => {
-            type_state = check_variant_init(current_module, current_function, scopes, _expr, lhs, variant, args);
+        &ASTExpr::TypeInit(init) => {
+            type_state = check_type_init(current_module, current_function, scopes, _expr, &init);
         }
         &ASTExpr::Call(_base, _args) => {
             let base_state = check_expr(current_module, current_function, scopes, _base);
@@ -1211,7 +1292,7 @@ struct TCState {
                             if (is_convertible_to(atype, par)) {
                                 message(todo(arg.loc, "Parameter was declared to be %, but we got %. However, the type system could allow conversion.", par, atype));
                             }
-                            message(error(arg.loc, "Expected type %, but got %.", to_string(par), to_string(atype)));
+                            ensure_equal_type(_expr.loc, par, atype);
                         }
                     }
                     type_state = mktcs(unwrap_meta_type(ret, 1));
@@ -1224,13 +1305,13 @@ struct TCState {
                     if (base.meta_level == 0) {
                         message(
                             error(_base.loc, "Cannot call expression of type %.", info.name),
-                            note(node.loc, "Type % declared here.", info.name),
+                            note(node.loc, "Type % is declared here.", info.name),
                         );
                     }
                     if (!base_state.needs_monomorphization) {
                         message(
                             error(_base.loc, "Unexpected generic parameters for non-generic type %.", info.name),
-                            note(node.loc, "Type % declared here.", info.name),
+                            note(node.loc, "Type % is declared here.", info.name),
                         );
                     }
                     if (_args.length != info.parameters.length) {
@@ -1243,7 +1324,13 @@ struct TCState {
                         let arg = get_ref(&_args, i) as &AST;
                         let arg_state = check_expr(current_module, current_function, scopes, arg);
                         if (arg_state.please_infer) {
-                            message(todo(arg.loc, "Generic parameter wants infer???"));
+                            let unknown = create_meta_type(1, BaseType::Unknown);
+                            arg_state = infer_type_onto_expr(current_module, current_function, scopes, unknown, arg);
+                            if (arg_state.please_infer) {
+                                message(
+                                    todo(arg.loc, "Generic parameter STILL wants infer???"),
+                                    note(arg.loc, "%", arg_state));
+                            }
                         }
                         let type = assert_is_valid(arg_state, "Generic Type argument type is invalid");
                         if (type.meta_level == 0) {
@@ -1254,6 +1341,7 @@ struct TCState {
 
                     let new_node = monomorphize_type_decl_node(node, mapping);
                     let new_type = create_meta_type(base.meta_level, BaseType::TypeDecl(new_node));
+                    _expr.data = ASTData::Expr(ASTExpr::TypeIdent { name: info.name, ty: new_node });
                     type_state = mktcs(new_type);
                 }
                 _ => { message(todo(_expr.loc, "check_expr: Call with base type %", *base)); }
@@ -1267,8 +1355,8 @@ struct TCState {
             type_state = check_binary_expr(current_module, current_function, scopes, _expr);
         }
         // Types of blank and null must be inferred elsewhere
-        &ASTExpr::Blank => { type_state = mktcs(false, false, false, true, null); }
-        &ASTExpr::Null  => { type_state = mktcs(false, false, false, true, null); }
+        &ASTExpr::Blank => { type_state = please_infer(); }
+        &ASTExpr::Null  => { type_state = please_infer(); }
         &ASTExpr::Directive(dir) => {
             let _type = check_directive(current_module, current_function, scopes, _expr, &dir);
             if (_type.replaced_node) type_state = check_expr(current_module, current_function, scopes, _expr);
@@ -1315,81 +1403,111 @@ struct TCState {
     }
     if (type_state.replaced_node) return type_state;
     if (type_state.please_infer) return type_state;
+    if (type_state.needs_monomorphization) return type_state;
     _expr.type = assert_is_valid(type_state, "check_expr: Expr type is invalid");
     return type_state;
 }
 
-@trace func check_variant_init(current_module: &AST, current_function: &AST, scopes: &GAF_List, init: &AST, lhs: &AST, variant_name: SubStr, args: GAF_List) -> TCState {
-    let lhs_type: &Type = null;
-    if (lhs != null) {
-        lhs_type = lhs.type;
-        assert(lhs_type != null, "check_variant_init: Expected a set type for lhs");
+@trace func check_type_init(current_module: &AST, current_function: &AST, scopes: &GAF_List, expr: &AST, init: &ASTTypeInit) -> TCState {
+    if (init.lhs == null) return please_infer();
+
+    let lhs_state = check_expr(current_module, current_function, scopes, init.lhs);
+    if (lhs_state.please_infer) return lhs_state;
+    if (lhs_state.needs_monomorphization) return please_infer();
+    let lhs_type = assert_is_valid(lhs_state, "check_type_init: LHS type is invalid");
+
+    if (lhs_type.meta_level == 0) {
+        message(error(expr.loc, "Expected a meta type as base for initialization, but got %.", to_string(lhs_type)));
     }
-    if (lhs_type == null) return mktcs(false, false, false, true, null);
-    assert(lhs_type.meta_level != 0, "check_variant_init: Expected meta type");
 
-    let BaseType::TypeDecl(decl_node) = lhs_type.base else {
-        message(todo(init.loc, "check_variant_init: LHS type is not a type decl?"));
-        unreachable(); // todo terminates
+    let BaseType::TypeDecl(node) = lhs_type.base else {
+        message(error(expr.loc, "Expected a type declaration as base for initialization, but got %.", to_string(lhs_type)));
+        unreachable(); // error terminates
     };
-    let decl_info = get_type_decl_info(decl_node);
+    let type_decl_info = get_type_decl_info(node);
 
-    if (is_generic(decl_info)) {
+    if (is_generic(type_decl_info)) {
         let ty_str = to_string(lhs_type);
         message(
-            error(init.loc, "Cannot initialize variant % of generic type %.", variant_name, ty_str),
-            note(init.loc, "Due to extensive metaprogramming capabilities, a monomorphized instance of this type may not have this variant."),
-            note(init.loc, "For example, the variant may be hidden behind an `#if`, so we don't try to guess a mapping for the generic parameters."),
-            help(init.loc, "Please specify the generic parameters manually.")
+            error(expr.loc, "Cannot initialize instance of generic type %.", ty_str),
+            note(expr.loc, "Due to extensive metaprogramming capabilities, a monomorphized instance of this type may not have the provided fields."),
+            note(expr.loc, "For example, things may be hidden behind an `#if`, so we don't try to guess a mapping for the generic parameters."),
+            help(expr.loc, "Please specify the generic parameters manually.")
         );
     }
 
-    // REVIEW(2026-07-14): I think this should be a wait_for_monitor
-    assert(decl_info.state.did_check_variants, "check_variant_init: Variants havent been type checked yet");
+    foreach(&init.fields, func (k: Data, v: Data, arg: &(&AST, &AST, &GAF_List, Loc, &AST, &ASTTypeDecl)) {
+        let &(current_module, current_function, scopes, loc, node, type_decl_info) = arg;
+        let field_name = k as SubStr;
+        let field_value = v as &AST;
 
-    let (true, variant) = get_variant_by_name(decl_info, variant_name) else {
-        message(
-            error(init.loc, "The type % doesn't have a variant named `%`.", decl_info.name, variant_name),
-            note(decl_info.loc, "Type % is declared here.", decl_info.name));
-        unreachable(); // error terminates
-    };
-
-    if (variant.fields.length > 0) {
-        let ty_str = to_string(lhs_type);
-        let maybe_s = "";
-        if (variant.fields.length != 1) maybe_s = "s";
-        if (args.length == 0) {
-            message(warn(init.loc, "Missing % argument% for initialization of variant % of type %.", variant.fields.length, maybe_s, variant_name, ty_str));
-        } else if (args.length != variant.fields.length) {
-            let pre = "Not enough";
-            if (args.length > variant.fields.length) pre = "Too many";
+        let (true, field_info) = get_field_by_name(type_decl_info, field_name) else {
+            let type_str = to_string(unwrap_meta_type(node.type, 1));
             message(
-                error(init.loc, "% arguments were provided for initialization of variant % of type %.", pre, variant_name, ty_str),
-                note(init.loc, "Expected % argument%, but got %.", variant.fields.length, maybe_s, args.length),
-            );
+                error(loc, "The type % does not have a field named %.", type_str, field_name),
+                note(node.loc, "Type % is declared here.", type_str));
+            unreachable(); // error terminates
+        };
+
+        let field_type_node = field_info.type_node;
+        assert(field_type_node != null, "check_type_init: Type Decl has invalid field");
+        assert(field_type_node.type != null, "check_type_init: Type Decl field has invalid type");
+        assert(field_type_node.type.meta_level != 0, "check_type_init: Type Decl field is not a meta type");
+        let field_type = unwrap_meta_type(field_type_node.type, 1);
+
+        let expr_state = check_expr(current_module, current_function, scopes, field_value);
+        if (expr_state.please_infer) {
+            expr_state = infer_type_onto_expr(current_module, current_function, scopes, field_type, field_value);
         }
-        for (let i: usize = 0; i < args.length; i = i + 1) {
-            let _field = get_ref(&variant.fields, i) as &AST;
-            let _field_type = _field.type;
-            assert(_field_type != null, "check_variant_init: Variant field is not initialized");
-            assert(_field_type.meta_level != 0, "check_variant_init: Variant field is not a meta type");
-            let field_type = unwrap_meta_type(_field_type, 1);
+        let expr_type = assert_is_valid(expr_state, "check_type_init: Field initializer has invalid type");
 
-            let _arg = get_ref(&args, i) as &AST;
-            let arg_state = check_expr(current_module, current_function, scopes, _arg);
-            if (arg_state.please_infer) {
-                arg_state = infer_type_onto_expr(current_module, current_function, scopes, field_type, _arg);
+        ensure_equal_type(field_value.loc, field_type, expr_type);
+    }, &(current_module, current_function, scopes, expr.loc, node, type_decl_info));
+
+    if (init.has_variant) {
+        // REVIEW(2026-07-14): I think this should be a wait_for_monitor
+        assert(type_decl_info.state.did_check_variants, "check_variant_init: Variants havent been type checked yet");
+
+        let (true, variant) = get_variant_by_name(type_decl_info, init.variant_name) else {
+            message(
+                error(init.variant_loc, "The type % does not have a variant named `%`.", type_decl_info.name, init.variant_name),
+                note(type_decl_info.loc, "Type % is declared here.", type_decl_info.name));
+            unreachable(); // error terminates
+        };
+
+        if (variant.fields.length > 0) {
+            let ty_str = to_string(lhs_type);
+            let maybe_s = "";
+            if (variant.fields.length != 1) maybe_s = "s";
+            if (init.variant_args.length == 0) {
+                message(warn(expr.loc, "Missing % argument% for initialization of variant % of type %.", variant.fields.length, maybe_s, init.variant_name, ty_str));
+            } else if (init.variant_args.length != variant.fields.length) {
+                let pre = "Not enough";
+                if (init.variant_args.length > variant.fields.length) pre = "Too many";
+                message(
+                    error(expr.loc, "% arguments were provided for initialization of variant % of type %.", pre, init.variant_name, ty_str),
+                    note(expr.loc, "Expected % argument%, but got %.", variant.fields.length, maybe_s, init.variant_args.length),
+                );
             }
-            let arg_type = assert_is_valid(arg_state, "check_variant_init: Argument type is invalid");
+            for (let i: usize = 0; i < init.variant_args.length; i = i + 1) {
+                let _field = get_ref(&variant.fields, i) as &AST;
+                let _field_type = _field.type;
+                assert(_field_type != null, "check_type_init: Variant field is not initialized");
+                assert(_field_type.meta_level != 0, "check_type_init: Variant field is not a meta type");
+                let field_type = unwrap_meta_type(_field_type, 1);
 
-            if (!is_equal_to(arg_type, field_type)) {
-                message(error(_arg.loc, "Expected type %, but got %.", to_string(field_type), to_string(arg_type)));
+                let _arg = get_ref(&init.variant_args, i) as &AST;
+                let arg_state = check_expr(current_module, current_function, scopes, _arg);
+                if (arg_state.please_infer) {
+                    arg_state = infer_type_onto_expr(current_module, current_function, scopes, field_type, _arg);
+                }
+                let arg_type = assert_is_valid(arg_state, "check_type_init: Argument type is invalid");
+
+                ensure_equal_type(_arg.loc, field_type, arg_type);
             }
         }
     }
-    lhs_type = unwrap_meta_type(lhs_type, 1);
-    init.type = lhs_type;
-    return mktcs(lhs_type);
+    return mktcs(expr.type = unwrap_meta_type(lhs_type, 1));
 }
 
 @trace func check_member_expr(current_module: &AST, current_function: &AST, scopes: &GAF_List, dot: &AST, lhs: &AST, member: &AST) -> TCState {
@@ -1416,7 +1534,7 @@ struct TCState {
                 assert(type_decl_info.state.did_check_fields, "check_member_expr: Node of LHS type is not type checked?");
                 let (true, field) = get_field_by_name(type_decl_info, field_or_method) else {
                     message(
-                        error(member.loc, "The type % doesn't have a field named `%`.", type_decl_info.name, field_or_method),
+                        error(member.loc, "The type % does not have a field named `%`.", type_decl_info.name, field_or_method),
                         note(type_decl_info.loc, "Type % is declared here.", type_decl_info.name));
                     unreachable(); // error terminates
                 };
@@ -1425,11 +1543,16 @@ struct TCState {
                 return mktcs(unwrap_meta_type(field.type_node.type, 1));
             } else {
                 let parent = dot.parent;
+                let type_init = new_type_init();
+                type_init.lhs = lhs;
+                type_init.has_variant = true;
+                type_init.variant_name = field_or_method;
                 if let ASTData::Expr(ASTExpr::Call(_lhs, args)) = parent.data {
                     assert(_lhs == dot, "Dot parent is a call, but the call base is not the dot");
-                    parent.data = ASTData::Expr(ASTExpr::VariantInit(lhs, field_or_method, args));
+                    type_init.variant_args = args;
+                    parent.data = ASTData::Expr(ASTExpr::TypeInit(type_init));
                 } else {
-                    dot.data = ASTData::Expr(ASTExpr::VariantInit(lhs, field_or_method, blank));
+                    dot.data = ASTData::Expr(ASTExpr::TypeInit(type_init));
                 }
                 return mktcs(false, true, false, false, null);
             }
@@ -1447,13 +1570,13 @@ struct TCState {
                     Corot_Result::Cycle_Detected => {
                         message(
                             error(dot.loc, "Could not resolve identifier % in module % due to a cyclic dependency on %.", something, mod_info.name, corot_str(resp)),
-                            note(module_node.loc, "Module % declared here.", mod_info.name),
+                            note(module_node.loc, "Module % is declared here.", mod_info.name),
                         );
                     }
                     Corot_Result::Fucking_Died => {
                         message(
                             error(dot.loc, "Could not resolve identifier % in module %. There were errors.", something, mod_info.name, corot_str(resp)),
-                            note(module_node.loc, "Module % declared here.", mod_info.name),
+                            note(module_node.loc, "Module % is declared here.", mod_info.name),
                         );
                     }
                     _ => { }
@@ -1507,7 +1630,7 @@ struct TCState {
             if (_type_state.please_infer) return _type_state;
             let _type = assert_is_valid(_type_state, "check_unary_expr: MetaTypeOf expr type is invalid");
             if (_type.meta_level == 0) {
-                message(warn(expr.loc, "^<instance> is currently equivalent to type_of(). Think about this more."));
+                message(unsure(expr.loc, "^<instance> is currently equivalent to type_of(). Think about this more."));
             }
             type = wrap_meta_type(_type, 1);
         }

@@ -1,0 +1,29 @@
+
+#load "ops.bufo2";
+
+struct List($T) {
+    // Pointer to the heap
+    elements: *$T;
+    // How many elements are in the list
+    length: usize;
+    capacity: usize;
+}
+
+func push(list: *List($T), elem: $T) {
+    if (list.length >= list.capacity) {
+        let new_cap = list.capacity * 2;
+        if (new_cap == 0) new_cap = 16;
+        #assert new_cap == 16, "Expected new capacity to be 16";
+        list.capacity = new_cap;
+    }
+    list.length += 1;
+    // if (list.length >= list.capacity) {
+    //     let new_cap = list.capacity * 2;
+    //     if (new_cap == 0) new_cap = 16;
+    //     // list.elements = realloc(list.elements, new_cap * sizeof(elem));
+    //     // assert(list.elements != null, "Could not allocate List elements");
+    //     list.capacity = new_cap;
+    // }
+    // list.elements[list.length] = elem;
+    // list.length += 1;
+}

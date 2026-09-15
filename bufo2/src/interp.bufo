@@ -99,6 +99,13 @@ func get_register_pointer_and_size(interp: &Interp, reg: Reg) -> (&u8, usize) {
     let ptr = interp.register_stack_pointer - reg.offset - reg.size;
     return (ptr, reg.size);
 }
+func get_global_pointer_and_size(interp: &Interp, reg: Reg) -> (&u8, usize) {
+    let global_module = get_global_module(interp.fn);
+    let global_module_info = get_module_info(global_module);
+    let base = global_module_info.interp.stack_base;
+    assert(base != null, "get_global_pointer_and_size: Global Module is not initialized");
+    return (base - reg.offset - reg.size, reg.size);
+}
 func push_argument(interp: &Interp, loc: Loc, reg: &u8, size: usize) {
     if (interp.arg_stack_pointer + size >= interp.arg_stack_base + interp.arg_stack_size) {
         message(fatal(loc, "Argument Stack Overflow during compile time execution. Attempted to push % byte(s).", size));
@@ -301,6 +308,13 @@ func create_interpreter(fn: &AST) -> Interp {
             C::memcpy(dst, src, src_size);
             return Value::Reg(dst, dst_size);
         }
+        &Op::FetchGlobalPtr(_dst, _src) => {
+            let (dst, dst_size) = get_register_pointer_and_size(interp, _dst);
+            let (src, src_size) = get_global_pointer_and_size(interp, _src);
+            assert(src_size == 8 && dst_size == 8, "FetchGlobalPtr expected pointer sized source");
+            *(dst as &usize) = src as usize;
+            return Value::Reg(dst, dst_size);
+        }
         &Op::PtrToInt(_dst, _src) => {
             let (dst, dst_size) = get_register_pointer_and_size(interp, _dst);
             let (src, src_size) = get_register_pointer_and_size(interp, _src);
@@ -368,6 +382,12 @@ func create_interpreter(fn: &AST) -> Interp {
         &Op::LoadBool(dst, val) => {
             let (reg, size) = get_register_pointer_and_size(interp, dst);
             *(reg as &bool) = val;
+            return Value::Reg(reg, size);
+        }
+        &Op::LoadType(dst, ty) => {
+            let (reg, size) = get_register_pointer_and_size(interp, dst);
+            assert(size == 8, "evaluate_single: LoadType expected pointer sized dst");
+            *(reg as &usize) = ty as usize;
             return Value::Reg(reg, size);
         }
         &Op::LoadString(dst, string) => {
@@ -612,6 +632,34 @@ func create_interpreter(fn: &AST) -> Interp {
             *dst = r;
             return Value::Reg(dst, dst_size);
         }
+        &Op::Lt(_dst, _src1, _src2) => {
+            let (dst, dst_size) = get_register_pointer_and_size(interp, _dst);
+            let (src1, src1_size) = get_register_pointer_and_size(interp, _src1);
+            let (src2, src2_size) = get_register_pointer_and_size(interp, _src2);
+            assert(dst_size == 1, "evaluate_single: Lt dst is not 1 byte");
+            assert(src1_size == src2_size, "evaluate_single: Lt operands don't match");
+            let signed = is_signed_integer(instr.type);
+            let lt = false;
+            if (src1_size == 1) {
+                if (signed) lt = *(src1 as &i8) < *(src2 as &i8);
+                else lt = *(src1 as &u8) < *(src2 as &u8);
+            } else if (src1_size == 2) {
+                if (signed) lt = *(src1 as &i16) < *(src2 as &i16);
+                else lt = *(src1 as &u16) < *(src2 as &u16);
+            } else if (src1_size == 4) {
+                if (signed) lt = *(src1 as &i32) < *(src2 as &i32);
+                else lt = *(src1 as &u32) < *(src2 as &u32);
+            } else if (src1_size == 8) {
+                if (signed) lt = *(src1 as &i64) < *(src2 as &i64);
+                else lt = *(src1 as &u64) < *(src2 as &u64);
+            } else {
+                message(todo(instr.loc, "Op::Lt for %", to_string(instr.type)));
+            }
+            let r: u8 = 0;
+            if (lt) r = 1;
+            *dst = r;
+            return Value::Reg(dst, dst_size);
+        }
         &Op::ComptimeAssert(expr, msg) => {
             let (dst, dst_size) = get_register_pointer_and_size(interp, expr);
             assert(dst_size == 1, "evaluate_single: Assert expr is not 1 byte");
@@ -625,6 +673,28 @@ func create_interpreter(fn: &AST) -> Interp {
             let (dst, dst_size) = get_register_pointer_and_size(interp, _dst);
             fassert(size == dst_size, "evaluate_single: Expected ComptimeValue to have matching sizes, but got % and %.", size, dst_size);
             C::memcpy(dst, ptr, size);
+            return Value::Reg(dst, dst_size);
+        }
+        &Op::InsertValue(_dst, _base, index, _value) => {
+            let (dst, dst_size) = get_register_pointer_and_size(interp, _dst);
+            let (base, base_size) = get_register_pointer_and_size(interp, _base);
+            let (value, value_size) = get_register_pointer_and_size(interp, _value);
+
+            let type_decl = as_type_decl(_base.type);
+            let type_decl_info = get_type_decl_info(type_decl);
+            let field_info: &ASTTypeDeclField = get_ref_raw(&type_decl_info.fields, index);
+            let field_name = field_info.name;
+            let (true, _index, offset, size, _align) = get_field_index_offset_size_and_align(type_decl_info, field_name) else {
+                unreachable("InsertValue"); // should've been caught by the type checker
+            };
+
+            assert(base_size == dst_size, "evaluate_single: InsertValue base and dst size dont match");
+            assert(value_size == size, "evaluate_single: InsertValue value size does not match field size");
+            assert(offset + size <= dst_size, "evaluate_single: InsertValue out of bounds");
+
+            C::memcpy(dst, base, base_size);
+            C::memcpy(dst + offset, value, value_size);
+
             return Value::Reg(dst, dst_size);
         }
         &Op::Debug => {

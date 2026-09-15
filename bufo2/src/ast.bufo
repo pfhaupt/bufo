@@ -166,7 +166,7 @@ import "../generated/ast.template.bufo";
     return !type_decl_info.state.is_monomorphized && type_decl_info.parameters.length != 0;
 }
 
-@trace func get_field_offset_size_and_align(type_decl_info: &ASTTypeDecl, name: SubStr) -> (bool, usize, usize, usize) {
+@trace func get_field_index_offset_size_and_align(type_decl_info: &ASTTypeDecl, name: SubStr) -> (bool, usize, usize, usize, usize) {
     let offset: usize = 0;
     let size: usize = 0;
     let align: usize = 1;
@@ -176,7 +176,7 @@ import "../generated/ast.template.bufo";
         let field_size = get_size(field_type);
         if (equals(&field.name, &name)) {
             let field_align = get_align(field_type);
-            return (true, offset, field_size, field_align);
+            return (true, i, offset, field_size, field_align);
         } else if (i != type_decl_info.fields.length - 1) {
             let next_field: &ASTTypeDeclField = get_ref_raw(&type_decl_info.fields, i + 1);
             let next_field_type = unwrap_meta_type(next_field.type_node.type, 1);
@@ -184,7 +184,7 @@ import "../generated/ast.template.bufo";
             offset = next_multiple_of(offset + field_size, next_field_align);
         }
     }
-    return (false, 0, 0, 0);
+    return (false, 0, 0, 0, 0);
 }
 
 @trace func get_tag_of_variant(type_decl_info: &ASTTypeDecl, name: SubStr) -> (bool, &ASTTypeDeclVariant, usize) {
@@ -323,10 +323,11 @@ import "../generated/ast.template.bufo";
     return is_function_attribute(attr.data);
 }
 @trace func is_function_attribute(attr: ASTAttrData) -> bool {
-    (comptime assert(tag(&ASTAttrData::__count) == 2, "is_function_attribute: Added more ASTAttrData"));
+    (comptime assert(tag(&ASTAttrData::__count) == 3, "is_function_attribute: Added more ASTAttrData"));
     match (attr) {
         ASTAttrData::Expand => { return true; }
         ASTAttrData::Naked  => { return true; }
+        ASTAttrData::Library(_) => { return true; }
         _ => { }
     }
     return false;
@@ -350,6 +351,86 @@ import "../generated/ast.template.bufo";
         _ => { }
     }
     return false;
+}
+
+@trace func is_constant_expression(node: &AST) -> bool {
+    let __is_expr_constant = func (expr: ASTExpr) -> bool {
+        match (expr) {
+            ASTExpr::Let { p, e, t } => {
+                if (t != null) return false;
+                if (!is_constant_expression(e)) return false;
+                if (!is_constant_expression(p)) return false;
+                return true;
+            }
+            ASTExpr::Comptime { p, e, t } => {
+                if (t != null) return false;
+                if (!is_constant_expression(e)) return false;
+                if (!is_constant_expression(p)) return false;
+                return true;
+            }
+
+            ASTExpr::Number { value } => { return true; }
+            ASTExpr::BuiltinType { name } => { return true; }
+            ASTExpr::StringLiteral { value } => { return true; }
+            ASTExpr::True => { return true; }
+            ASTExpr::False => { return true; }
+            ASTExpr::Blank => { return true; }
+            ASTExpr::Null => { return true; }
+            ASTExpr::Directive(Directive::Run(_)) => { return true; }
+            ASTExpr::ComptimeValue(_) => { return true; }
+            ASTExpr::As(expr, type) => {
+                if (!is_constant_expression(expr)) return false;
+                return true;
+            }
+            ASTExpr::TypeInit(init) => {
+                for (let i: usize = 0; i < init.fields.capacity; i = i + 1) {
+                    if (init.fields.set_elements[i]) {
+                        let (key_ptr, val_ptr) = getAtIndex(&init.fields, i);
+                        if (!is_constant_expression(val_ptr)) return false;
+                    }
+                }
+                for (let i: usize = 0; i < init.variant_args.length; i = i + 1) {
+                    let a = *(get_ref_raw(&init.variant_args, i) as &&AST);
+                    if (!is_constant_expression(a)) return false;
+                }
+                return true;
+            }
+            ASTExpr::Paren(sub) => { return is_constant_expression(sub); }
+
+            _ => { }
+        }
+        return false;
+    };
+    let __is_pattern_constant = func (pat: ASTPat) -> bool {
+        match (pat) {
+            ASTPat::Ident(_) => { return true; }
+            ASTPat::PatWithType(subpat, _) => {
+                if (!is_constant_expression(subpat)) return false;
+                return true;
+            }
+            _ => { }
+        }
+        return false;
+    };
+    match (&node.data) {
+        &ASTData::Expr(subexpr) => { return __is_expr_constant(subexpr); }
+        &ASTData::Pat(subpat) => { return __is_pattern_constant(subpat); }
+        &ASTData::Module(_) => { return true; }
+        &ASTData::TypeDecl(_) => { return true; }
+        &ASTData::Function(_) => { return true; }
+        &ASTData::Param(_) => { return true; }
+        _ => { }
+    }
+    return false;
+}
+
+@trace func extract_variable_declaration_components(node: &AST) -> (&AST, &AST, &AST) {
+    match (&node.data) {
+        &ASTData::Expr(ASTExpr::Let { p, e, t }) => { return (p, e, t); }
+        &ASTData::Expr(ASTExpr::Comptime { p, e, t }) => { return (p, e, t); }
+        _ => {}
+    }
+    unreachable("extract_variable_declaration_components: Not a variable declaration");
 }
 
 @trace func binary_expr_to_function_name(bin: ASTBinary) -> SubStr {
@@ -448,11 +529,24 @@ let node_counter: usize = 0;
 @trace func create_module(parent: &AST, loc: Loc, origin: SubStr, name: SubStr) -> &AST {
     assert(parent != null || equals(&name, &comptime newSubStr("__global__")), "create_module: Parent is null");
     let ptr = create_node(parent, loc, origin);
+    let global_scope = create_code(ptr);
+    reset(&global_scope);
     ptr.data = ASTData::Module(ASTModule {
         state: blank,
         loc: loc,
         name: name,
         lookup: new_symbol_lookup(ptr),
+        code: global_scope,
+        node_to_global_map: new_GAF_HashMap(
+            type_info(&AST),
+            type_info(Reg),
+            func (k: Data) -> usize {
+                return k.ptr as usize;
+            },
+            func (k1: Data, k2: Data) -> bool {
+                return k1.ptr == k2.ptr;
+            }
+        )
     });
     if (parent != null) {
         let &ASTData::Module(parent_module) = &parent.data else {
@@ -623,7 +717,7 @@ func __collect_generic_type_mapping(ast: &AST, type: &Type, mapping: &GAF_HashMa
                 maybe_type = *(maybe.ptr as &&Type) = type;
             }
             if (is_unknown(type)) return true;
-            return is_equal_to(maybe_type, type);
+            return is_convertible_to(type, maybe_type);
         }
         return true;
     };
@@ -653,6 +747,9 @@ func __collect_generic_type_mapping(ast: &AST, type: &Type, mapping: &GAF_HashMa
                     assert(bt.meta_level != 0, "__collect_generic_type_mapping: Type has no meta level");
                     bt = unwrap_meta_type(bt, 1);
                     return is_equal_to(bt, ty);
+                }
+                (ASTExpr::Paren(subexpr), _) => {
+                    return __collect_generic_type_mapping(subexpr, type, mapping);
                 }
                 (ASTExpr::Generic, _) => {
                     return maybe_add_mapping(mapping, ast.origin, type);
@@ -732,5 +829,11 @@ func collect_generic_type_mapping(fn: &AST, type: &Type) -> (GAF_HashMap, bool, 
         }
     }
     return (mapping, success, false);
+}
+func new_type_init() -> ASTTypeInit {
+    return ASTTypeInit {
+        fields: new_hashmap_with_substr_key(type_info(&AST)),
+        variant_args: new_GAF_List(type_info(&AST)),
+    };
 }
 

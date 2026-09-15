@@ -1,4 +1,15 @@
 
+func __lt__(a: $T, b: $T) -> bool @naked {
+    comptime ty = $T;
+    #bir {
+        entry:
+        param ty r0, 1;
+        param ty r1, 0;
+        lt   bool r2, r1, r0;
+        ret  bool r2;
+    };
+}
+
 func __lte__(a: $T, b: $T) -> bool @naked {
     comptime ty = $T;
     #bir {

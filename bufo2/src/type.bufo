@@ -403,6 +403,16 @@ func is_pointer(type: &Type) -> bool {
     return false;
 }
 
+func is_type_decl(type: &Type) -> bool {
+    return as_type_decl(type) != null;
+}
+func as_type_decl(type: &Type) -> &AST {
+    if let BaseType::TypeDecl(node) = type.base {
+        return node;
+    }
+    return null;
+}
+
 func call_type_matches_function_type(call_type: &Type, function_type: &Type) -> bool {
     if (call_type == null || function_type == null) return false;
     if (call_type.meta_level != function_type.meta_level) return false;
@@ -432,13 +442,19 @@ func is_equal_to(t1: &Type, t2: &Type) -> bool {
     return true;
 }
 
-func is_convertible_to(t1: &Type, t2: &Type) -> bool {
-    if (t1 == t2) return true;
-    if (t1.meta_level != t2.meta_level) return false;
+func is_convertible_to(from: &Type, to: &Type) -> bool {
+    if (from == to) return true;
+    if (from.meta_level != to.meta_level) return false;
     // REVIEW(2026-03-03): Can we find a more elegant way for this?
-    match ((&t1.base, &t2.base)) {
+    match ((&from.base, &to.base)) {
         (&BaseType::Prim(pt1), &BaseType::Prim(pt2)) => { return tag(&pt1) == tag(&pt2); }
-        (&BaseType::TypeDecl(s1), &BaseType::TypeDecl(s2)) => { return s1 == s2; }
+        (&BaseType::TypeDecl(s1), &BaseType::TypeDecl(s2)) => {
+            let ti1 = get_type_decl_info(s1);
+            let ti2 = get_type_decl_info(s2);
+            if (!equals(&ti1.name, &ti2.name)) return false;
+            // TODO(2026-09-15): Types should be convertible from generic to non-generic forms or something
+            return s1 == s2;
+        }
         (&BaseType::Ptr(p1), &BaseType::Ptr(p2)) => { return is_convertible_to(p1, p2); }
         (&BaseType::Func(p1, r1), &BaseType::Func(p2, r2)) => {
             if (p1.length != p2.length) return false;

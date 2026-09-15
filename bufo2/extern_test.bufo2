@@ -1,0 +1,19 @@
+
+#load "list.bufo2";
+
+type Library_Config {
+    dynamic_name: List(str);
+    static_name: List(str);
+    library_path: List(str);
+}
+
+comptime libc = Library_Config {
+    dynamic_name: "libc.so",
+    static_name: "libc.a",
+    library_path: "/lib/libc/",
+};
+func printf(fmt: str)  -> u32 @library(libc);
+func fprintf(fmt: str) -> u32 @library(libc);
+
+func main() {
+}

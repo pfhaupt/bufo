@@ -51,6 +51,10 @@ shared Data_Structure_Fields {
 struct ASTModule : Common_Fields {
     state: ModuleState;
     lookup: SymbolLookup;
+    // FIXME(2026-09-10): Move this somewhere else, these are special fields for the global scope.
+    code: Code; // Used by __global__ to represent global variables
+    node_to_global_map: GAF_HashMap; // HashMap<&AST, Reg>
+    interp: Interp;
 }
 
 struct ASTTypeDeclField : Common_Fields {
@@ -90,6 +94,7 @@ struct ModuleState {
 
 struct FunctionState : State {
     is_generic: bool;
+    is_extern: bool;
     did_check_signature: bool;
     did_parse_body: bool;
     did_check_body: bool;
@@ -112,6 +117,7 @@ struct ASTAttr {
 union ASTAttrData {
     Expand,
     Naked,
+    Library(&AST),
     __count,
 }
 
@@ -143,6 +149,8 @@ union ASTExpr {
     BuiltinType { name: SubStr },
     Ident { name: SubStr },
     FnIdent { name: SubStr, fn: &AST },
+    TypeIdent { name: SubStr, ty: &AST },
+    GlobalIdent { name: SubStr, var: &AST },
     Number { value: SubStr },
     StringLiteral { value: String },
     Call(&AST, GAF_List), // arguments = List<&AST>
@@ -168,14 +176,19 @@ union ASTExpr {
     ResolvedGeneric(&Type),
     As(&AST, &AST),
     Dot(&AST, &AST),
-    // we support two versions of initialization:
-    // shorthand: .Some(5)
-    // long form: Option.Some(5)
-    // first argument is the optional LHS, or null if it doesn't exist
-    // second argument is name of variant
-    // if list is empty, it's an empty variant, otherwise a tuple variant
-    VariantInit(&AST, SubStr, GAF_List), // List<&AST>
+    TypeInit(ASTTypeInit),
     Paren(&AST),
+}
+
+struct ASTTypeInit {
+    // specific type, or null if it doesn't exist
+    // aka `Stuff {}` vs `.{}`
+    lhs: &AST;
+    fields: GAF_HashMap; // HashMap<SubStr, &AST>
+    has_variant: bool;
+    variant_loc: Loc;
+    variant_name: SubStr;
+    variant_args: GAF_List; // List<&AST>
 }
 
 union ASTBinary {

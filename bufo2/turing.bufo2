@@ -1,0 +1,71 @@
+
+#load "ops.bufo2";
+
+func neq(a: $T, b: $V) -> bool @naked {
+    comptime ty1 = $T;
+    comptime ty2 = $V;
+    #bir {
+        entry:
+        param ty2 r0, 1;
+        param ty1 r1, 0;
+        neq  bool r2, r0, r1;
+        ret  bool r2;
+    };
+}
+
+func count(i: i32) -> i32 { return 0; }
+func count(i: ^$T) -> i32 {
+    comptime dec: $T = blank;
+    #if #run neq($T, i32) return 1 + count(dec);
+}
+
+type _0 {}
+type N1 {}
+
+func nextStep(a: ^_0, b: ^_0, c: ^_0) -> ^_0 { return blank; }
+func nextStep(a: ^_0, b: ^_0, c: ^N1) -> ^N1 { return blank; }
+func nextStep(a: ^_0, b: ^N1, c: ^_0) -> ^N1 { return blank; }
+func nextStep(a: ^_0, b: ^N1, c: ^N1) -> ^N1 { return blank; }
+func nextStep(a: ^N1, b: ^_0, c: ^_0) -> ^_0 { return blank; }
+func nextStep(a: ^N1, b: ^_0, c: ^N1) -> ^N1 { return blank; }
+func nextStep(a: ^N1, b: ^N1, c: ^_0) -> ^N1 { return blank; }
+func nextStep(a: ^N1, b: ^N1, c: ^N1) -> ^_0 { return blank; }
+
+type Rule110($ctr, $r00, $r01, $r02, $r03, $r04, $r05, $r06, $r07, $r08, $r09, $r10, $r11, $r12, $r13, $r14, $r15, $r16, $r17, $r18, $r19) {
+    ctr: ^$ctr;
+    next: #if #run count($ctr) < 20 Rule110(
+        ^$ctr,
+        nextStep(_0, $r00, $r01),
+        nextStep($r00, $r01, $r02),
+        nextStep($r01, $r02, $r03),
+        nextStep($r02, $r03, $r04),
+        nextStep($r03, $r04, $r05),
+        nextStep($r04, $r05, $r06),
+        nextStep($r05, $r06, $r07),
+        nextStep($r06, $r07, $r08),
+        nextStep($r07, $r08, $r09),
+        nextStep($r08, $r09, $r10),
+        nextStep($r09, $r10, $r11),
+        nextStep($r10, $r11, $r12),
+        nextStep($r11, $r12, $r13),
+        nextStep($r12, $r13, $r14),
+        nextStep($r13, $r14, $r15),
+        nextStep($r14, $r15, $r16),
+        nextStep($r15, $r16, $r17),
+        nextStep($r16, $r17, $r18),
+        nextStep($r17, $r18, $r19),
+        nextStep($r18, $r19, _0)
+    ) else none;
+}
+
+func main() {
+    #run {
+        let s0: Rule110(    i32, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, N1) = blank;
+        let s1: Rule110(^s0.ctr, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, N1, N1) = s0.next;
+        let s2: Rule110(^s1.ctr, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, N1, N1, N1) = s1.next;
+        let s3: Rule110(^s2.ctr, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, N1, N1, _0, N1) = s2.next;
+        let s4: Rule110(^s3.ctr, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, N1, N1, N1, N1, N1) = s3.next;
+        let s5: Rule110(^s4.ctr, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, _0, N1, N1, _0, _0, _0, N1) = s4.next;
+    }
+}
+

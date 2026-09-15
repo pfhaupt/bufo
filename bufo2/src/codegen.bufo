@@ -229,6 +229,12 @@ struct Instr {
     fassert(is_equal_to(under, src.type), "build_store: %: Destination type does not match source type: % vs %", loc, to_string(under), to_string(src.type));
     __create_instr(code, loc, src.type, Op::Store(dst, src));
 }
+@trace func build_fetch_global_pointer(code: &Code, loc: Loc, ptr: Reg) -> Reg {
+    assert(is_pointer(ptr.type), "build_fetch_global_pointer: Source is not a pointer");
+    let dst = __allocate_register(code, ptr.type);
+    __create_instr(code, loc, ptr.type, Op::FetchGlobalPtr(dst, ptr));
+    return dst;
+}
 @trace func build_get_ptr_offset(code: &Code, loc: Loc, ty: &Type, src: Reg, offset: usize) -> Reg {
     assert(is_pointer(src.type), "build_get_ptr_offset: Source is not a pointer");
     assert(is_pointer(ty), "build_get_ptr_offset: Element type is not a pointer");
@@ -329,6 +335,12 @@ struct Instr {
     }
     unreachable("build_load_number");
 }
+@trace func build_load_type(code: &Code, loc: Loc, ty: &Type) -> Reg {
+    assert(ty.meta_level > 0, "build_load_type: Input type is not a meta type");
+    let reg = __allocate_register(code, ty);
+    __create_instr(code, loc, ty, Op::LoadType(reg, ty));
+    return reg;
+}
 @trace func build_load_string(code: &Code, loc: Loc, str: String) -> Reg {
     let ty = create_base_type(PrimType::Str);
     let reg = __allocate_register(code, ty);
@@ -388,6 +400,11 @@ struct Instr {
     __create_instr(code, loc, dst.type, Op::PtrToInt(dst, ptr));
     return dst;
 }
+@trace func build_insert_value(code: &Code, loc: Loc, base: Reg, index: usize, val: Reg) -> Reg {
+    let dst = __allocate_register(code, base.type);
+    __create_instr(code, loc, base.type, Op::InsertValue(dst, base, index, val));
+    return dst;
+}
 
 @trace func build_call(code: &Code, loc: Loc, base: Reg, args: GAF_List) -> Reg {
     let fn_ty = base.type;
@@ -431,10 +448,12 @@ union Op {
     LoadI64(Reg, i64),
     LoadBool(Reg, bool),
     LoadBlank(Reg),
+    LoadType(Reg, &Type),
     Alloca(Reg, SubStr), // associate Allocas with an identifier for later use
     Load(Reg, Reg),   // dst, src
     Store(Reg, Reg),
     Move(Reg, Reg),
+    FetchGlobalPtr(Reg, Reg),
     Br(BID),
     CondBr(Reg, BID, BID),
     ReturnVoid,
@@ -448,16 +467,18 @@ union Op {
     Neq(Reg, Reg, Reg), // eq  <dst>, <src1>, <src2>
     Gte(Reg, Reg, Reg), // gte <dst>, <src1>, <src2>
     Lte(Reg, Reg, Reg), // lte <dst>, <src1>, <src2>
+    Lt(Reg, Reg, Reg),  // lt <dst>, <src1>, <src2>
     PtrToInt(Reg, Reg),
     IntToPtr(Reg, Reg),
     ComptimeAssert(Reg, String),
+    InsertValue(Reg, Reg, usize, Reg), // <dst> = insertvalue <base>, <index>, <value>
     Noop,
     Debug,
     __count,
 }
 
 @trace func is_terminator(instr: &Instr) -> bool {
-    (comptime assert(tag(&Op::__count) == 35, "is_terminator: Op was added"));
+    (comptime assert(tag(&Op::__count) == 39, "is_terminator: Op was added"));
     match (instr.op) {
         Op::ReturnVoid   => { return true; }
         Op::Return(_)    => { return true; }
@@ -500,7 +521,6 @@ union Op {
     let &ASTData::Function(func_state) = &fn.data else {
         unreachable("codegen_function_entry: Node is not a function");
     };
-
     let rt = &func_state.code.runtime;
     rt.entry = create_block(rt, comptime newReadonlyString("entry")).id;
     set_current_block(rt, rt.entry);
@@ -535,16 +555,16 @@ union Op {
     }
 }
 
-@trace func codegen_expr(fn: &ASTFunction, expr: &AST, wants_ptr: bool) -> Reg {
+@trace func codegen_expr(code: &Code, expr: &AST, wants_ptr: bool) -> Reg {
     let &ASTData::Expr(actual_expr) = &expr.data else {
         funreachable("% codegen_expr: Node is not an expression, got %", expr.loc, expr.data);
     };
 
-    let f = func (fn: &ASTFunction, stmt: &AST, pat: &AST, expr: &AST, trampoline: &AST, is_comptime: bool) {
-        if (is_comptime) start_comptime(&fn.code);
+    let f = func (code: &Code, stmt: &AST, pat: &AST, expr: &AST, trampoline: &AST, is_comptime: bool) {
+        if (is_comptime) start_comptime(code);
         if (expr != null) {
-            let ereg = codegen_expr(fn, expr, false);
-            let preg = codegen_pattern(fn, pat, ereg, is_comptime);
+            let ereg = codegen_expr(code, expr, false);
+            let preg = codegen_pattern(code, pat, ereg, is_comptime);
             if (trampoline != null) {
                 // let <pat> = <expr> else <trampoline>;
                 message(todo(stmt.loc, "codegen_expr: Can't codegen pat-expr-trampoline yet"));
@@ -554,65 +574,75 @@ union Op {
             assert(trampoline == null);
             message(todo(stmt.loc, "codegen_expr: Can't codegen pat yet"));
         }
-        if (is_comptime) end_comptime(&fn.code);
+        if (is_comptime) end_comptime(code);
     };
 
     match (&actual_expr) {
         &ASTExpr::Let { pat, subexpr, trampoline } => {
             assert(pat != null);
-            f(fn, expr, pat, subexpr, trampoline, false);
+            f(code, expr, pat, subexpr, trampoline, false);
             return blank;
         }
         &ASTExpr::Comptime { pat, subexpr, trampoline } => {
             assert(subexpr != null, "codegen_expr: `comptime` doesn't have expr");
-            if (subexpr.type.meta_level > 0) {
-                // `comptime foo = i32;` is not generated
-                return blank;
-            }
             // Simply mark instructions as compile time. They will be evaluated next.
-            f(fn, expr, pat, subexpr, trampoline, true);
+            f(code, expr, pat, subexpr, trampoline, true);
             return blank;
         }
         &ASTExpr::ReturnVoid => {
-            assert(fn.code.comptime_level == 0, "Return in comptime context?");
-            build_br(&fn.code, expr.loc, fn.code.runtime.return_block);
+            assert(code.comptime_level == 0, "Return in comptime context?");
+            build_br(code, expr.loc, code.runtime.return_block);
             return blank;
         }
         &ASTExpr::ReturnExpr(subexpr) => {
-            assert(fn.code.comptime_level == 0, "Return in comptime context?");
-            let register = codegen_expr(fn, subexpr, false);
-            build_move(&fn.code, expr.loc, fn.code.runtime.return_register, register);
-            build_br(&fn.code, expr.loc, fn.code.runtime.return_block);
+            assert(code.comptime_level == 0, "Return in comptime context?");
+            let register = codegen_expr(code, subexpr, false);
+            build_move(code, expr.loc, code.runtime.return_register, register);
+            build_br(code, expr.loc, code.runtime.return_block);
             return blank;
         }
         &ASTExpr::Paren(sub) => {
-            return codegen_expr(fn, sub, wants_ptr);
+            return codegen_expr(code, sub, wants_ptr);
         }
         &ASTExpr::Ident { name } => {
-            let _var = get(&get_context(&fn.code).variable_map, name);
+            let _var = get(&get_context(code).variable_map, name);
             fassert(_var.ptr != null, "codegen_expr: Variable % doesn't exist!", name);
             let var = _var as Var;
             if (wants_ptr) return var.alloca_reg;
-            return build_load(&fn.code, expr.loc, var.alloca_reg);
+            return build_load(code, expr.loc, var.alloca_reg);
+        }
+        &ASTExpr::TypeIdent { name, ty } => {
+            assert(ty.type != null, "codegen_expr: Type Node has invalid type");
+            return build_load_type(code, expr.loc, ty.type);
+        }
+        &ASTExpr::GlobalIdent { name, var } => {
+            let global_module = get_global_module(expr);
+            let global_module_info = get_module_info(global_module);
+            let _var = get(&get_context(&global_module_info.code).variable_map, name);
+            fassert(_var.ptr != null, "codegen_expr: Global Variable % doesn't exist!", name);
+            let var = _var as Var;
+            let fetch = build_fetch_global_pointer(code, expr.loc, var.alloca_reg);
+            if (wants_ptr) return fetch;
+            return build_load(code, expr.loc, fetch);
         }
         &ASTExpr::FnIdent { name, _fn } => {
             let &ASTData::Function(func_state) = &_fn.data else {
                 unreachable("codegen_expr: FnIdent does not have a function");
             };
             assert(is_equal_to(expr.type, _fn.type), "codegen_expr: FnIdent type does not match Fn type");
-            return build_load_function(&fn.code, expr.loc, _fn);
+            return build_load_function(code, expr.loc, _fn);
         }
         &ASTExpr::Number { value } => {
-            return build_load_number(&fn.code, expr.loc, expr.type, value);
+            return build_load_number(code, expr.loc, expr.type, value);
         }
         &ASTExpr::StringLiteral { value } => {
-            return build_load_string(&fn.code, expr.loc, value);
+            return build_load_string(code, expr.loc, value);
         }
         &ASTExpr::Blank => {
-            return build_load_blank(&fn.code, expr.loc, expr.type);
+            return build_load_blank(code, expr.loc, expr.type);
         }
         &ASTExpr::Dot(lhs, member) => {
-            let lhs_reg = codegen_expr(fn, lhs, !is_pointer(lhs.type));
+            let lhs_reg = codegen_expr(code, lhs, !is_pointer(lhs.type));
             assert(is_pointer(lhs_reg.type), "Expected pointer as LHS of dot");
             assert(lhs_reg.size == 8, "Expected pointer sized register as LHS of dot");
             let lhs_type = get_underlying_type(lhs.type);
@@ -621,38 +651,38 @@ union Op {
                 let &ASTData::Expr(ASTExpr::Ident { field }) = &member.data else {
                     unreachable("codegen_expr: check_member_expr should've prevented this");
                 };
-                let (true, offset, size, align) = get_field_offset_size_and_align(type_decl_info, field) else {
+                let (true, _index, offset, size, align) = get_field_index_offset_size_and_align(type_decl_info, field) else {
                     unreachable("codegen_expr: Only fields are supported now, and methods will be handled differently later");
                 };
-                let dst_ptr = build_get_ptr_offset(&fn.code, expr.loc, into_pointer_type(expr.type), lhs_reg, offset);
+                let dst_ptr = build_get_ptr_offset(code, expr.loc, into_pointer_type(expr.type), lhs_reg, offset);
                 if (wants_ptr) {
                     return dst_ptr;
                 } else {
-                    return build_load(&fn.code, expr.loc, dst_ptr);
+                    return build_load(code, expr.loc, dst_ptr);
                 }
             } else {
                 unreachable("codegen_expr: Only structs are allowed for the Dot operator");
             }
         }
         &ASTExpr::Call(_base, _args) => {
-            let reg = codegen_expr(fn, _base, false);
+            let reg = codegen_expr(code, _base, false);
             let args = new_GAF_List(type_info(Reg));
             for (let i: usize = 0; i < _args.length; i = i + 1) {
                 let arg = get_ref(&_args, i) as &AST;
-                let areg = codegen_expr(fn, arg, false);
+                let areg = codegen_expr(code, arg, false);
                 push(&args, areg);
             }
-            return build_call(&fn.code, expr.loc, reg, args);
+            return build_call(code, expr.loc, reg, args);
         }
         &ASTExpr::Directive(dir) => {
             match (&dir) {
                 &Directive::Assert(subexpr, msg) => {
-                    let reg = codegen_expr(fn, subexpr, false);
-                    build_directive_assert(&fn.code, expr.loc, reg, msg);
+                    let reg = codegen_expr(code, subexpr, false);
+                    build_directive_assert(code, expr.loc, reg, msg);
                     return blank;
                 }
                 &Directive::Debug => {
-                    build_directive_debug(&fn.code, expr.loc);
+                    build_directive_debug(code, expr.loc);
                     return blank;
                 }
                 &Directive::CheckedBir(lexer, types) => {
@@ -677,52 +707,56 @@ union Op {
             }
         }
         &ASTExpr::ComptimeValue(val) => {
-            return build_load_comptime_value(&fn.code, expr.loc, expr.type, val);
+            return build_load_comptime_value(code, expr.loc, expr.type, val);
         }
         &ASTExpr::Unary(unary) => {
-            return codegen_unary(fn, expr, wants_ptr);
+            return codegen_unary(code, expr, wants_ptr);
         }
         &ASTExpr::Block(stmts, value) => {
             for (let i: usize = 0; i < stmts.length; i = i + 1) {
                 let s = get_ref(&stmts, i) as &AST;
-                codegen_expr(fn, s, false);
+                codegen_expr(code, s, false);
             }
-            return codegen_expr(fn, value, wants_ptr);
+            return codegen_expr(code, value, wants_ptr);
         }
         &ASTExpr::If(cond, then) => {
-            let cond_reg = codegen_expr(fn, cond, false);
-            let then_block = create_block(&fn.code, format1("then.%", expr));
-            let cont_block = create_block(&fn.code, format1("cont.%", expr));
-            build_cond_br(&fn.code, expr.loc, cond_reg, then_block.id, cont_block.id);
+            let cond_reg = codegen_expr(code, cond, false);
+            let then_block = create_block(code, format1("then.%", expr));
+            let cont_block = create_block(code, format1("cont.%", expr));
+            build_cond_br(code, expr.loc, cond_reg, then_block.id, cont_block.id);
 
-            set_current_block(&fn.code, then_block.id);
-            codegen_expr(fn, then, false);
+            set_current_block(code, then_block.id);
+            codegen_expr(code, then, false);
 
-            let curr = get_current_block(&fn.code);
+            let curr = get_current_block(code);
             if (!is_terminated(curr)) {
-                build_br(&fn.code, expr.loc, cont_block.id);
+                build_br(code, expr.loc, cont_block.id);
             }
 
-            set_current_block(&fn.code, cont_block.id);
+            set_current_block(code, cont_block.id);
             return blank;
         }
         &ASTExpr::Noop => {
             return blank;
         }
-        &ASTExpr::VariantInit(lhs, variant_name, args) => {
-            return codegen_variant_init(fn, expr, lhs, variant_name, args);
+        &ASTExpr::TypeInit(init) => {
+            return codegen_type_init(code, expr, init);
         }
         &ASTExpr::As(sub_expr, type) => {
-            return codegen_type_cast(fn, expr, sub_expr, type);
+            return codegen_type_cast(code, expr, sub_expr, type);
         }
         &ASTExpr::True => {
-            return build_load_bool(&fn.code, expr.loc, true);
+            return build_load_bool(code, expr.loc, true);
         }
         &ASTExpr::False => {
-            return build_load_bool(&fn.code, expr.loc, false);
+            return build_load_bool(code, expr.loc, false);
+        }
+        &ASTExpr::BuiltinType { _ } => {
+            assert(expr.type.meta_level != 0, "codegen_expr: BuiltinType is not a meta type");
+            return build_load_type(code, expr.loc, expr.type);
         }
         &ASTExpr::ResolvedGeneric(typ) => {
-            return build_load_number(&fn.code, expr.loc, typ as u64);
+            return build_load_type(code, expr.loc, expr.type);
         }
         _ => {
             message(todo(expr.loc, "codegen_expr: Can't codegen expression %", actual_expr));
@@ -731,7 +765,7 @@ union Op {
     unreachable("codegen_expr");
 }
 
-@trace func codegen_type_cast(fn: &ASTFunction, expr: &AST, subexpr: &AST, type: &AST) -> Reg {
+@trace func codegen_type_cast(code: &Code, expr: &AST, subexpr: &AST, type: &AST) -> Reg {
     let sub_type = subexpr.type;
     let type_type = type.type;
 
@@ -744,7 +778,7 @@ union Op {
     }
     let as_type = unwrap_meta_type(type_type, 1);
 
-    let sub_reg = codegen_expr(fn, subexpr, false);
+    let sub_reg = codegen_expr(code, subexpr, false);
     if (is_equal_to(sub_type, as_type)) {
         // stuff like `1 as i32` falls into this category :^)
         return sub_reg;
@@ -754,37 +788,50 @@ union Op {
     let new_size = get_size(as_type);
 
     if (is_integer(sub_type) && is_pointer(as_type)) {
-        return build_int_to_ptr(&fn.code, expr.loc, as_type, sub_reg);
+        return build_int_to_ptr(code, expr.loc, as_type, sub_reg);
     } else if (is_pointer(sub_type) && is_integer(as_type)) {
-        return build_ptr_to_int(&fn.code, expr.loc, sub_reg);
+        return build_ptr_to_int(code, expr.loc, sub_reg);
     } else {
         message(todo(expr.loc, "codegen_type_cast: % -> %", to_string(sub_type), to_string(as_type)));
     }
     unreachable("codegen_type_cast");
 }
 
-@trace func codegen_variant_init(fn: &ASTFunction, expr: &AST, lhs: &AST, variant_name: SubStr, args: GAF_List) -> Reg {
-    assert(lhs != null, "codegen_variant_init: LHS is null");
-    assert(lhs.type != null, "codegen_variant_init: LHS type is null");
-    assert(expr.type != null, "codegen_variant_init: Expr type is null");
+@trace func codegen_type_init(code: &Code, expr: &AST, init: ASTTypeInit) -> Reg {
+    let type_decl = as_type_decl(expr.type);
+    let type_decl_info = get_type_decl_info(type_decl);
+    assert(!is_generic(type_decl_info), "codegen_struct_init: Expr Type is generic");
 
-    let BaseType::TypeDecl(type_decl_node) = expr.type.base else {
-        unreachable("codegen_variant_init: LHS type is not a type decl");
-    };
-    let type_decl_info = get_type_decl_info(type_decl_node);
+    let instance = build_load_blank(code, expr.loc, expr.type);
+
+    foreach(&init.fields, func (k: Data, v: Data, arg: &(&Code, &Reg, &ASTTypeDecl)) {
+        let &(code, &instance, type_decl_info) = arg;
+        let field_name = k as SubStr;
+        let field_value = v as &AST;
+
+        let (true, index, _offset, _size, _align) = get_field_index_offset_size_and_align(type_decl_info, field_name) else {
+            unreachable(); // should've been caught by the type checker
+        };
+
+        let field_reg = codegen_expr(code, field_value, false);
+        instance = build_insert_value(code, field_value.loc, instance, index, field_reg);
+    }, &(code, &instance, type_decl_info));
+
+    if (!init.has_variant) return instance;
 
     let tag_offset = get_tag_offset(type_decl_info);
     let tag_size = type_decl_info.variants.length / 256 + 1;
 
-    let (found, variant, tag) = get_tag_of_variant(type_decl_info, variant_name);
+    let (found, variant, tag) = get_tag_of_variant(type_decl_info, init.variant_name);
     assert(found, "codegen_variant_init: Could not find variant");
 
+    // TODO(2026-09-15): Use some variation of InsertValue instead of allocating here.
+    //                   We could easily add a SET_TAG instruction but how do we
+    //                   LoadBlank and InsertValue the payload?
     let tmp_name = format1("variant_init_%", expr);
-    let instance_ptr = build_alloca(&fn.code, expr.loc, expr.type, asSubStr(&tmp_name));
+    let instance_ptr = build_alloca(code, expr.loc, expr.type, asSubStr(&tmp_name));
     {
-        // Initialize with 0s
-        let bl = build_load_blank(&fn.code, expr.loc, expr.type);
-        build_store(&fn.code, expr.loc, instance_ptr, bl);
+        build_store(code, expr.loc, instance_ptr, instance);
     }
     {
         // Set tag
@@ -794,43 +841,43 @@ union Op {
         } else {
             tag_type = create_base_type(PrimType::U16);
         }
-        let tag_reg = build_load_number(&fn.code, expr.loc, tag_type, tag as u64);
+        let tag_reg = build_load_number(code, expr.loc, tag_type, tag as u64);
 
-        let dst_ptr = build_get_ptr_offset(&fn.code, expr.loc, into_pointer_type(tag_type), instance_ptr, tag_offset);
-        build_store(&fn.code, expr.loc, dst_ptr, tag_reg);
+        let dst_ptr = build_get_ptr_offset(code, expr.loc, into_pointer_type(tag_type), instance_ptr, tag_offset);
+        build_store(code, expr.loc, dst_ptr, tag_reg);
     }
 
     let _variant_start = next_multiple_of(tag_offset + tag_size, variant.align_in_bytes);
-    for (let i: usize = 0; i < args.length; i = i + 1) {
-        let arg = get_ref(&args, i) as &AST;
+    for (let i: usize = 0; i < init.variant_args.length; i = i + 1) {
+        let arg = get_ref(&init.variant_args, i) as &AST;
         let field_offset = get_ref(&variant.field_offsets, i) as usize;
         let offset_in_init = _variant_start + field_offset;
-        let arg_reg = codegen_expr(fn, arg, false);
+        let arg_reg = codegen_expr(code, arg, false);
 
-        let dst_ptr = build_get_ptr_offset(&fn.code, arg.loc, into_pointer_type(arg.type), instance_ptr, offset_in_init);
-        build_store(&fn.code, arg.loc, dst_ptr, arg_reg);
+        let dst_ptr = build_get_ptr_offset(code, arg.loc, into_pointer_type(arg.type), instance_ptr, offset_in_init);
+        build_store(code, arg.loc, dst_ptr, arg_reg);
     }
 
-    return build_load(&fn.code, expr.loc, instance_ptr);
+    return build_load(code, expr.loc, instance_ptr);
 }
 
-@trace func codegen_unary(fn: &ASTFunction, expr: &AST, wants_ptr: bool) -> Reg {
+@trace func codegen_unary(code: &Code, expr: &AST, wants_ptr: bool) -> Reg {
     let &ASTData::Expr(ASTExpr::Unary(unary)) = &expr.data else {
         unreachable("codegen_unary: Node is not a unary expression");
     };
     match (unary) {
         ASTUnary::AddressOf(sub) => {
-            return codegen_expr(fn, sub, true);
+            return codegen_expr(code, sub, true);
         }
         ASTUnary::ValueOf(sub) => {
-            let reg = codegen_expr(fn, sub, false);
+            let reg = codegen_expr(code, sub, false);
             assert(is_pointer(reg.type), "codegen_unary: SubExpr is not a pointer");
             if (wants_ptr) return reg;
-            return build_load(&fn.code, expr.loc, reg);
+            return build_load(code, expr.loc, reg);
         }
         ASTUnary::MetaTypeOf(_) => {
             assert(expr.type.meta_level != 0, "codegen_unary: MetaTypeOf is not a meta type");
-            return build_load_number(&fn.code, expr.loc, expr.type as u64);
+            return build_load_type(code, expr.loc, expr.type);
         }
         _ => {
             message(todo(expr.loc, "codegen_unary: Can't codegen expression %", unary));
@@ -839,19 +886,19 @@ union Op {
     unreachable("codegen_unary");
 }
 
-@trace func codegen_pattern(fn: &ASTFunction, pat: &AST, expr: Reg, is_comptime: bool) -> Reg {
+@trace func codegen_pattern(code: &Code, pat: &AST, expr: Reg, is_comptime: bool) -> Reg {
     let &ASTData::Pat(actual_pat) = &pat.data else {
         unreachable("codegen_pattern: Node is not a pattern");
     };
     match (&actual_pat) {
         &ASTPat::Ident(ident) => {
-            let var = build_alloca(&fn.code, pat.loc, pat.type, ident);
-            build_store(&fn.code, pat.loc, var, expr);
+            let var = build_alloca(code, pat.loc, pat.type, ident);
+            build_store(code, pat.loc, var, expr);
 
-            return build_load_bool(&fn.code, pat.loc, true);
+            return build_load_bool(code, pat.loc, true);
         }
         &ASTPat::PatWithType(subpat, type) => {
-            return codegen_pattern(fn, subpat, expr, is_comptime);
+            return codegen_pattern(code, subpat, expr, is_comptime);
         }
         _ => {
             message(todo(pat.loc, "codegen_pattern: Can't codegen pattern"));
@@ -992,6 +1039,10 @@ union Op {
     } else if (equals(&op_name, &comptime newSubStr("lte"))) {
         let (dst_reg, src1_reg, src2_reg) = _3(lexer, func_info, register_map, type);
         op = Op::Lte(dst_reg, src1_reg, src2_reg);
+        op_reg = dst_reg;
+    } else if (equals(&op_name, &comptime newSubStr("lt"))) {
+        let (dst_reg, src1_reg, src2_reg) = _3(lexer, func_info, register_map, type);
+        op = Op::Lt(dst_reg, src1_reg, src2_reg);
         op_reg = dst_reg;
     } else if (equals(&op_name, &comptime newSubStr("ret"))) {
         assert(func_info.code.comptime_level == 0, "Return in comptime context?");
