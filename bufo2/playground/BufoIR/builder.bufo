@@ -1,0 +1,166 @@
+
+import "prelude.bufo";
+import "format.bufo";
+import "list.bufo";
+
+import "../BufoIR/context.bufo";
+import "../BufoIR/basic_block.bufo";
+import "../BufoIR/value.bufo";
+import "../BufoIR/type.bufo";
+
+struct BIRBuilder {
+    _impl: &__BIRBuilder;
+}
+struct __BIRBuilder {
+    bir_ctx: BIRContext;
+    current_block: BIRBasicBlock;
+}
+
+func get_context(builder: BIRBuilder) -> BIRContext {
+    return builder._impl.bir_ctx;
+}
+
+@trace func new_bir_builder(ctx: BIRContext) -> BIRBuilder {
+    let ptr = insert_into_context(ctx, __BIRBuilder {
+        bir_ctx: ctx,
+    });
+    return BIRBuilder { _impl: ptr };
+}
+
+@trace func set_current_block(builder: BIRBuilder, block: BIRBasicBlock) {
+    builder._impl.current_block = block;
+}
+@trace func get_current_block(builder: BIRBuilder) -> BIRBasicBlock {
+    return builder._impl.current_block;
+}
+
+@trace func build_alloca(builder: BIRBuilder, t: BIRType) -> BIRValue {
+    return create_value(builder, into_pointer_type(t), __BIRValue::Alloca, t);
+}
+
+@trace func build_load_u32(builder: BIRBuilder, val: u32) -> BIRValue {
+    let u32 = get_integer_type(get_context(builder), 32, false);
+    return create_value(builder, u32, __BIRValue::LoadU32, val);
+}
+
+@trace func build_store(builder: BIRBuilder, dst: BIRValue, src: BIRValue) -> BIRValue {
+    assert(is_store_destination(dst), "build_store: Destination is not valid!");
+    let none = get_none_type(get_context(builder));
+    return create_value(builder, none, __BIRValue::Store, dst, src);
+}
+@trace func build_load(builder: BIRBuilder, src: BIRValue) -> BIRValue {
+    let t = get_type(src);
+    assert(is_pointer_type(t), "build_load: Source is not a pointer");
+    let under = get_pointee_type(t);
+    return create_value(builder, under, __BIRValue::Load, src);
+}
+
+@trace func build_add(builder: BIRBuilder, src1: BIRValue, src2: BIRValue) -> BIRValue {
+    let t1 = get_type(src1);
+    let t2 = get_type(src2);
+    assert(equals(t1, t2), "build_add: Source operand types dont match");
+
+    if (is_integer_type(t1)) {
+        // REVIEW(2026-09-26): have a way to evaluate a constant value if possible
+        //                     and return that, so we dont have to also check other
+        //                     cases like LoadU64 etc in the future.
+        if let __BIRValue::LoadU32(v1) = src1._impl.data {
+            if let __BIRValue::LoadU32(v2) = src2._impl.data {
+                return create_value(builder, t1, __BIRValue::LoadU32, v1 + v2);
+            }
+        }
+        return create_value(builder, t1, __BIRValue::IntAdd, src1, src2);
+    }
+
+    assert(false, "build_add: Source operand is not an integer");
+    return blank;
+}
+
+@trace func build_sub(builder: BIRBuilder, src1: BIRValue, src2: BIRValue) -> BIRValue {
+    let t1 = get_type(src1);
+    let t2 = get_type(src2);
+    assert(equals(t1, t2), "build_sub: Source operand types dont match");
+
+    if (is_integer_type(t1)) {
+        if let __BIRValue::LoadU32(v1) = src1._impl.data {
+            if let __BIRValue::LoadU32(v2) = src2._impl.data {
+                return create_value(builder, t1, __BIRValue::LoadU32, v1 - v2);
+            }
+        }
+        return create_value(builder, t1, __BIRValue::IntSub, src1, src2);
+    }
+
+    assert(false, "build_sub: Source operand is not an integer");
+    return blank;
+}
+
+@trace func build_int_cmp(builder: BIRBuilder, pred: BIRIntCmp, src1: BIRValue, src2: BIRValue) -> BIRValue {
+    let t1 = get_type(src1);
+    let t2 = get_type(src2);
+    assert(equals(t1, t2), "build_int_cmp: Source operand types dont match");
+    assert(is_integer_type(t1), "build_int_cmp: Operands arent integers");
+
+    let bool = get_bool_type(get_context(builder));
+    if let __BIRValue::LoadU32(v1) = src1._impl.data {
+        if let __BIRValue::LoadU32(v2) = src2._impl.data {
+            let val: bool = false;
+            match (pred) {
+                BIRIntCmp::Neq => { val = v1 != v2; }
+                BIRIntCmp::Eq  => { val = v1 == v2; }
+                BIRIntCmp::Lt  => { val = v1 <  v2; }
+                BIRIntCmp::Lte => { val = v1 <= v2; }
+                BIRIntCmp::Gt  => { val = v1 >  v2; }
+                BIRIntCmp::Gte => { val = v1 >= v2; }
+                _ => { unreachable("build_int_cmp"); }
+            }
+            return create_value(builder, bool, __BIRValue::LoadBool, val);
+        }
+    }
+    return create_value(builder, bool, __BIRValue::IntCmp, pred, src1, src2);
+}
+
+@trace func build_cond_br(builder: BIRBuilder, cond: BIRValue, if_true: BIRBasicBlock, if_false: BIRBasicBlock) -> BIRValue {
+    let cond_type = get_type(cond);
+    assert(is_bool_type(cond_type), "build_cond_br: Condition is not a boolean");
+
+    if (is_constant(cond)) {
+        fprint("build_cond_br: Condition is constant\n");
+    }
+
+    let bb = get_current_block(builder);
+    add_predecessor(if_true, bb);
+    add_predecessor(if_false, bb);
+
+    let none = get_none_type(get_context(builder));
+    return create_value(builder, none, __BIRValue::CondBr, cond, if_true, if_false);
+}
+
+@trace func build_br(builder: BIRBuilder, dst: BIRBasicBlock) -> BIRValue {
+    let bb = get_current_block(builder);
+    add_predecessor(dst, bb);
+
+    let none = get_none_type(get_context(builder));
+    return create_value(builder, none, __BIRValue::Br, dst);
+}
+
+@trace func build_return(builder: BIRBuilder) -> BIRValue {
+    let none = get_none_type(get_context(builder));
+    return create_value(builder, none, __BIRValue::Return);
+}
+@trace func build_return(builder: BIRBuilder, expr: BIRValue) -> BIRValue {
+    let none = get_none_type(get_context(builder));
+    return create_value(builder, none, __BIRValue::ReturnExpr, expr);
+}
+
+@trace func build_call(builder: BIRBuilder, fn: BIRValue, args: ...BIRValue) -> BIRValue {
+    let fn_type = get_type(fn);
+    assert(is_function_type(fn_type), "build_call: Expected function as base");
+
+    let bir_args = new_GAF_List(type_info(BIRValue));
+    for (let i: usize = 0; i < args.length; i = i + 1) {
+        push(&bir_args, args[i]);
+    }
+
+    let ret_type = get_return_type(fn_type);
+    return create_value(builder, ret_type, __BIRValue::Call, fn, bir_args);
+}

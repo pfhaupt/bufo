@@ -1,0 +1,119 @@
+
+import "list.bufo";
+import "type_info.bufo";
+import "libc.bufo";
+
+import "../BufoIR/type.bufo";
+
+struct BIRContext {
+    _impl: &__BIRContext;
+}
+struct __BIRContext {
+    buffers: GAF_List; // List<__BIRByteBuffer>
+    type_cache: GAF_List; // List<BIRType>
+    none_type: BIRType;
+    bool_type: BIRType;
+}
+
+@trace func new_bir_context() -> BIRContext {
+    let buffers = new_GAF_List(type_info(__BIRByteBuffer));
+    push(&buffers, new_bir_byte_buffer());
+    let ptr = copy_data_to_heap(__BIRContext {
+        buffers: buffers,
+        type_cache: new_GAF_List(type_info(BIRType)),
+    });
+
+    let bir_ctx = BIRContext { _impl: ptr.ptr };
+
+    let none = __create_none_type(bir_ctx);
+    bir_ctx._impl.none_type = allocate_type_in_context(bir_ctx, none);
+    let bool = __create_bool_type(bir_ctx);
+    bir_ctx._impl.bool_type = allocate_type_in_context(bir_ctx, bool);
+
+    return bir_ctx;
+}
+
+func insert_into_context(ctx: BIRContext, val: Data) -> Any {
+    let buf = get_current_buffer(ctx, get_size(&val.info));
+    return insert_into_buffer(buf, val);
+}
+
+func get_type_if_exists(ctx: BIRContext, typ: BIRType) -> (bool, BIRType) {
+    for (let i: usize = 0; i < ctx._impl.type_cache.length; i = i + 1) {
+        let cache = get_ref(&ctx._impl.type_cache, i) as BIRType;
+        if (equals(cache, typ)) {
+            return (true, cache);
+        }
+    }
+    return (false, blank);
+}
+
+func get_integer_type(ctx: BIRContext, size_in_bits: u64, signed: bool) -> BIRType {
+    let ty = __create_integer_type(ctx, size_in_bits, signed);
+    if let (true, cached) = get_type_if_exists(ctx, BIRType { _impl: &ty }) {
+        return cached;
+    }
+    let typ = allocate_type_in_context(ctx, ty);
+    push(&ctx._impl.type_cache, typ);
+    return typ;
+}
+
+func get_pointer_type(ctx: BIRContext, pointee: BIRType) -> BIRType {
+    let ptr = __create_pointer_type(ctx, pointee);
+    let typ = allocate_type_in_context(ctx, ptr);
+    return typ;
+}
+
+func get_none_type(ctx: BIRContext) -> BIRType {
+    return ctx._impl.none_type;
+}
+func get_bool_type(ctx: BIRContext) -> BIRType {
+    return ctx._impl.bool_type;
+}
+
+func allocate_type_in_context(ctx: BIRContext, ty: __BIRType) -> BIRType {
+    return BIRType { _impl: insert_into_context(ctx, ty) };
+}
+
+func create_function_type(ctx: BIRContext, return_type: BIRType, variadic: bool) -> BIRType {
+    let ty = __create_function_type(ctx, return_type, variadic);
+    return allocate_type_in_context(ctx, ty);
+}
+
+@trace func release_context(ctx: BIRContext) {
+    for (let i: usize = 0; i < ctx._impl.buffers.length; i = i + 1) {
+        let bfr: &__BIRByteBuffer = get_ref_raw(&ctx._impl.buffers, i);
+        C::free(bfr.elements);
+    }
+    ctx._impl.buffers.length = 0;
+}
+
+func get_current_buffer(ctx: BIRContext, wanted_size: usize) -> &__BIRByteBuffer {
+    let _last: &__BIRByteBuffer = get_ref_raw(&ctx._impl.buffers, ctx._impl.buffers.length - 1);
+    if (_last.capacity - _last.length >= wanted_size) return _last;
+    push(&ctx._impl.buffers, new_bir_byte_buffer());
+    return get_ref_raw(&ctx._impl.buffers, ctx._impl.buffers.length - 1);
+}
+
+func insert_into_buffer(buffer: &__BIRByteBuffer, val: Data) -> Any {
+    let size = get_size(&val.info);
+    let dst = &buffer.elements[buffer.length];
+    C::memcpy(dst, val.ptr, size);
+    buffer.length = buffer.length + size;
+    return dst;
+}
+
+struct __BIRByteBuffer {
+    elements: &u8;
+    length: usize;
+    capacity: usize;
+}
+
+@trace func new_bir_byte_buffer() -> __BIRByteBuffer {
+    comptime cap: usize = 65536;
+    return __BIRByteBuffer {
+        elements: C::malloc(cap),
+        length: 0,
+        capacity: cap,
+    };
+}

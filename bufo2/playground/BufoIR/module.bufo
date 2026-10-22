@@ -1,0 +1,120 @@
+
+import "prelude.bufo";
+
+import "string.bufo";
+import "substr.bufo";
+import "hashmap.bufo";
+import "type_info.bufo";
+import "format.bufo";
+
+import "../BufoIR/context.bufo";
+import "../BufoIR/function.bufo";
+import "../BufoIR/value.bufo";
+import "../BufoIR/type.bufo";
+
+import "../RanaIR/module.bufo";
+import "../RanaIR/function.bufo";
+
+struct BIRModule {
+    _impl: &__BIRModuleImpl;
+}
+struct __BIRModuleImpl {
+    bir_ctx: BIRContext;
+    rana_mod: RanaModule;
+    name: String;
+    global_variables: GAF_HashMap; // HashMap<String, BIRGlobal>
+    functions: GAF_HashMap;        // HashMap<String, BIRValue>
+}
+
+func get_rana_module(mod: BIRModule) -> RanaModule {
+    return mod._impl.rana_mod;
+}
+
+func get_context(mod: BIRModule) -> BIRContext {
+    return mod._impl.bir_ctx;
+}
+
+func has_function(mod: BIRModule, name: String) -> bool {
+    return get(&mod._impl.functions, name).ptr != null;
+}
+
+@nodiscard func new_bir_module(ctx: BIRContext, name: SubStr) -> BIRModule {
+    let mod = __BIRModuleImpl {
+        bir_ctx: ctx,
+        name: toString(&name),
+        global_variables: new_hashmap_with_string_key(type_info(BIRGlobal)),
+        functions: new_hashmap_with_string_key(type_info(BIRValue)),
+    };
+    let ptr = insert_into_context(ctx, mod);
+    let bir_mod = BIRModule { _impl: ptr };
+    bir_mod._impl.rana_mod = new_rana_module(bir_mod);
+
+    return bir_mod;
+}
+
+struct BIRGlobal {
+    _impl: &__BIRGlobalImpl;
+}
+struct __BIRGlobalImpl {
+    name: String;
+    type: BIRType;
+    value: BIRValue;
+}
+
+func new_bir_global(ctx: BIRContext, name: String, type: BIRType) -> BIRGlobal {
+    let ptr = insert_into_context(ctx, __BIRGlobalImpl {
+        name: name,
+        type: type,
+    });
+    return BIRGlobal { _impl: ptr };
+}
+
+@trace func add_global(mod: BIRModule, type: BIRType, name: SubStr) -> BIRValue {
+    let ctx = get_context(mod);
+
+    let _name = toString(&name);
+    if (contains(&mod._impl.global_variables, _name)) {
+        todo_with_msg("add_global: Global Variable already exists");
+    }
+
+    let global_value = new_bir_global(ctx, _name, type);
+    add(&mod._impl.global_variables, _name, global_value);
+
+    let ptr = into_pointer_type(type);
+    return create_value_in_context(ctx, ptr, __BIRValue::GlobalValue, global_value);
+}
+
+func dump_module(mod: BIRModule) {
+    let out: String = blank;
+    format(&out, "// BufoIR Module '%'\n", mod._impl.name);
+    foreach(&mod._impl.global_variables, func (k: Data, v: Data, out: &String) {
+        let elem = v as BIRGlobal;
+        let _t = to_string(elem._impl.type);
+        format(out, "% @% = ", _t, elem._impl.name);
+        if (elem._impl.value._impl != null) {
+            to_string(out, elem._impl.value);
+        } else {
+            format(out, "<uninitialized>");
+        }
+        format(out, "\n");
+        drop(&_t);
+    }, &out);
+    foreach(&mod._impl.functions, func (k: Data, v: Data, out: &String) {
+        to_string(out, v as BIRValue);
+        format(out, "\n");
+    }, &out);
+
+    fprint("%", out);
+    drop(&out);
+
+    dump_module(get_rana_module(mod));
+}
+
+func compile_module(bir_mod: BIRModule) -> bool {
+    foreach(&bir_mod._impl.functions, func (k: Data, v: Data) {
+        let name = k as String;
+        let fn = v as BIRValue;
+        compile_function(fn);
+    });
+    return true;
+}

@@ -1,0 +1,173 @@
+
+import "format.bufo";
+import "substr.bufo";
+import "list.bufo";
+
+import "./BufoIR/context.bufo";
+import "./BufoIR/module.bufo";
+import "./BufoIR/function.bufo";
+import "./BufoIR/basic_block.bufo";
+import "./BufoIR/builder.bufo";
+import "./BufoIR/value.bufo";
+import "./BufoIR/type.bufo";
+
+import "./RanaIR/module.bufo";
+
+/*
+ * Function = List of Blocks
+ * Block = List of Instructions
+ *
+ * func main() {
+ *   let a: i32 = 12;
+ * }
+ * func @main() {
+ * entry:
+ *   %a.ptr = alloca i32
+ *   %a.val = i32 12
+ *   %store %a.ptr, %a.val
+ * }
+ *
+ * Problems with current Codegen:
+ * - So many different contexts to keep in mind
+ * - Can't arbitrarily instruct interpreter to evaluate *specific* instructions
+ * - Why does the global scope have its own interpreter?
+ * - Everything is a dynamic array
+
+ * Requirements for new Codegen:
+ * - Arbitrarily create instructions for runtime and comptime execution (i.e. let a = 12; vs comptime a = 12; }
+ * - Arbitrarily execute instructions (i.e. #run foo() )
+ *   - Even if this is always started in a comptime context (comptime variable, #run), it should be
+ *     possible to evaluate non-comptime instructions
+ * - Easily remember where instructions come from
+ *   - In the above example, you can easily construct use cases like "a is never used, delete all
+ *     instructions that initialize and store it"
+ * - Easily remove and insert instructions anywhere I want
+ *   - Optimizations, duh
+ *   - Macros, comptime variables, etc
+ * - It should be fast to evaluate instructions
+ * - Global Scope should not have a concept of blocks
+ *   - We have static initializers for all variables, if we had a tree representation of
+ *     instructions we could just have something akin to LLVMGlobalValue
+ *   - Blocks imply that we can have branches on the global scope, which I don't want
+ *   - Ideally the global scope should just be a lookup of variable name => initializer
+ *     - Interpreter can then decide how and where to allocate that stuff
+ *
+ * AST -> BIR -> Interpreter
+ * AST -> HIR -> LIR -> Interpreter
+ *
+ * Plan:
+ * - Virtual registers, still high level enough to store structures
+ * - Linearized, no concept of basic blocks, just normal jumps
+ * - API: Convert whole functions, or the whole module
+ */
+
+func compile_main_fn(mod: BIRModule, builder: BIRBuilder, foo_fn: BIRValue) -> (bool, BIRValue) {
+    let ctx = get_context(mod);
+    let u32_type = get_integer_type(ctx, 32, false);
+
+    let fnType = create_function_type(ctx, u32_type, false);
+
+    let fn = new_bir_function(mod, newSubStr("main"), fnType);
+
+    let entry = append_basic_block(fn, newSubStr("entry"));
+    set_current_block(builder, entry);
+
+    let var   = build_alloca(builder, u32_type);
+    let other = build_alloca(builder, u32_type);
+
+    let b = build_load_u32(builder, 13);
+    let a = build_call(builder, foo_fn, b);
+    build_store(builder, var, build_add(builder, a, b));
+
+    let val = build_load(builder, var);
+    build_store(builder, other, val);
+
+    val = build_load(builder, other);
+    let cmp = build_int_cmp(builder, BIRIntCmp::Neq, val, a);
+    let true_block  = append_basic_block(fn, newSubStr("true"));
+    let false_block = append_basic_block(fn, newSubStr("false"));
+    build_cond_br(builder, cmp, true_block, false_block);
+
+    set_current_block(builder, true_block);
+    build_return(builder, build_load_u32(builder, 0));
+
+    set_current_block(builder, false_block);
+    build_return(builder, build_load_u32(builder, 1));
+
+    return (compile_function(fn), fn);
+}
+
+func compile_foo_fn(mod: BIRModule, builder: BIRBuilder) -> (bool, BIRValue) {
+    let ctx = get_context(mod);
+    let u32_type = get_integer_type(ctx, 32, false);
+
+    let fnType = create_function_type(ctx, u32_type, false);
+
+    let fn = new_bir_function(mod, newSubStr("foo"), fnType);
+
+    let entry = append_basic_block(fn, newSubStr("entry"));
+    set_current_block(builder, entry);
+
+    let var   = build_alloca(builder, u32_type);
+    let other = build_alloca(builder, u32_type);
+
+    let a = build_load_u32(builder, 12);
+    let b = build_load_u32(builder, 13);
+    build_store(builder, var, build_add(builder, a, b));
+    build_store(builder, other, build_load(builder, var));
+    build_return(builder, build_load(builder, other));
+
+    return (compile_function(fn), fn);
+}
+
+func compile_broken(mod: BIRModule, builder: BIRBuilder) -> (bool, BIRValue) {
+    let ctx = get_context(mod);
+    let u32_type = get_integer_type(ctx, 32, false);
+
+    let fnType = create_function_type(ctx, u32_type, false);
+
+    let fn = new_bir_function(mod, newSubStr("broken"), fnType);
+
+    let entry = append_basic_block(fn, newSubStr("entry"));
+    set_current_block(builder, entry);
+
+    let a = build_alloca(builder, u32_type);
+    let b = build_alloca(builder, u32_type);
+
+    build_store(builder, b, build_load_u32(builder, 15));
+
+    let load = build_load(builder, b);
+    build_store(builder, a, load);
+
+    build_store(builder, b, build_load_u32(builder, 10));
+
+    build_return(builder, load);
+
+    return (compile_function(fn), fn);
+}
+
+func main(argc: i32, argv: &&char) -> i32 {
+    let context = new_bir_context();
+    let builder = new_bir_builder(context);
+
+    let mod = new_bir_module(context, newSubStr("module"));
+
+    let (succ_foo, foo_fn) = compile_foo_fn(mod, builder);
+    if (!succ_foo) return 1;
+
+    let (succ_main, main_fn) = compile_main_fn(mod, builder, foo_fn);
+    if (!succ_main) return 1;
+
+    let (succ_broken, broken_fn) = compile_broken(mod, builder);
+    if (!succ_broken) return 1;
+
+    if (!compile_module(mod)) return 1;
+
+    dump_module(get_rana_module(mod));
+
+    release_context(context);
+
+    fprint("we actually got to the end\n");
+    return 0;
+}
+

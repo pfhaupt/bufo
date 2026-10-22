@@ -1,0 +1,161 @@
+
+import "prelude.bufo";
+import "format.bufo";
+import "string.bufo";
+import "list.bufo";
+
+import "../BufoIR/context.bufo";
+
+struct BIRType {
+    _impl: &__BIRType;
+}
+
+struct __BIRType {
+    ctx: BIRContext;
+    data: __BIRTypeData;
+}
+union __BIRTypeData {
+    Integer(/*size_in_bits*/u64, /*signed*/bool),
+    Pointer(/*pointee*/BIRType),
+    Function(BIRTypeFn),
+    Bool,
+    None,
+}
+
+struct BIRTypeFn {
+    return_type: BIRType;
+    variadic: bool;
+    parameters: GAF_List; // List<BIRType>
+}
+
+func to_string(ty: BIRType) -> String {
+    let out: String = blank;
+    format(&out, "TODO: to_string(BIRType)");
+    return out;
+}
+
+func get_context(t: BIRType) -> BIRContext {
+    return t._impl.ctx;
+}
+
+func is_integer_type(t: BIRType) -> bool {
+    if let __BIRTypeData::Integer(_, _) = t._impl.data {
+        return true;
+    }
+    return false;
+}
+func is_function_type(t: BIRType) -> bool {
+    if let __BIRTypeData::Function(_) = t._impl.data {
+        return true;
+    }
+    return false;
+}
+func is_pointer_type(t: BIRType) -> bool {
+    if let __BIRTypeData::Pointer(_) = t._impl.data {
+        return true;
+    }
+    return false;
+}
+func is_bool_type(t: BIRType) -> bool {
+    if let __BIRTypeData::Bool = t._impl.data {
+        return true;
+    }
+    return false;
+}
+
+func into_pointer_type(t: BIRType) -> BIRType {
+    return get_pointer_type(get_context(t), t);
+}
+
+func equals(t1: BIRType, t2: BIRType) -> bool {
+    if (t1._impl == t2._impl) return true;
+    match ((t1._impl.data, t2._impl.data)) {
+        (__BIRTypeData::Integer(s1, u1), __BIRTypeData::Integer(s2, u2)) => {
+            return s1 == s2 && u1 == u2;
+        }
+        _ => {
+            ftodo("equals(BIRType, BIRType):\n%\n%\n", t1, t2);
+        }
+    }
+    return false;
+}
+
+func get_size_in_bytes(t: BIRType) -> u64 {
+    let bits = get_size_in_bits(t);
+    if (bits % 8 == 0) return bits / 8;
+    return bits / 8 + 1;
+}
+func get_size_in_bits(t: BIRType) -> u64 {
+    match (t._impl.data) {
+        __BIRTypeData::Integer(s, _) => { return s; }
+        // TODO(2026-10-22): Data Layout, accept 32bit pointers :mhm:
+        __BIRTypeData::Pointer(_) => { return 64; }
+        __BIRTypeData::Function(_) => { return 64; }
+        __BIRTypeData::Bool => { return 1; }
+        __BIRTypeData::None => { return 0; }
+        _ => { }
+    }
+    unreachable("get_size_in_bits");
+}
+func get_align_in_bytes(t: BIRType) -> u64 {
+    let __align = func (t: BIRType) -> u64 {
+        match (t._impl.data) {
+            __BIRTypeData::Integer(s, _) => { return next_multiple_of(s as usize, 8) as u64 / 8; }
+            // TODO(2026-10-22): Data Layout, accept 32bit pointers :mhm:
+            __BIRTypeData::Pointer(_) => { return 8; }
+            __BIRTypeData::Function(_) => { return 8; }
+            __BIRTypeData::Bool => { return 1; }
+            __BIRTypeData::None => { return 0; }
+            _ => { }
+        }
+        unreachable("get_align_in_bytes");
+    };
+    return nextPowerOfTwo(__align(t) as usize) as u64;
+}
+
+func __create_type(ctx: BIRContext, data: __BIRTypeData) -> __BIRType {
+    return __BIRType {
+        ctx: ctx,
+        data: data
+    };
+}
+
+func __create_integer_type(ctx: BIRContext, size_in_bits: u64, signed: bool) -> __BIRType {
+    assert(size_in_bits == 8 || size_in_bits == 16 || size_in_bits == 32 || size_in_bits == 64, "__create_integer_type: Do we want to support arbitrary integers?");
+    return __create_type(ctx, __BIRTypeData::Integer(size_in_bits, signed));
+}
+func __create_pointer_type(ctx: BIRContext, pointee: BIRType) -> __BIRType {
+    return __create_type(ctx, __BIRTypeData::Pointer(pointee));
+}
+func __create_function_type(ctx: BIRContext, return_type: BIRType, variadic: bool) -> __BIRType {
+    return __create_type(ctx, __BIRTypeData::Function(BIRTypeFn {
+        return_type: return_type,
+        variadic: variadic,
+        parameters: new_GAF_List(type_info(BIRType)),
+    }));
+}
+func __create_none_type(ctx: BIRContext) -> __BIRType {
+    return __create_type(ctx, __BIRTypeData::None);
+}
+func __create_bool_type(ctx: BIRContext) -> __BIRType {
+    return __create_type(ctx, __BIRTypeData::Bool);
+}
+
+func set_return_type(fn: BIRType, ret_type: BIRType) {
+}
+func get_return_type(fn_ty: BIRType) -> BIRType {
+    let __BIRTypeData::Function(fn) = fn_ty._impl.data else {
+        unreachable("get_return_type");
+    };
+    return fn.return_type;
+}
+
+func add_parameter(fn: BIRType, param: BIRType) {
+}
+
+func get_pointee_type(ptr: BIRType) -> BIRType {
+    let __BIRTypeData::Pointer(pointee) = ptr._impl.data else {
+        unreachable("get_pointee_type: Not a pointer");
+    };
+    return pointee;
+}

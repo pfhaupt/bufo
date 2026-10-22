@@ -1,0 +1,305 @@
+
+import "prelude.bufo";
+
+import "libc.bufo";
+import "substr.bufo";
+import "string.bufo";
+import "type_info.bufo";
+import "format.bufo";
+import "hashset.bufo";
+import "list.bufo";
+
+import "../BufoIR/context.bufo";
+import "../BufoIR/module.bufo";
+import "../BufoIR/function.bufo";
+import "../BufoIR/basic_block.bufo";
+import "../BufoIR/builder.bufo";
+import "../BufoIR/type.bufo";
+
+struct BIRValue {
+    _impl: &__BIRValueImpl;
+}
+
+struct __BIRValueImpl {
+    type: BIRType;
+    uses: GAF_HashSet; // HashSet<BIRValue>
+    data: __BIRValue;
+}
+
+union __BIRValue {
+    Function(BIRFunction),
+    GlobalValue(BIRGlobal),
+
+    Alloca(BIRType),
+    Store(BIRValue, BIRValue),
+    Load(BIRValue),
+
+    LoadBool(bool),
+    LoadU32(u32),
+
+    IntAdd(BIRValue, BIRValue),
+    IntSub(BIRValue, BIRValue),
+    IntMul(BIRValue, BIRValue),
+    IntDiv(BIRValue, BIRValue),
+    IntCmp(BIRIntCmp, BIRValue, BIRValue),
+
+    Call(BIRValue, GAF_List /* List<BIRValue> */),
+
+    CondBr(BIRValue, BIRBasicBlock, BIRBasicBlock),
+    Br(BIRBasicBlock),
+    Return,
+    ReturnExpr(BIRValue),
+    __count,
+}
+
+union BIRIntCmp {
+    Neq, // !=
+    Eq,  // ==
+    Lt,  // <
+    Lte, // <=
+    Gt,  // >
+    Gte, // >=
+}
+
+func predicate_to_cstr(pred: BIRIntCmp) -> &char {
+    match (pred) {
+        BIRIntCmp::Neq => { return "neq"; }
+        BIRIntCmp::Eq  => { return "eq"; }
+        BIRIntCmp::Lt  => { return "lt"; }
+        BIRIntCmp::Lte => { return "lte"; }
+        BIRIntCmp::Gt  => { return "gt"; }
+        BIRIntCmp::Gte => { return "gte"; }
+        _ => { }
+    }
+    unreachable("predicate_to_cstr");
+}
+
+func to_string(out: &String, val: BIRValue) {
+    (comptime assert(tag(&__BIRValue::__count) == 17, "to_string(BIRValue): Added new Value"));
+    match (val._impl.data) {
+        __BIRValue::Function(fn)      => {
+            to_string(out, fn);
+        }
+        __BIRValue::GlobalValue(global) => {
+            format(out, "@%", global._impl.name);
+        }
+        __BIRValue::Alloca(t)         => {
+            let _t = to_string(t);
+            format(out, "alloca %", _t);
+            drop(&_t);
+        }
+        __BIRValue::Store(dst, src)   => {
+            format(out, "store ");
+            to_string(out, dst);
+            format(out, ", ");
+            to_string(out, src);
+        }
+        __BIRValue::Load(ptr)   => {
+            let _t = to_string(val._impl.type);
+            format(out, "load % ", _t);
+            drop(&_t);
+            to_string(out, ptr);
+        }
+        __BIRValue::LoadBool(b)       => {
+            format(out, "%", b);
+        }
+        __BIRValue::LoadU32(v)        => {
+            format(out, "u32 %", v);
+        }
+        __BIRValue::IntAdd(s1, s2)    => {
+            to_string(out, s1);
+            format(out, " + ");
+            to_string(out, s2);
+        }
+        __BIRValue::IntSub(s1, s2)    => {
+            to_string(out, s1);
+            format(out, " - ");
+            to_string(out, s2);
+        }
+        __BIRValue::IntMul(s1, s2)    => {
+            to_string(out, s1);
+            format(out, " * ");
+            to_string(out, s2);
+        }
+        __BIRValue::IntDiv(s1, s2)    => {
+            to_string(out, s1);
+            format(out, " / ");
+            to_string(out, s2);
+        }
+        __BIRValue::IntCmp(pred, s1, s2) => {
+            let pred_str = predicate_to_cstr(pred);
+            format(out, "icmp % ", pred_str);
+            to_string(out, s1);
+            format(out, ", ");
+            to_string(out, s2);
+        }
+        __BIRValue::Call(base, args)   => {
+            format(out, "call ");
+            to_string(out, base);
+            for (let i: usize = 0; i < args.length; i = i + 1) {
+                let arg = get_ref(&args, i) as BIRValue;
+                format(out, ", ");
+                to_string(out, arg);
+            }
+        }
+        __BIRValue::CondBr(cond, if_true, if_false) => {
+            format(out, "cond br ");
+            to_string(out, cond);
+            format(out, ", true: ");
+            format(out, "$%", if_true._impl.name);
+            format(out, ", false: ");
+            format(out, "$%", if_false._impl.name);
+        }
+        __BIRValue::Br(block) => {
+            format(out, "br ");
+            format(out, "$%", block._impl.name);
+        }
+        __BIRValue::ReturnExpr(expr) => {
+            format(out, "ret ");
+            to_string(out, expr);
+        }
+        v => { funreachable("to_string(%)", v); }
+    }
+}
+
+func dump_value(val: BIRValue) {
+    let s: String = blank;
+    to_string(&s, val);
+    fprint("%\n", s);
+    drop(&s);
+}
+
+func is_constant(val: BIRValue) -> bool {
+    (comptime assert(tag(&__BIRValue::__count) == 17, "is_constant(BIRValue): Added new Value"));
+    match (val._impl.data) {
+        __BIRValue::Function(_)       => { return true; }
+        __BIRValue::LoadBool(_)       => { return true; }
+        __BIRValue::LoadU32(_)        => { return true; }
+        __BIRValue::IntAdd(s1, s2)    => { return is_constant(s1) && is_constant(s2); }
+        __BIRValue::IntSub(s1, s2)    => { return is_constant(s1) && is_constant(s2); }
+        __BIRValue::IntMul(s1, s2)    => { return is_constant(s1) && is_constant(s2); }
+        __BIRValue::IntDiv(s1, s2)    => { return is_constant(s1) && is_constant(s2); }
+        __BIRValue::IntCmp(_, s1, s2) => { return is_constant(s1) && is_constant(s2); }
+
+        _ => {}
+    }
+    return false;
+}
+
+func is_instruction(val: BIRValue) -> bool {
+    (comptime assert(tag(&__BIRValue::__count) == 17, "is_instruction(BIRValue): Added new Value"));
+    match (val._impl.data) {
+        __BIRValue::Function(_)     => { return true; }
+        __BIRValue::Alloca(_)       => { return true; }
+        __BIRValue::Store(_, _)     => { return true; }
+        __BIRValue::Load(_)         => { return true; }
+        __BIRValue::CondBr(_, _, _) => { return true; }
+        __BIRValue::Br(_)           => { return true; }
+        __BIRValue::Return          => { return true; }
+        __BIRValue::ReturnExpr(_)   => { return true; }
+        // REVIEW(2026-10-18): Should a call be an instruction?
+        __BIRValue::Call(_, _)      => { return true; }
+
+        _ => {}
+    }
+    return false;
+}
+
+func get_type(val: BIRValue) -> BIRType {
+    return val._impl.type;
+}
+
+func get_use_count(val: BIRValue) -> usize {
+    // FIXME(2026-20-22): I dont like that I directly access _map here
+    return val._impl.uses._map.length;
+}
+
+func add_user(val: BIRValue, used_by: BIRValue) {
+    add(&val._impl.uses, used_by);
+}
+
+func create_value(builder: BIRBuilder, t: BIRType, _val: __BIRValue, args: ...Data) -> BIRValue {
+    let ctx = get_context(builder);
+    let val = create_value_in_context(ctx, t, _val, args);
+
+    // TODO(2026-09-29): *Someone* should still keep track of a list of all values
+    //                   So we can easily iterate over it for easier passes later on
+    //                   Should it belong to the function? To a basic block?
+    if (is_instruction(val)) {
+        let bb = builder._impl.current_block;
+        assert(bb._impl != null, "create_value: Builder does not have a Basic Block set");
+        add_instruction(bb, val);
+    }
+
+    return val;
+}
+@trace func create_value_in_context(ctx: BIRContext, t: BIRType, _val: __BIRValue, args: ...Data) -> BIRValue {
+    let bfr = get_current_buffer(ctx, sizeof(__BIRValue));
+
+    let value = __create_value_from_args(_val, args);
+
+    let uses = new_GAF_HashSet(
+        type_info(BIRValue),
+        func (d: Data) -> usize {
+            return (d as BIRValue)._impl as usize;
+        },
+        func (k1: Data, k2: Data) -> bool {
+            let p1 = (k1 as BIRValue)._impl;
+            let p2 = (k2 as BIRValue)._impl;
+            return p1 == p2;
+        },
+    );
+
+    bfr = get_current_buffer(ctx, sizeof(__BIRValueImpl));
+    let ptr = insert_into_buffer(bfr, __BIRValueImpl {
+        type: t,
+        uses: uses,
+        data: value
+    });
+
+    let val = BIRValue { _impl: ptr };
+
+    for (let j: usize = 0; j < args.length; j = j + 1) {
+        if (equals(&get_name(&args[j].info), &comptime newSubStr("BIRValue"))) {
+            add_user(args[j] as BIRValue, val);
+        }
+    }
+
+    return val;
+}
+
+func __create_value_from_args(_val: __BIRValue, args: ...Data) -> __BIRValue {
+    let data = _val as Data;
+    let TypeInfo::Union { _, _, _, variants } = data.info else {
+        unreachable("__create_value_from_args: Not a union");
+    };
+
+    let active_variant = tag(&_val) as usize;
+    let UnionVariantTypeInfo::Tuple { variant_name, fields } = variants.elements[active_variant] else {
+        unreachable("__create_value_from_args");
+    };
+
+    fassert(args.length == fields.length, "__create_value_from_args: Not enough arguments provided to construct a %", _val);
+
+    let offset: usize = get_align(&data.info);
+    for (let j: usize = 0; j < fields.length && j < args.length; j = j + 1) {
+        let elem = type_info_table[fields.elements[j]];
+
+        assert(equals(&elem, &args[j].info), "__create_value_from_args: field type mismatch");
+
+        let field_ptr = &_val as usize + offset;
+        C::memcpy(field_ptr as &u8, args[j].ptr, get_size(&args[j].info));
+
+        offset = offset + get_size(&elem);
+        if (j != fields.length - 1) {
+            let next_align = get_align(&type_info_table[fields.elements[j + 1]]);
+            offset = next_multiple_of(offset, next_align);
+        }
+    }
+
+    return _val;
+}
+
+func is_store_destination(val: BIRValue) -> bool {
+    return is_pointer_type(get_type(val));
+}

@@ -22,10 +22,6 @@ import "scratchpad.bufo";
 
 import "../generated/ast.template.bufo";
 
-// TODO/FIXME(2026-08-22): It would be cool if Parse_Context remembered the call stack we are
-//                         currently in, so things like #insert and #if could easily inspect the
-//                         stack to check how to treat stuff
-
 struct Parse_Fn {
     _fn: func (&Parse_Context) -> (bool, &AST);
 }
@@ -131,7 +127,12 @@ let loaded_files: GAF_HashMap = blank;
 @trace func __parse_module_body(ctx: &Parse_Context) {
     let mod = get_module_info(ctx.parent);
     if (mod.state.did_parse_everything) {
-        message(unsure(ctx.parent.loc, "mod.state.did_parse_everything was true, is that fine or a bug?"));
+        // NOTE(2026-09-22): This happens when we #load, because we insert all items into the
+        //                   original module.
+        //                   When the outer coroutine reponsible for parsing the module exits,
+        //                   it sets did_parse_everything to true, even though there are still
+        //                   loads pending. This is a bug.
+        message(unsure(ctx.parent.loc, "mod.state.did_parse_everything was true, this is a bug. Check __parse_module_body for more details."));
         mod.state.did_parse_everything = false;
     }
     register_monitor(&mod.state.did_parse_everything);

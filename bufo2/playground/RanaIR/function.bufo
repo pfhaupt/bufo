@@ -1,0 +1,161 @@
+
+import "prelude.bufo";
+import "format.bufo";
+import "type_info.bufo";
+import "string.bufo";
+import "hashmap.bufo";
+import "list.bufo";
+
+import "../BufoIR/function.bufo";
+import "../BufoIR/basic_block.bufo";
+import "../BufoIR/value.bufo";
+
+import "../RanaIR/module.bufo";
+import "../RanaIR/instr.bufo";
+
+struct RanaFunction {
+    mod: RanaModule;
+    name: String;
+    instructions: GAF_List; // List<RanaInstr>
+    stack_size: u64;
+    register_count: u64;
+}
+
+func get_module(fn: RanaFunction) -> RanaModule {
+    return fn.mod;
+}
+
+struct RanaFunctionID { mod: RanaModule; idx: usize; }
+func to_string(out: &String, fid: RanaFunctionID) {
+    format(out, "%", get_rana_function_by_index(fid.mod, fid).name);
+}
+
+func new_rana_function(mod: RanaModule, name: String) -> RanaFunction {
+    let fn = RanaFunction {
+        mod: mod,
+        name: name,
+        instructions: new_GAF_List(type_info(RanaInstr)),
+    };
+    return fn;
+}
+
+func to_string(out: &String, fn: RanaFunction) {
+    format(out, "func % {\n", fn.name);
+    let byte = ["bytes", "byte"][(fn.stack_size == 1) as usize];
+    format(out, "------------------------------\n");
+    format(out, "stack required: % %\n", fn.stack_size, byte);
+    format(out, "virt registers: %\n", fn.register_count);
+    format(out, "------------------------------\n");
+    let __count = func (n: usize) -> usize {
+        let s = format1("%", n);
+        let c = s.length;
+        drop(&s);
+        return c;
+    };
+    let count = __count(fn.instructions.length);
+    for (let i: usize = 0; i < fn.instructions.length; i = i + 1) {
+        let instr: &RanaInstr = get_ref_raw(&fn.instructions, i);
+        let _index = format1("#%", i);
+        format(out, "%", _index);
+        for (let j: usize = _index.length; j < count; j = j + 1) {
+            format(out, " ");
+        }
+        format(out, ": ");
+        to_string(out, *instr);
+        drop(&_index);
+    }
+    format(out, "}\n");
+}
+
+func allocate_stack(fn: &RanaFunction, size: u64) -> RanaStackOffset {
+    let offset = fn.stack_size;
+    fn.stack_size = fn.stack_size + size;
+    return RanaStackOffset { offset: offset };
+}
+
+func allocate_register(fn: &RanaFunction) -> RanaRegister {
+    let number = fn.register_count;
+    fn.register_count = fn.register_count + 1;
+    return RanaRegister { number: number };
+}
+
+func lower_function(mod: RanaModule, bir_fn: BIRFunction) {
+    let rana_fn_idx = get_rana_function_by_name(mod, bir_fn._impl.name);
+    let rana_fn = get_rana_function_by_index(mod, rana_fn_idx);
+
+    // Already lowered
+    if (rana_fn.instructions.length > 0) return;
+
+    // Map Basic Blocks to Instruction Indices so we can patch jump instructions
+    let block_map = new_GAF_HashMap(
+        type_info(BIRBasicBlock),
+        type_info(RanaInstrIndex),
+        func (d: Data) -> usize {
+            return (d as BIRBasicBlock)._impl as usize;
+        },
+        func (d1: Data, d2: Data) -> bool {
+            let p1 = (d1 as BIRBasicBlock)._impl;
+            let p2 = (d2 as BIRBasicBlock)._impl;
+            return p1 == p2;
+        }
+    );
+
+    // As BIRValues are shared and opaque handles to SSA values, this map is necessary so we don't
+    // generate multiple instructions for the same BIRValue.
+    let value_map = new_GAF_HashMap(
+        type_info(BIRValue),
+        type_info(RanaValue),
+        func (d: Data) -> usize {
+            return (d as BIRValue)._impl as usize;
+        },
+        func (d1: Data, d2: Data) -> bool {
+            let p1 = (d1 as BIRValue)._impl;
+            let p2 = (d2 as BIRValue)._impl;
+            return p1 == p2;
+        }
+    );
+
+    let lower_basic_block = func (fn: &RanaFunction, bb: BIRBasicBlock, value_map: &GAF_HashMap) -> GAF_List /* List<RanaInstr> */ {
+        let lir_instrs = new_GAF_List(type_info(RanaInstr));
+
+        let bb_instrs = get_instructions(bb);
+        for (let i: usize = 0; i < bb_instrs.length; i = i + 1) {
+            let instr = get_ref(bb_instrs, i) as BIRValue;
+            lower_instruction(fn, &lir_instrs, instr, value_map);
+        }
+
+        return lir_instrs;
+    };
+
+    let basic_blocks = get_basic_blocks(bir_fn);
+    for (let i: usize = 0; i < basic_blocks.length; i = i + 1) {
+        let block = get_ref(basic_blocks, i) as BIRBasicBlock;
+        let block_instrs = lower_basic_block(rana_fn, block, &value_map);
+
+        let curr_instr_id = rana_fn.instructions.length;
+        add(&block_map, block, RanaInstrIndex { idx: curr_instr_id });
+        extend(&rana_fn.instructions, &block_instrs);
+
+        drop(&block_instrs);
+    }
+
+    for (let i: usize = 0; i < rana_fn.instructions.length; i = i + 1) {
+        let instr: &RanaInstr = get_ref_raw(&rana_fn.instructions, i);
+        let if: BIRBasicBlock = blank;
+        let else: BIRBasicBlock = blank;
+        if (extract_unresolved_blocks(instr.op, &if, &else)) {
+            let if_index = get(&block_map, if);
+            assert(if_index.ptr != null, "lower_function: Basic Block does not exist in Block Map");
+            let ii = if_index as RanaInstrIndex;
+
+            let else_index = get(&block_map, else);
+            if (else_index.ptr != null) {
+                let ei = else_index as RanaInstrIndex;
+                replace_unresolved_instr(&instr.op, ii, ei);
+            } else {
+                ftodo("lower_function: Only if needs to be replaced");
+                // replace_unresolved_instr(&instr.op, ii);
+            }
+        }
+    }
+}

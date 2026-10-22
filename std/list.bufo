@@ -85,6 +85,11 @@ func copy(list: &GAF_List) -> GAF_List {
     return new;
 }
 
+func drop(list: &GAF_List) {
+    C::free(list.elements);
+    *list = blank;
+}
+
 func last_ref(list: &GAF_List) -> Any {
     return get_ref_raw(list, list.length - 1);
 }
@@ -149,4 +154,12 @@ func insert_at_index(list: &GAF_List, index: usize, elem: Data) {
 
     C::memcpy(ptr, elem.ptr, type_size);
     list.length = list.length + 1;
+}
+
+func extend(list: &GAF_List, other: &GAF_List) {
+    assert(equals(&list.type, &other.type), "GAF_List.extend: Type mismatch");
+    // OPT(2026-10-04): If we use C::memcpy et al this could be much faster
+    for (let i: usize = 0; i < other.length; i = i + 1) {
+        push(list, get_ref(other, i));
+    }
 }

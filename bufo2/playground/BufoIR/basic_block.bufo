@@ -1,0 +1,92 @@
+
+import "prelude.bufo";
+
+import "string.bufo";
+import "substr.bufo";
+import "list.bufo";
+import "hashset.bufo";
+import "format.bufo";
+import "type_info.bufo";
+
+import "../BufoIR/context.bufo";
+import "../BufoIR/function.bufo";
+import "../BufoIR/value.bufo";
+
+struct BIRBasicBlock {
+    _impl: &__BIRBasicBlock;
+}
+struct __BIRBasicBlock {
+    name: String;
+    instructions: GAF_List; // List<BIRValue>
+    predecessors: GAF_HashSet; // HashSet<BIRBasicBlock>
+}
+
+func to_string(out: &String, bb: BIRBasicBlock) {
+    format(out, "$%:", bb._impl.name);
+    // FIXME(2026-09-26): I dont like that I directly access _map here
+    if (bb._impl.predecessors._map.length > 0) {
+        format(out, "  (pred: ");
+        let first = true;
+        foreach(&bb._impl.predecessors, func (v: Data, arg: &(&String, &bool)) {
+            let &(out, &first) = arg;
+            let elem = v as BIRBasicBlock;
+            format(out, "$%", elem._impl.name);
+
+            if (!first) format(out, ", ");
+            first = false;
+        }, &(out, &first));
+        format(out, ")\n");
+    } else {
+        format(out, "  (no predecessors)\n");
+    }
+    foreach(&bb._impl.instructions, func (v: Data, out: &String) {
+        let instr = v as BIRValue;
+        format(out, "  ");
+        to_string(out, instr);
+        format(out, "\n");
+    }, out);
+}
+
+func add_predecessor(bb: BIRBasicBlock, comes_from: BIRBasicBlock) {
+    assert(!contains(&bb._impl.predecessors, comes_from), "add_predecessor: Basic Block is already in the list of predecessors");
+    add(&bb._impl.predecessors, comes_from);
+}
+
+func add_instruction(bb: BIRBasicBlock, inst: BIRValue) {
+    push(get_instructions(bb), inst);
+}
+
+func get_instructions(bb: BIRBasicBlock) -> &GAF_List {
+    return &bb._impl.instructions;
+}
+
+@trace func append_basic_block(fn: BIRValue, name: SubStr) -> BIRBasicBlock {
+    let __BIRValue::Function(bir_fn) = fn._impl.data else {
+        unreachable("append_basic_block: Expected function value as argument");
+    };
+
+    let ctx = get_context(bir_fn);
+
+    let predecessors = new_GAF_HashSet(
+        type_info(BIRBasicBlock),
+        func (d: Data) -> usize {
+            return (d as BIRBasicBlock)._impl as usize;
+        },
+        func (k1: Data, k2: Data) -> bool {
+            let p1 = (k1 as BIRBasicBlock)._impl;
+            let p2 = (k2 as BIRBasicBlock)._impl;
+            return p1 == p2;
+        },
+    );
+
+    let ptr = insert_into_context(ctx, __BIRBasicBlock {
+        name: toString(&name),
+        predecessors: predecessors,
+        instructions: new_GAF_List(type_info(BIRValue)),
+    });
+
+    let block = BIRBasicBlock { _impl: ptr };
+    push(&bir_fn._impl.blocks, block);
+
+    return block;
+}

@@ -5,70 +5,7 @@ import "../frontend/nodes.bufo";
 import "../middleend/types.bufo";
 import "../backend/LLVM/metadata.bufo";
 
-struct ArenaBlock {
-    elements: Any;
-    length: usize;
-    capacity: usize;
-    elemSize: usize;
-    next: &ArenaBlock;
-}
-
-func push(this: &ArenaBlock, elem: Any, newCap: usize) {
-    if (this.next != null) {
-        push(this.next, elem, newCap);
-        return;
-    } else if (this.length == this.capacity) {
-        this.next = allocateBlock(newCap, this.elemSize);
-        push(this.next, elem, newCap);
-        return;
-    }
-    assert(this.length < this.capacity);
-    C::memcpy((this.elements as &u8) + this.length * this.elemSize, elem, this.elemSize);
-    this.length = this.length + 1;
-}
-func at(this: &ArenaBlock, index: usize) -> Any {
-    if (index >= this.capacity) {
-        assert(this.next != null, "Out of bounds access in ArenaBlock");
-        return at(this.next, index - this.capacity);
-    }
-    assert(index < this.length, "Out of bounds access in ArenaBlock");
-    return (this.elements as &usize) + index * this.elemSize;
-}
-func last(this: &ArenaBlock) -> Any {
-    assert(this.length > 0, "ArenaBlock.last() called on empty Arena");
-    assert(this.next == null, "ArenaBlock.last() called on block in the middle of a chain");
-    return at(this, this.length - 1);
-}
-func indexOf(this: &ArenaBlock, elem: Any) -> usize {
-    if (this.elements <= elem && (elem as usize) < (this.elements as usize) + this.capacity * this.elemSize) {
-        let index: usize = ((elem as usize) - (this.elements as usize)) / this.elemSize;
-        assert(index < this.length, "ArenaBlock.indexOf() does not contain the element");
-        return index;
-    } else {
-        assert(this.next != null, "ArenaBlock.indexOf() does not contain the element");
-        return this.capacity + indexOf(this.next, elem);
-    }
-}
-
-comptime ARENA_SIZE_SMALL: usize = 16;
-comptime ARENA_SIZE_MEDIUM: usize = 128;
-comptime ARENA_SIZE_LARGE: usize = 1024;
-comptime ARENA_SIZE_HUGE: usize = 8192;
-func allocateBlock(cap: usize, size: usize) -> &ArenaBlock {
-    let mem: Any = C::calloc(1, sizeof ArenaBlock);
-    assert(mem != null, "Could not allocate ArenaBlock instance");
-    let elements: Any = C::calloc(cap, size);
-    assert(elements != null, "Could not allocate ArenaBlock elements");
-    let block: &ArenaBlock = mem as &ArenaBlock;
-    *block = ArenaBlock {
-        elements: elements,
-        length: 0,
-        capacity: cap,
-        next: null,
-        elemSize: size,
-    };
-    return block;
-}
+import "arena.bufo";
 
 struct ParsedConfigArena {
     start: &ArenaBlock;

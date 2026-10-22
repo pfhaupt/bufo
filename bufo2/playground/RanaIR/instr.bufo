@@ -1,0 +1,555 @@
+
+import "prelude.bufo";
+import "libc.bufo";
+import "string.bufo";
+import "format.bufo";
+import "type_info.bufo";
+import "hashmap.bufo";
+import "list.bufo";
+
+import "../BufoIR/function.bufo";
+import "../BufoIR/basic_block.bufo";
+import "../BufoIR/value.bufo";
+import "../BufoIR/type.bufo";
+
+import "../RanaIR/module.bufo";
+import "../RanaIR/function.bufo";
+
+struct RanaInstr {
+    op: RanaInstrOp;
+}
+
+union RanaInstrOp {
+    Move(RanaValue, RanaValue),
+
+    IntAdd(RanaValue, RanaValue, RanaValue),
+
+    IntCmpEq (RanaValue, RanaValue, RanaValue),
+    IntCmpNeq(RanaValue, RanaValue, RanaValue),
+    IntCmpLt (RanaValue, RanaValue, RanaValue),
+    IntCmpLte(RanaValue, RanaValue, RanaValue),
+    IntCmpGt (RanaValue, RanaValue, RanaValue),
+    IntCmpGte(RanaValue, RanaValue, RanaValue),
+
+    CondBr(RanaValue, RanaInstrIndex, RanaInstrIndex),
+    JmpEq (RanaValue, RanaValue, RanaInstrIndex, RanaInstrIndex),
+    JmpNeq(RanaValue, RanaValue, RanaInstrIndex, RanaInstrIndex),
+    JmpLt (RanaValue, RanaValue, RanaInstrIndex, RanaInstrIndex),
+    JmpLte(RanaValue, RanaValue, RanaInstrIndex, RanaInstrIndex),
+    JmpGt (RanaValue, RanaValue, RanaInstrIndex, RanaInstrIndex),
+    JmpGte(RanaValue, RanaValue, RanaInstrIndex, RanaInstrIndex),
+
+    // destination, base, ...args
+    Call0(RanaValue, RanaValue),
+    Call1(RanaValue, RanaValue, RanaValue),
+    Call2(RanaValue, RanaValue, RanaValue, RanaValue),
+    Call3(RanaValue, RanaValue, RanaValue, RanaValue, RanaValue),
+    Call4(RanaValue, RanaValue, RanaValue, RanaValue, RanaValue, RanaValue),
+    CallN(RanaValue, RanaValue, GAF_List /* List<RanaValue> */),
+    Return,
+    ReturnExpr(RanaValue),
+
+    UnresolvedCondBr(RanaValue, BIRBasicBlock, BIRBasicBlock),
+    UnresolvedJmpEq (RanaValue, RanaValue, BIRBasicBlock, BIRBasicBlock),
+    UnresolvedJmpNeq(RanaValue, RanaValue, BIRBasicBlock, BIRBasicBlock),
+    UnresolvedJmpLt (RanaValue, RanaValue, BIRBasicBlock, BIRBasicBlock),
+    UnresolvedJmpLte(RanaValue, RanaValue, BIRBasicBlock, BIRBasicBlock),
+    UnresolvedJmpGt (RanaValue, RanaValue, BIRBasicBlock, BIRBasicBlock),
+    UnresolvedJmpGte(RanaValue, RanaValue, BIRBasicBlock, BIRBasicBlock),
+    __count,
+}
+
+func replace_unresolved_instr(op: &RanaInstrOp, if: RanaInstrIndex, else: RanaInstrIndex) {
+    (comptime assert(tag(&RanaInstrOp::__count) == 30, "replace_unresolved_instr(RanaInstr): Added new instruction"));
+    match (op) {
+        &RanaInstrOp::UnresolvedCondBr(cond, ..)     => { *op = RanaInstrOp::CondBr(cond, if, else); }
+        &RanaInstrOp::UnresolvedJmpEq (lhs, rhs, ..) => { *op = RanaInstrOp::JmpEq (lhs, rhs, if, else); }
+        &RanaInstrOp::UnresolvedJmpNeq(lhs, rhs, ..) => { *op = RanaInstrOp::JmpNeq(lhs, rhs, if, else); }
+        &RanaInstrOp::UnresolvedJmpLt (lhs, rhs, ..) => { *op = RanaInstrOp::JmpLt (lhs, rhs, if, else); }
+        &RanaInstrOp::UnresolvedJmpLte(lhs, rhs, ..) => { *op = RanaInstrOp::JmpLte(lhs, rhs, if, else); }
+        &RanaInstrOp::UnresolvedJmpGt (lhs, rhs, ..) => { *op = RanaInstrOp::JmpGt (lhs, rhs, if, else); }
+        &RanaInstrOp::UnresolvedJmpGte(lhs, rhs, ..) => { *op = RanaInstrOp::JmpGte(lhs, rhs, if, else); }
+        _ => { unreachable("replace_unresolved_instr: Operation cannot be replaced"); }
+    }
+}
+
+func extract_unresolved_blocks(op: RanaInstrOp, if: &BIRBasicBlock, else: &BIRBasicBlock) -> bool {
+    (comptime assert(tag(&RanaInstrOp::__count) == 30, "extract_unresolved_blocks(RanaInstr): Added new instruction"));
+    match (op) {
+        RanaInstrOp::UnresolvedCondBr(_, _if, _else)    => { *if = _if; *else = _else; return true; }
+        RanaInstrOp::UnresolvedJmpEq (_, _, _if, _else) => { *if = _if; *else = _else; return true; }
+        RanaInstrOp::UnresolvedJmpNeq(_, _, _if, _else) => { *if = _if; *else = _else; return true; }
+        RanaInstrOp::UnresolvedJmpLt (_, _, _if, _else) => { *if = _if; *else = _else; return true; }
+        RanaInstrOp::UnresolvedJmpLte(_, _, _if, _else) => { *if = _if; *else = _else; return true; }
+        RanaInstrOp::UnresolvedJmpGt (_, _, _if, _else) => { *if = _if; *else = _else; return true; }
+        RanaInstrOp::UnresolvedJmpGte(_, _, _if, _else) => { *if = _if; *else = _else; return true; }
+        _ => {}
+    }
+    return false;
+}
+
+func to_string(out: &String, instr: RanaInstr) {
+    (comptime assert(tag(&RanaInstrOp::__count) == 30, "to_string(RanaInstr): Added new instruction"));
+    let __binop = func (out: &String, dst: RanaValue, lhs: RanaValue, op: &char, rhs: RanaValue) {
+        format(out, "% ", op);
+        to_string(out, dst);
+        format(out, ", ");
+        to_string(out, lhs);
+        format(out, ", ");
+        to_string(out, rhs);
+    };
+
+    let __jmp_ie = func (out: &String, lhs: RanaValue, op: &char, rhs: RanaValue, if: RanaInstrIndex, else: RanaInstrIndex) {
+        format(out, "jmp if ");
+        to_string(out, lhs);
+        format(out, " % ", op);
+        to_string(out, rhs);
+        format(out, ", true: ");
+        to_string(out, if);
+        format(out, ", false: ");
+        to_string(out, else);
+    };
+
+    let __jmp_ie_u = func (out: &String, lhs: RanaValue, op: &char, rhs: RanaValue, if: BIRBasicBlock, else: BIRBasicBlock) {
+        format(out, "[UNRESOLVED] condbr ");
+        to_string(out, lhs);
+        format(out, " % ", op);
+        to_string(out, rhs);
+        format(out, ", true: ");
+        to_string(out, if);
+        format(out, ", false: ");
+        to_string(out, else);
+    };
+
+    let __call = func (out: &String, dst: RanaValue, base: RanaValue, args: ...RanaValue) {
+        to_string(out, dst);
+        format(out, " = call ");
+        to_string(out, base);
+        for (let i: usize = 0; i < args.length; i = i + 1) {
+            format(out, ", ");
+            to_string(out, args[i]);
+        }
+    };
+
+    match (instr.op) {
+        RanaInstrOp::Move(dst, src) => {
+            format(out, "mov ");
+            to_string(out, dst);
+            format(out, ", ");
+            to_string(out, src);
+        }
+
+        RanaInstrOp::IntAdd   (dst, lhs, rhs) => { __binop(out, dst, lhs, "add", rhs); }
+
+        RanaInstrOp::IntCmpEq (dst, lhs, rhs) => { __binop(out, dst, lhs, "cmp eq" , rhs); }
+        RanaInstrOp::IntCmpNeq(dst, lhs, rhs) => { __binop(out, dst, lhs, "cmp neq", rhs); }
+        RanaInstrOp::IntCmpLt (dst, lhs, rhs) => { __binop(out, dst, lhs, "cmp lt" , rhs); }
+        RanaInstrOp::IntCmpLte(dst, lhs, rhs) => { __binop(out, dst, lhs, "cmp lte", rhs); }
+        RanaInstrOp::IntCmpGt (dst, lhs, rhs) => { __binop(out, dst, lhs, "cmp gt" , rhs); }
+        RanaInstrOp::IntCmpGte(dst, lhs, rhs) => { __binop(out, dst, lhs, "cmp gte", rhs); }
+
+        RanaInstrOp::CondBr(cond, if, else) => {
+            format(out, "condbr ");
+            to_string(out, cond);
+            format(out, ", true: ");
+            to_string(out, if);
+            format(out, ", false: ");
+            to_string(out, else);
+        }
+        RanaInstrOp::JmpEq (lhs, rhs, if, else) => { __jmp_ie(out, lhs, "==", rhs, if, else); }
+        RanaInstrOp::JmpNeq(lhs, rhs, if, else) => { __jmp_ie(out, lhs, "!=", rhs, if, else); }
+        RanaInstrOp::JmpLt (lhs, rhs, if, else) => { __jmp_ie(out, lhs, "<" , rhs, if, else); }
+        RanaInstrOp::JmpLte(lhs, rhs, if, else) => { __jmp_ie(out, lhs, "<=", rhs, if, else); }
+        RanaInstrOp::JmpGt (lhs, rhs, if, else) => { __jmp_ie(out, lhs, ">" , rhs, if, else); }
+        RanaInstrOp::JmpGte(lhs, rhs, if, else) => { __jmp_ie(out, lhs, ">=", rhs, if, else); }
+
+        RanaInstrOp::Call0(dst, base)                         => { __call(out, dst, base); }
+        RanaInstrOp::Call1(dst, base, arg0)                   => { __call(out, dst, base, arg0); }
+        RanaInstrOp::Call2(dst, base, arg0, arg1)             => { __call(out, dst, base, arg0, arg1); }
+        RanaInstrOp::Call3(dst, base, arg0, arg1, arg2)       => { __call(out, dst, base, arg0, arg1, arg2); }
+        RanaInstrOp::Call4(dst, base, arg0, arg1, arg2, arg3) => { __call(out, dst, base, arg0, arg1, arg2, arg3); }
+        RanaInstrOp::CallN(dst, base, args) => {
+            format(out, "call ");
+            to_string(out, base);
+            for (let i: usize = 0; i < args.length; i = i + 1) {
+                let arg = get_ref(&args, i);
+                format(out, ", ");
+                to_string(out, arg as RanaValue);
+            }
+        }
+        RanaInstrOp::ReturnExpr(expr) => {
+            format(out, "ret ");
+            to_string(out, expr);
+        }
+
+        RanaInstrOp::UnresolvedJmpEq (lhs, rhs, if, else) => { __jmp_ie_u(out, lhs, "==", rhs, if, else); }
+        RanaInstrOp::UnresolvedJmpNeq(lhs, rhs, if, else) => { __jmp_ie_u(out, lhs, "!=", rhs, if, else); }
+        RanaInstrOp::UnresolvedJmpLt (lhs, rhs, if, else) => { __jmp_ie_u(out, lhs, "<" , rhs, if, else); }
+        RanaInstrOp::UnresolvedJmpLte(lhs, rhs, if, else) => { __jmp_ie_u(out, lhs, "<=", rhs, if, else); }
+        RanaInstrOp::UnresolvedJmpGt (lhs, rhs, if, else) => { __jmp_ie_u(out, lhs, ">" , rhs, if, else); }
+        RanaInstrOp::UnresolvedJmpGte(lhs, rhs, if, else) => { __jmp_ie_u(out, lhs, ">=", rhs, if, else); }
+        RanaInstrOp::UnresolvedCondBr(cond, if, else) => {
+            format(out, "[UNRESOLVED] condbr ");
+            to_string(out, cond);
+            format(out, ", true: ");
+            to_string(out, if);
+            format(out, ", false: ");
+            to_string(out, else);
+        }
+        v => {
+            ftodo("to_string(%)", v);
+        }
+    }
+
+    format(out, "\n");
+}
+
+func new_rana_op(_val: RanaInstrOp, args: ...Data) -> RanaInstrOp {
+    // TODO(2026-10-04): This is the same as __create_value_from_args, we could move this to the
+    // standard library, and accept any Data object
+    let data = _val as Data;
+    let TypeInfo::Union { _, _, _, variants } = data.info else {
+        unreachable("new_rana_op: Not a union");
+    };
+
+    let active_variant = tag(&_val) as usize;
+    let UnionVariantTypeInfo::Tuple { variant_name, fields } = variants.elements[active_variant] else {
+        unreachable("new_rana_op");
+    };
+
+    fassert(args.length == fields.length, "new_rana_op: Not enough arguments provided to construct a %", _val);
+
+    let offset: usize = get_align(&data.info);
+    for (let j: usize = 0; j < fields.length && j < args.length; j = j + 1) {
+        let elem = type_info_table[fields.elements[j]];
+
+        assert(equals(&elem, &args[j].info), "new_rana_op: field type mismatch");
+
+        let field_ptr = &_val as usize + offset;
+        C::memcpy(field_ptr as &u8, args[j].ptr, get_size(&args[j].info));
+
+        offset = offset + get_size(&elem);
+        if (j != fields.length - 1) {
+            let next_align = get_align(&type_info_table[fields.elements[j + 1]]);
+            offset = next_multiple_of(offset, next_align);
+        }
+    }
+
+    return _val;
+}
+func new_rana_instr(op: RanaInstrOp, args: ...Data) -> RanaInstr {
+    return RanaInstr {
+        op: new_rana_op(op, args),
+    };
+}
+
+struct RanaInstrIndex  { idx: usize; }
+func to_string(out: &String, idx: RanaInstrIndex) {
+    format(out, "#%", idx.idx);
+}
+struct RanaGlobalIndex { idx: usize; }
+
+struct RanaValue {
+    info: RanaInfo;
+    op: __RanaValue;
+}
+
+func to_string(out: &String, val: RanaValue) {
+    to_string(out, val.op);
+}
+
+func new_rana_value(typ: BIRType, _val: __RanaValue) -> RanaValue {
+    return RanaValue { info: new_rana_info(typ), op: _val };
+}
+
+union __RanaValue {
+    Function(RanaFunctionID),
+    Register(RanaRegister),
+    Memory(RanaMemory),
+    Immediate(RanaImmediate),
+}
+
+func to_string(out: &String, val: __RanaValue) {
+    match (val) {
+        __RanaValue::Function(fid)  => { to_string(out, fid); }
+        __RanaValue::Register(reg)  => { to_string(out, reg); }
+        __RanaValue::Memory(mem)    => { to_string(out, mem); }
+        __RanaValue::Immediate(imm) => { to_string(out, imm); }
+        _ => { unreachable("to_string(__RanaValue)"); }
+    }
+}
+
+struct RanaInfo {
+    typ: BIRType;
+    size_in_bits: u64;
+    align_in_bytes: u64;
+}
+
+func new_rana_info(typ: BIRType) -> RanaInfo {
+    return RanaInfo {
+        typ: typ,
+        size_in_bits: get_size_in_bits(typ),
+        align_in_bytes: get_align_in_bytes(typ),
+    };
+}
+
+union RanaMemory {
+    Direct(RanaImmediate),
+    Indirect(RanaRegister, RanaImmediate),
+    StackPointer(RanaStackOffset),
+    Global(RanaGlobalIndex),
+}
+
+func to_string(out: &String, mem: RanaMemory) {
+    match (mem) {
+        RanaMemory::Direct(imm) => {
+            format(out, "*");
+            to_string(out, imm);
+        }
+        RanaMemory::Indirect(reg, imm) => {
+            format(out, "*(");
+            to_string(out, reg);
+            format(out, " + ");
+            to_string(out, imm);
+        }
+        RanaMemory::StackPointer(off) => {
+            format(out, "[sp + %]", off.offset);
+        }
+        RanaMemory::Global(id) => {
+            format(out, "g%", id.idx);
+        }
+        _ => { unreachable("to_string(RanaMemory"); }
+    }
+}
+struct RanaRegister {
+    number: u64;
+}
+
+func to_string(out: &String, reg: RanaRegister) {
+    format(out, "r%", reg.number);
+}
+struct RanaStackOffset {
+    offset: u64;
+}
+
+struct RanaImmediate {
+    val: u64;
+}
+
+func to_string(out: &String, imm: RanaImmediate) {
+    format(out, "%", imm.val);
+}
+
+func new_rana_register(reg: RanaRegister) -> __RanaValue {
+    return __RanaValue::Register(reg);
+}
+
+func new_rana_immediate(imm: u64) -> __RanaValue {
+    return __RanaValue::Immediate(RanaImmediate {
+        val: imm
+    });
+}
+
+struct RanaIDK {
+    used_suggested_destination: bool;
+    valid_value: bool;
+    value: RanaValue;
+}
+
+func valid_rana_value(usd: bool, val: RanaValue) -> RanaIDK {
+    return RanaIDK {
+        used_suggested_destination: usd,
+        valid_value: true,
+        value: val,
+    };
+}
+
+func lower_instruction(fn: &RanaFunction, rana_instrs: &GAF_List /* List<RanaInstr> */, val: BIRValue, value_map: &GAF_HashMap) -> RanaIDK {
+    return lower_instruction(fn, rana_instrs, val, value_map, blank);
+}
+func lower_instruction(fn: &RanaFunction, rana_instrs: &GAF_List /* List<RanaInstr> */, val: BIRValue, value_map: &GAF_HashMap, destination_hint: RanaIDK) -> RanaIDK {
+    let cache_entry = get(value_map, val);
+    if (cache_entry.ptr != null) {
+        return valid_rana_value(false, cache_entry as RanaValue);
+    }
+    let result = __lower_instruction(fn, rana_instrs, val, value_map, destination_hint);
+    if (result.valid_value) {
+        add(value_map, val, result.value);
+    }
+    return result;
+}
+
+func __lower_instruction(fn: &RanaFunction, rana_instrs: &GAF_List /* List<RanaInstr> */, bir_val: BIRValue, value_map: &GAF_HashMap, destination_hint: RanaIDK) -> RanaIDK {
+    let __use_hint_or_alloc = func (fn: &RanaFunction, bir_val: BIRValue, destination_hint: RanaIDK) -> (bool, RanaValue) {
+        let used_hint = false;
+        let dst_value: RanaValue = blank;
+        if (destination_hint.valid_value && get_use_count(bir_val) == 1) {
+            used_hint = true;
+            dst_value = destination_hint.value;
+        } else {
+            let reg = allocate_register(fn);
+            dst_value = new_rana_value(get_type(bir_val), new_rana_register(reg));
+        }
+        return (used_hint, dst_value);
+    };
+    match (bir_val._impl.data) {
+        __BIRValue::Function(bir_fn) => {
+            let rana_mod = get_module(*fn);
+            let fid = get_rana_function_by_name(rana_mod, get_name(bir_fn));
+            let dst_value = new_rana_value(get_type(bir_val), __RanaValue::Function(fid));
+            return valid_rana_value(false, dst_value);
+        }
+        __BIRValue::Alloca(typ) => {
+            let offset = allocate_stack(fn, get_size_in_bytes(typ));
+            return valid_rana_value(false, new_rana_value(typ, __RanaValue::Memory(RanaMemory::StackPointer(offset))));
+        }
+        __BIRValue::Store(dst, src) => {
+            let dst_res = lower_instruction(fn, rana_instrs, dst, value_map);
+            if (!dst_res.valid_value) ftodo("__lower_instruction: Store doesnt have a dst");
+
+            let src_res = lower_instruction(fn, rana_instrs, src, value_map, dst_res);
+            if (!src_res.valid_value) ftodo("__lower_instruction: Store doesnt have a src");
+
+            if (src_res.used_suggested_destination) return dst_res;
+            push(rana_instrs, new_rana_instr(RanaInstrOp::Move, dst_res.value, src_res.value));
+
+            return valid_rana_value(false, dst_res.value);
+        }
+        __BIRValue::Load(src) => {
+            let src_res = lower_instruction(fn, rana_instrs, src, value_map);
+            if (!src_res.valid_value) ftodo("__lower_instruction: Load doesnt have a src");
+
+            let (used_hint, dst_value) = __use_hint_or_alloc(fn, bir_val, destination_hint);
+
+            push(rana_instrs, new_rana_instr(RanaInstrOp::Move, dst_value, src_res.value));
+            return valid_rana_value(used_hint, dst_value);
+        }
+        __BIRValue::LoadU32(val) => {
+            return valid_rana_value(false, new_rana_value(get_type(bir_val), new_rana_immediate(val as u64)));
+        }
+        __BIRValue::IntAdd(lhs, rhs) => {
+            let lhs_res = lower_instruction(fn, rana_instrs, lhs, value_map);
+            if (!lhs_res.valid_value) ftodo("__lower_instruction: IntCmp LHS is invalid");
+
+            let rhs_res = lower_instruction(fn, rana_instrs, rhs, value_map);
+            if (!rhs_res.valid_value) ftodo("__lower_instruction: IntCmp RHS is invalid");
+
+            let (used_hint, dst_value) = __use_hint_or_alloc(fn, bir_val, destination_hint);
+
+            let instr = new_rana_instr(RanaInstrOp::IntAdd, dst_value, lhs_res.value, rhs_res.value);
+            push(rana_instrs, instr);
+            return valid_rana_value(used_hint, dst_value);
+        }
+        __BIRValue::IntCmp(pred, lhs, rhs) => {
+            let lhs_res = lower_instruction(fn, rana_instrs, lhs, value_map);
+            if (!lhs_res.valid_value) ftodo("__lower_instruction: IntCmp LHS is invalid");
+
+            let rhs_res = lower_instruction(fn, rana_instrs, rhs, value_map);
+            if (!rhs_res.valid_value) ftodo("__lower_instruction: IntCmp RHS is invalid");
+
+            let (used_hint, dst_value) = __use_hint_or_alloc(fn, bir_val, destination_hint);
+
+            let op = RanaInstrOp::__count;
+            match (pred) {
+                BIRIntCmp::Neq => { op = RanaInstrOp::IntCmpNeq; }
+                BIRIntCmp::Eq  => { op = RanaInstrOp::IntCmpEq ; }
+                BIRIntCmp::Lt  => { op = RanaInstrOp::IntCmpLt ; }
+                BIRIntCmp::Lte => { op = RanaInstrOp::IntCmpLte; }
+                BIRIntCmp::Gt  => { op = RanaInstrOp::IntCmpGt ; }
+                BIRIntCmp::Gte => { op = RanaInstrOp::IntCmpGte; }
+                _ => { unreachable("__lower_instruction"); }
+            }
+
+            let instr = new_rana_instr(op, dst_value, lhs_res.value, rhs_res.value);
+            push(rana_instrs, instr);
+            return valid_rana_value(used_hint, dst_value);
+        }
+        __BIRValue::Call(base, args) => {
+            let _f = func (fn: &RanaFunction, rana_instrs: &GAF_List /* List<RanaInstr> */, val: BIRValue, value_map: &GAF_HashMap) -> RanaValue {
+                let res = lower_instruction(fn, rana_instrs, val, value_map);
+                if (!res.valid_value) ftodo("__lower_instruction: _f");
+                return res.value;
+            };
+            let base_res = lower_instruction(fn, rana_instrs, base, value_map);
+            if (!base_res.valid_value) ftodo("__lower_instruction: Call Base is invalid");
+            let base_value = base_res.value;
+
+            let (used_hint, dst_value) = __use_hint_or_alloc(fn, bir_val, destination_hint);
+
+            let call_instr: RanaInstr = blank;
+            if (args.length == 0) {
+                call_instr = new_rana_instr(RanaInstrOp::Call0, dst_value, base_value);
+            } else if (args.length == 1) {
+                let arg0 = _f(fn, rana_instrs, get_ref(&args, 0) as BIRValue, value_map);
+                call_instr = new_rana_instr(RanaInstrOp::Call1, dst_value, base_value, arg0);
+            } else if (args.length == 2) {
+                let arg0 = _f(fn, rana_instrs, get_ref(&args, 0) as BIRValue, value_map);
+                let arg1 = _f(fn, rana_instrs, get_ref(&args, 1) as BIRValue, value_map);
+                call_instr = new_rana_instr(RanaInstrOp::Call2, dst_value, base_value, arg0, arg1);
+            } else if (args.length == 3) {
+                let arg0 = _f(fn, rana_instrs, get_ref(&args, 0) as BIRValue, value_map);
+                let arg1 = _f(fn, rana_instrs, get_ref(&args, 1) as BIRValue, value_map);
+                let arg2 = _f(fn, rana_instrs, get_ref(&args, 2) as BIRValue, value_map);
+                call_instr = new_rana_instr(RanaInstrOp::Call3, dst_value, base_value, arg0, arg1, arg2);
+            } else if (args.length == 4) {
+                let arg0 = _f(fn, rana_instrs, get_ref(&args, 0) as BIRValue, value_map);
+                let arg1 = _f(fn, rana_instrs, get_ref(&args, 1) as BIRValue, value_map);
+                let arg2 = _f(fn, rana_instrs, get_ref(&args, 2) as BIRValue, value_map);
+                let arg3 = _f(fn, rana_instrs, get_ref(&args, 3) as BIRValue, value_map);
+                call_instr = new_rana_instr(RanaInstrOp::Call4, dst_value, base_value, arg0, arg1, arg2, arg3);
+            } else {
+                let rana_args = new_GAF_List(type_info(RanaValue));
+                for (let i: usize = 0; i < args.length; i = i + 1) {
+                    let r_arg = _f(fn, rana_instrs, get_ref(&args, i) as BIRValue, value_map);
+                    push(&rana_args, r_arg);
+                }
+                call_instr = new_rana_instr(RanaInstrOp::CallN, dst_value, base_value, rana_args);
+            }
+            push(rana_instrs, call_instr);
+            return valid_rana_value(used_hint, dst_value);
+        }
+        __BIRValue::CondBr(cond, if, else) => {
+            if let __BIRValue::IntCmp(pred, lhs, rhs) = cond._impl.data {
+                let lhs_res = lower_instruction(fn, rana_instrs, lhs, value_map);
+                if (!lhs_res.valid_value) ftodo("__lower_instruction: IntCmp LHS is invalid");
+
+                let rhs_res = lower_instruction(fn, rana_instrs, rhs, value_map);
+                if (!rhs_res.valid_value) ftodo("__lower_instruction: IntCmp RHS is invalid");
+
+                let op = RanaInstrOp::__count;
+                match (pred) {
+                    BIRIntCmp::Neq => { op = RanaInstrOp::UnresolvedJmpNeq; }
+                    BIRIntCmp::Eq  => { op = RanaInstrOp::UnresolvedJmpEq ; }
+                    BIRIntCmp::Lt  => { op = RanaInstrOp::UnresolvedJmpLt ; }
+                    BIRIntCmp::Lte => { op = RanaInstrOp::UnresolvedJmpLte; }
+                    BIRIntCmp::Gt  => { op = RanaInstrOp::UnresolvedJmpGt ; }
+                    BIRIntCmp::Gte => { op = RanaInstrOp::UnresolvedJmpGte; }
+                    _ => { unreachable("__lower_instruction"); }
+                }
+
+                let instr = new_rana_instr(op, lhs_res.value, rhs_res.value, if, else);
+                push(rana_instrs, instr);
+                return blank;
+            }
+
+            let cond_res = lower_instruction(fn, rana_instrs, cond, value_map);
+            if (!cond_res.valid_value) ftodo("__lower_instruction: CondBr Cond is invalid");
+
+            let instr = new_rana_instr(RanaInstrOp::UnresolvedCondBr, cond_res.value, if, else);
+            push(rana_instrs, instr);
+            return blank;
+        }
+        __BIRValue::ReturnExpr(val) => {
+            let val_res = lower_instruction(fn, rana_instrs, val, value_map);
+            if (!val_res.valid_value) ftodo("__lower_instruction: ReturnExpr Val is invalid");
+
+            let instr = new_rana_instr(RanaInstrOp::ReturnExpr, val_res.value);
+            push(rana_instrs, instr);
+            return blank;
+        }
+        v => {
+            ftodo("__lower_instruction(%)", v);
+        }
+    }
+    return blank;
+}

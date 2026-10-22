@@ -1,0 +1,70 @@
+
+import "prelude.bufo";
+import "format.bufo";
+import "hashmap.bufo";
+import "list.bufo";
+import "type_info.bufo";
+import "string.bufo";
+
+import "../BufoIR/context.bufo";
+import "../BufoIR/module.bufo";
+import "../BufoIR/value.bufo";
+
+import "../RanaIR/function.bufo";
+
+struct RanaModule {
+    _impl: &__RanaModule;
+}
+
+struct __RanaModule {
+    ctx: BIRContext;
+    bir_mod: BIRModule;
+    name: String;
+    function_map: GAF_HashMap; // HashMap<String, RanaFunctionID>
+    functions: GAF_List;       // List<RanaFunction>
+}
+
+func new_rana_module(bir_mod: BIRModule) -> RanaModule {
+    let ctx = get_context(bir_mod);
+    let mod = __RanaModule {
+        ctx: ctx,
+        bir_mod: bir_mod,
+        name: bir_mod._impl.name,
+        function_map: new_hashmap_with_string_key(type_info(RanaFunctionID)),
+        functions: new_GAF_List(type_info(RanaFunction)),
+    };
+    let ptr = insert_into_context(ctx, mod);
+    return RanaModule { _impl: ptr };
+}
+
+func dump_module(mod: RanaModule) {
+    let out: String = blank;
+    format(&out, "// RanaIR Module '%'\n", mod._impl.name);
+    foreach(&mod._impl.functions, func (v: Data, out: &String) {
+        to_string(out, v as RanaFunction);
+        format(out, "\n");
+    }, &out);
+
+    fprint("%", out);
+    drop(&out);
+}
+
+func get_rana_function_by_index(mod: RanaModule, idx: RanaFunctionID) -> &RanaFunction {
+    let index = idx.idx;
+    assert(index < mod._impl.functions.length, "get_rana_function_by_index: Index out of bounds");
+    return get_ref_raw(&mod._impl.functions, index);
+}
+func get_rana_function_by_name(mod: RanaModule, name: String) -> RanaFunctionID {
+    let ptr = get(&mod._impl.function_map, name);
+    // TODO(2026-10-17): Investigate this: Is this a compiler bug?
+    //                   I *firmly* think that this does not actually deref ptr.data
+    // if (ptr.ptr != null) return ptr;
+    if (ptr.ptr != null) return ptr as RanaFunctionID;
+
+    let idx = RanaFunctionID { mod: mod, idx: mod._impl.functions.length };
+    let fn = new_rana_function(mod, name);
+    add(&mod._impl.function_map, name, idx);
+    push(&mod._impl.functions, fn);
+    return idx;
+}
+

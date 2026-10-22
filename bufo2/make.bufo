@@ -81,6 +81,16 @@ func mkdir_if_not_exist(flags: &Flags, dir: &char) -> bool {
     return true;
 }
 
+func build_playground(flags: &Flags) -> bool {
+    if (!mkdir_if_not_exist(flags, "build/playground")) return false;
+
+    @os(WINDOWS) let cmd = newCmdFromStrLit("bufo.exe playground/main.bufo -o ./build/playground/main.exe --run");
+    @os(LINUX) let cmd = newCmdFromStrLit("bufo_linux playground/main.bufo -o ./build/playground/main.exe --run");
+    if (*flags.opt) add(&cmd, comptime newSubStr("--opt"));
+    if (*flags.debug) add(&cmd, comptime newSubStr("--debug"));
+    return runSync(&cmd);
+}
+
 func main(argc: i32, argv: &&char) -> i32 {
     let flags: Flags = blank;
     if (!parse_flags(&flags, argc, argv)) return 1;
@@ -88,27 +98,17 @@ func main(argc: i32, argv: &&char) -> i32 {
     if (!mkdir_if_not_exist(&flags, "build")) return 1;
 
     if (!generate_templates(&flags)) return 1;
+
+    if (!build_playground(&flags)) return 1;
+    return 0;
+
     if (!build_bufo2(&flags)) return 1;
     // if (!build_test_program(&flags, "./macros.bufo2")) return 1;
+    if (!build_test_program(&flags, "./extern_test.bufo2")) return 1;
     if (!build_test_program(&flags, "./turing.bufo2")) return 1;
-    // if (!build_test_program(&flags, "./extern_test.bufo2")) return 1;
     if (!*flags.debug) if (!build_test_program(&flags, "./backend_test.bufo2")) return 1;
     if (!*flags.debug) if (!build_test_program(&flags, "./test.bufo2")) return 1;
 
     fprint("[Build] Done!\n");
     return 0;
 }
-
-// .PHONY: debug
-// 
-// EXTRA =
-// 
-// test.exe: test.bufo bufo2.exe
-// 	./bufo2.exe test.bufo
-// 
-// bufo2.exe: $(filter-out ops.bufo test.bufo, $(wildcard *.bufo))
-// 	bufo.exe main.bufo -o bufo2.exe $(EXTRA)
-// 
-// debug:
-// 	bufo.exe main.bufo -o bufo2.exe --debug $(EXTRA)
-// 	lldb bufo2.exe test.bufo

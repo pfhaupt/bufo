@@ -2,7 +2,7 @@ import "prelude.bufo";
 import "string.bufo";
 import "substr.bufo";
 import "../frontend/nodes.bufo";
-import "./arena.bufo";
+import "../util/arena.bufo";
 
 struct Span {
     file: usize;

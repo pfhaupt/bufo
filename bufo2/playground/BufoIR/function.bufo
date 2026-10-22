@@ -1,0 +1,81 @@
+import "prelude.bufo";
+import "string.bufo";
+import "substr.bufo";
+import "list.bufo";
+import "format.bufo";
+import "type_info.bufo";
+import "hashmap.bufo";
+
+import "../BufoIR/context.bufo";
+import "../BufoIR/module.bufo";
+import "../BufoIR/basic_block.bufo";
+import "../BufoIR/value.bufo";
+import "../BufoIR/type.bufo";
+
+import "../RanaIR/function.bufo";
+
+struct BIRFunction {
+    _impl: &__BIRFunction;
+}
+struct __BIRFunction {
+    mod: BIRModule;
+    name: String;
+    type: BIRType;
+    blocks: GAF_List; // List<BIRBasicBlock>
+}
+
+func get_module(fn: BIRFunction) -> BIRModule {
+    return fn._impl.mod;
+}
+func get_context(fn: BIRFunction) -> BIRContext {
+    return get_context(get_module(fn));
+}
+
+func get_name(fn: BIRFunction) -> String {
+    return fn._impl.name;
+}
+
+func to_string(out: &String, fn: BIRFunction) {
+    format(out, "func @% {\n", fn._impl.name);
+    foreach(&fn._impl.blocks, func (v: Data, out: &String) {
+        to_string(out, v as BIRBasicBlock);
+    }, out);
+    format(out, "}\n");
+}
+
+func __create_bir_function(mod: BIRModule, ctx: BIRContext, name: String, fnType: BIRType) -> BIRFunction {
+    let ptr = insert_into_context(ctx, __BIRFunction {
+        mod: mod,
+        name: name,
+        type: fnType,
+        blocks: new_GAF_List(type_info(BIRBasicBlock)),
+    });
+    return BIRFunction { _impl: ptr };
+}
+
+@trace func new_bir_function(mod: BIRModule, _name: SubStr, fnType: BIRType) -> BIRValue {
+    fassert(is_function_type(fnType), "new_bir_function: Expected function type, but got %", to_string(fnType));
+
+    let name = toString(&_name);
+    fassert(!has_function(mod, name), "new_bir_function: Function % already exists in the module", name);
+
+    let ctx = get_context(mod);
+    let bir_fn = __create_bir_function(mod, ctx, name, fnType);
+    let fn = create_value_in_context(ctx, fnType, __BIRValue::Function, bir_fn);
+    add(&mod._impl.functions, name, fn);
+    return fn;
+}
+
+func get_basic_blocks(fn: BIRFunction) -> &GAF_List {
+    return &fn._impl.blocks;
+}
+
+func compile_function(fn: BIRValue) -> bool {
+    let __BIRValue::Function(bir_fn) = fn._impl.data else {
+        unreachable("compile_function");
+    };
+    let bir_mod = get_module(bir_fn);
+    let rana_mod = get_rana_module(bir_mod);
+    lower_function(rana_mod, bir_fn);
+    return true;
+}

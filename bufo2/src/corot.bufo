@@ -205,11 +205,18 @@ union Corot_Result {
     current_context.waiting_for = dep;
 
     // Check for cycles
-    let curr = current;
-    while (curr.id != 0) {
-        let next = get_context(curr).waiting_for;
-        if (next.id == current.id) return Corot_Result::Cycle_Detected;
-        curr = next;
+    let slow = current;
+    let fast = current;
+    while (true) {
+        slow = get_context(slow).waiting_for;
+        if (slow.id == 0) break;
+        fast = get_context(fast).waiting_for;
+        if (fast.id == 0) break;
+        fast = get_context(fast).waiting_for;
+        if (fast.id == 0) break;
+        // REVIEW(2026-09-22): Would it be better to abort instantly instead of returning?
+        // if (slow.id == fast.id) _finish_current(Corot_Result::Cycle_Detected);
+        if (slow.id == fast.id) return Corot_Result::Cycle_Detected;
     }
 
     // Store our ID in dep waiting list
